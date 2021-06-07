@@ -4,4 +4,4 @@
 
 # Running
 
-    $ radicle-http-api --root ~/.radicle
+    $ radicle-http-api --root ~/.radicle --peer-id <peer-id>
