@@ -1,4 +1,6 @@
 mod error;
+mod project;
+mod signer;
 
 use std::convert::TryFrom as _;
 use std::convert::TryInto as _;
@@ -8,30 +10,33 @@ use std::path::PathBuf;
 use warp::reply::Json;
 use warp::{self, filters::BoxedFilter, path, Filter, Rejection, Reply};
 
+use radicle_daemon::librad::git::identities;
+use radicle_daemon::librad::git::storage::Storage;
 use radicle_daemon::librad::git::types::{Reference, Single};
-use radicle_daemon::{git::types::Namespace, Paths, Urn};
+use radicle_daemon::{git::types::Namespace, Paths, PeerId, Urn};
 use radicle_source::surf::vcs::git;
 use radicle_source::Revision;
 
 use error::Error;
 
-type PeerId = String;
-
 #[derive(Debug, Clone)]
 pub struct Options {
     pub root: PathBuf,
     pub listen: net::SocketAddr,
+    pub peer_id: PeerId,
 }
 
 #[derive(Debug, Clone)]
 pub struct Context {
     paths: Paths,
+    signer: signer::Signer,
 }
 
 /// Run the HTTP API.
 pub async fn run(options: Options) {
     let paths = Paths::from_root(options.root).unwrap();
-    let ctx = Context { paths };
+    let signer = signer::Signer::new(options.peer_id);
+    let ctx = Context { paths, signer };
     let api = path("v1")
         .and(filters(ctx))
         .with(warp::cors().allow_any_origin());
@@ -100,8 +105,14 @@ async fn blob_handler(
     Ok(warp::reply::json(&blob))
 }
 
-async fn project_handler(_ctx: Context, _project: Urn) -> Result<Json, Rejection> {
-    Err(warp::reject())
+async fn project_handler(ctx: Context, project: Urn) -> Result<Json, Rejection> {
+    let storage = Storage::open(&ctx.paths, ctx.signer).unwrap();
+    let project = identities::project::get(&storage, &project)
+        .map_err(|_| warp::reject())?
+        .ok_or_else(|| warp::reject::not_found())?;
+    let meta: project::Metadata = project.try_into().unwrap();
+
+    Ok(warp::reply::json(&meta))
 }
 
 /// Fetch a [`radicle_source::Tree`].

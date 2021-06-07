@@ -1912,8 +1912,10 @@ name = "radicle-http-api"
 version = "0.1.0"
 dependencies = [
  "argh",
+ "async-trait",
  "git2",
  "radicle-daemon",
+ "radicle-keystore",
  "radicle-source",
  "serde",
  "serde_json",

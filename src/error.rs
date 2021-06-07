@@ -11,6 +11,10 @@ pub enum Error {
     #[error("missing namespace in reference")]
     MissingNamespace,
 
+    /// The project does not have a default branch.
+    #[error("missing default branch in project")]
+    MissingDefaultBranch,
+
     /// An error occured with radicle surf.
     #[error(transparent)]
     Surf(#[from] surf::git::error::Error),
