@@ -38,6 +38,7 @@ pub async fn run(options: Options) {
     let signer = signer::Signer::new(options.peer_id);
     let ctx = Context { paths, signer };
     let api = path("v1")
+        .and(path("projects"))
         .and(filters(ctx))
         .with(warp::cors().allow_any_origin());
 
