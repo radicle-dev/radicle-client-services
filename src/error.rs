@@ -15,6 +15,10 @@ pub enum Error {
     #[error("missing default branch in project")]
     MissingDefaultBranch,
 
+    /// The project does not have a readme.
+    #[error("missing readme in project")]
+    MissingReadme,
+
     /// An error occured with radicle surf.
     #[error(transparent)]
     Surf(#[from] surf::git::error::Error),

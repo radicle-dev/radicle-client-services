@@ -14,6 +14,7 @@ use radicle_daemon::librad::git::identities;
 use radicle_daemon::librad::git::storage::Storage;
 use radicle_daemon::librad::git::types::{Reference, Single};
 use radicle_daemon::{git::types::Namespace, Paths, PeerId, Urn};
+use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
 use radicle_source::Revision;
 
@@ -50,6 +51,7 @@ fn filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
     project_filter(ctx.clone())
         .or(tree_filter(ctx.clone()))
         .or(blob_filter(ctx.clone()))
+        .or(readme_filter(ctx))
         .boxed()
 }
 
@@ -62,6 +64,17 @@ fn blob_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Reject
         .and(path::param::<String>())
         .and(path::tail())
         .and_then(blob_handler)
+}
+
+/// `GET /:project/readme/:revision`
+fn readme_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::get()
+        .map(move || ctx.clone())
+        .and(path::param::<Urn>())
+        .and(path("readme"))
+        .and(path::param::<String>())
+        .and(path::end())
+        .and_then(readme_handler)
 }
 
 /// `GET /:project`
@@ -99,6 +112,41 @@ async fn blob_handler(
             path.as_str(),
             Some("base16-ocean.dark"),
         )
+    })
+    .await
+    .map_err(error::Error::from)?;
+
+    Ok(warp::reply::json(&blob))
+}
+
+async fn readme_handler(
+    ctx: Context,
+    project: Urn,
+    revision: String,
+) -> Result<impl Reply, Rejection> {
+    let reference = Reference::head(Namespace::from(project), None, revision.try_into().unwrap());
+    let paths = &[
+        "README",
+        "README.md",
+        "README.markdown",
+        "README.txt",
+        "README.rst",
+        "Readme.md",
+    ];
+    let blob = browse(reference, ctx.paths, |browser| {
+        for path in paths {
+            if let Ok(blob) = radicle_source::blob::highlighting::blob::<PeerId>(
+                browser,
+                None,
+                path,
+                Some("base16-ocean.dark"),
+            ) {
+                return Ok(blob);
+            }
+        }
+        return Err(radicle_source::Error::PathNotFound(
+            Path::try_from("README").unwrap(),
+        ));
     })
     .await
     .map_err(error::Error::from)?;
