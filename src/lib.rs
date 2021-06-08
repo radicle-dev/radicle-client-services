@@ -144,9 +144,9 @@ async fn readme_handler(
                 return Ok(blob);
             }
         }
-        return Err(radicle_source::Error::PathNotFound(
+        Err(radicle_source::Error::PathNotFound(
             Path::try_from("README").unwrap(),
-        ));
+        ))
     })
     .await
     .map_err(error::Error::from)?;
@@ -158,7 +158,7 @@ async fn project_handler(ctx: Context, project: Urn) -> Result<Json, Rejection> 
     let storage = Storage::open(&ctx.paths, ctx.signer).unwrap();
     let project = identities::project::get(&storage, &project)
         .map_err(|_| warp::reject())?
-        .ok_or_else(|| warp::reject::not_found())?;
+        .ok_or_else(warp::reject::not_found)?;
     let meta: project::Metadata = project.try_into().unwrap();
 
     Ok(warp::reply::json(&meta))
