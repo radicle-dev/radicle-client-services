@@ -13,10 +13,6 @@ pub struct Options {
     #[argh(option, default = "std::net::SocketAddr::from(([0, 0, 0, 0], 8888))")]
     pub listen: net::SocketAddr,
 
-    /// log level (default: info)
-    #[argh(option, default = "tracing::Level::INFO")]
-    pub log: tracing::Level,
-
     /// radicle root path, for key and git storage
     #[argh(option)]
     pub root: PathBuf,
@@ -45,14 +41,6 @@ impl From<Options> for api::Options {
 #[tokio::main]
 async fn main() {
     let options = Options::from_env();
-    let subscriber = tracing_subscriber::FmtSubscriber::builder()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env().add_directive(options.log.into()),
-        )
-        .finish();
-
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("setting tracing subscriber should succeed");
-
+    tracing_subscriber::fmt::init();
     api::run(options.into()).await;
 }

@@ -41,7 +41,8 @@ pub async fn run(options: Options) {
     let api = path("v1")
         .and(path("projects"))
         .and(filters(ctx))
-        .with(warp::cors().allow_any_origin());
+        .with(warp::cors().allow_any_origin())
+        .with(warp::log("http::api"));
 
     warp::serve(api).run(options.listen).await
 }
