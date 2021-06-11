@@ -7,6 +7,7 @@ use std::convert::TryInto as _;
 use std::net;
 use std::path::PathBuf;
 
+use either::Either;
 use warp::reply::Json;
 use warp::{self, filters::BoxedFilter, path, Filter, Rejection, Reply};
 
@@ -17,6 +18,8 @@ use radicle_daemon::{git::types::Namespace, Paths, PeerId, Urn};
 use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
 use radicle_source::Revision;
+
+use crate::project::Info;
 
 use error::Error;
 
@@ -155,14 +158,10 @@ async fn readme_handler(
     Ok(warp::reply::json(&blob))
 }
 
-async fn project_handler(ctx: Context, project: Urn) -> Result<Json, Rejection> {
-    let storage = Storage::open(&ctx.paths, ctx.signer).unwrap();
-    let project = identities::project::get(&storage, &project)
-        .map_err(|_| warp::reject())?
-        .ok_or_else(warp::reject::not_found)?;
-    let meta: project::Metadata = project.try_into().unwrap();
+async fn project_handler(ctx: Context, urn: Urn) -> Result<Json, Rejection> {
+    let info = project_info(urn, ctx.signer, ctx.paths)?;
 
-    Ok(warp::reply::json(&meta))
+    Ok(warp::reply::json(&info))
 }
 
 /// Fetch a [`radicle_source::Tree`].
@@ -177,6 +176,8 @@ async fn tree_handler(
         None,
         revision.clone().try_into().unwrap(),
     );
+    // Nb. Creating a `Revision` and setting it in the `tree` call seems to be redundant.
+    // We can remove this when we figure out what's the best way.
     let revision = Revision::<PeerId>::Sha {
         sha: revision.as_str().try_into().unwrap(),
     };
@@ -188,11 +189,7 @@ async fn tree_handler(
     Ok(warp::reply::json(&tree))
 }
 
-pub async fn browse<T, F>(
-    reference: Reference<Single>,
-    paths: Paths,
-    callback: F,
-) -> Result<T, Error>
+async fn browse<T, F>(reference: Reference<Single>, paths: Paths, callback: F) -> Result<T, Error>
 where
     F: FnOnce(&mut git::Browser) -> Result<T, radicle_source::Error> + Send,
 {
@@ -210,4 +207,37 @@ where
     let mut browser = git::Browser::new_with_namespace(&repo, &namespace, commit)?;
 
     Ok(callback(&mut browser)?)
+}
+
+fn project_info(urn: Urn, signer: signer::Signer, paths: Paths) -> Result<Info, Error> {
+    let storage = Storage::open(&paths, signer)?;
+    let project = identities::project::get(&storage, &urn)?.ok_or(Error::NotFound)?;
+
+    let remote = project
+        .delegations()
+        .iter()
+        .flat_map(|either| match either {
+            Either::Left(pk) => Either::Left(std::iter::once(PeerId::from(*pk))),
+            Either::Right(indirect) => {
+                Either::Right(indirect.delegations().iter().map(|pk| PeerId::from(*pk)))
+            }
+        })
+        .next()
+        .ok_or(Error::MissingDelegations)?;
+
+    let meta: project::Metadata = project.try_into()?;
+    let repo = git::Repository::new(paths.git_dir().to_owned())?;
+    let namespace = git::namespace::Namespace::try_from(urn.encode_id().as_str())?;
+    let branch = git::Branch::remote(
+        &format!("heads/{}", meta.default_branch),
+        &remote.default_encoding(),
+    );
+    let browser = git::Browser::new_with_namespace(&repo, &namespace, branch)?;
+    let history = browser.get();
+    let head = history.first();
+
+    Ok(Info {
+        meta,
+        head: head.id.to_string(),
+    })
 }

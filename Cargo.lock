@@ -1913,6 +1913,7 @@ version = "0.1.0"
 dependencies = [
  "argh",
  "async-trait",
+ "either",
  "git2",
  "radicle-daemon",
  "radicle-keystore",

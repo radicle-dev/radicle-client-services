@@ -1,3 +1,4 @@
+#![allow(clippy::large_enum_variant)]
 use radicle_source::surf;
 
 /// Errors that may occur when interacting with [`librad::net::peer::Peer`].
@@ -15,13 +16,25 @@ pub enum Error {
     #[error("missing default branch in project")]
     MissingDefaultBranch,
 
-    /// The project does not have a readme.
-    #[error("missing readme in project")]
-    MissingReadme,
+    /// The project does not have delegations.
+    #[error("missing delegations in project")]
+    MissingDelegations,
+
+    /// The entity was not found.
+    #[error("entity not found")]
+    NotFound,
+
+    /// An error occured with radicle identities.
+    #[error(transparent)]
+    Identities(#[from] radicle_daemon::git::identities::Error),
 
     /// An error occured with radicle surf.
     #[error(transparent)]
     Surf(#[from] surf::git::error::Error),
+
+    /// An error occured with radicle storage.
+    #[error(transparent)]
+    Storage(#[from] radicle_daemon::git::storage::Error),
 
     /// An error occured with radicle source.
     #[error(transparent)]
