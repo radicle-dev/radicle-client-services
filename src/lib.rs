@@ -7,9 +7,12 @@ use std::convert::TryInto as _;
 use std::net;
 use std::path::PathBuf;
 
-use either::Either;
+use warp::hyper::StatusCode;
+use warp::reply;
 use warp::reply::Json;
 use warp::{self, filters::BoxedFilter, path, Filter, Rejection, Reply};
+
+use either::Either;
 
 use radicle_daemon::librad::git::identities;
 use radicle_daemon::librad::git::storage::Storage;
@@ -44,10 +47,25 @@ pub async fn run(options: Options) {
     let api = path("v1")
         .and(path("projects"))
         .and(filters(ctx))
+        .recover(recover)
         .with(warp::cors().allow_any_origin())
         .with(warp::log("http::api"));
 
     warp::serve(api).run(options.listen).await
+}
+
+async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible> {
+    let (status, res) = if err.is_not_found() {
+        (StatusCode::NOT_FOUND, reply::json(&["error"]))
+    } else {
+        (StatusCode::BAD_REQUEST, reply::json(&["error"]))
+    };
+
+    Ok(reply::with_header(
+        reply::with_status(res, status),
+        "Content-Type",
+        "application/json",
+    ))
 }
 
 /// Combination of all source filters.
