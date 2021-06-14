@@ -31,19 +31,25 @@ pub struct Options {
     pub root: PathBuf,
     pub listen: net::SocketAddr,
     pub peer_id: PeerId,
+    pub theme: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct Context {
     paths: Paths,
     signer: signer::Signer,
+    theme: String,
 }
 
 /// Run the HTTP API.
 pub async fn run(options: Options) {
     let paths = Paths::from_root(options.root).unwrap();
     let signer = signer::Signer::new(options.peer_id);
-    let ctx = Context { paths, signer };
+    let ctx = Context {
+        paths,
+        signer,
+        theme: options.theme,
+    };
     let api = path("v1")
         .and(path("projects"))
         .and(filters(ctx))
@@ -79,11 +85,17 @@ fn filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
 
 /// `GET /:project/blob/:revision/:path`
 fn blob_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    #[derive(serde::Deserialize)]
+    struct Query {
+        highlight: bool,
+    }
+
     warp::get()
         .map(move || ctx.clone())
         .and(path::param::<Urn>())
         .and(path("blob"))
         .and(path::param::<String>())
+        .and(warp::query().map(|q: Query| q.highlight))
         .and(path::tail())
         .and_then(blob_handler)
 }
@@ -124,16 +136,17 @@ async fn blob_handler(
     ctx: Context,
     project: Urn,
     revision: String,
+    highlight: bool,
     path: warp::filters::path::Tail,
 ) -> Result<impl Reply, Rejection> {
+    let theme = if highlight {
+        Some(ctx.theme.as_str())
+    } else {
+        None
+    };
     let reference = Reference::head(Namespace::from(project), None, revision.try_into().unwrap());
     let blob = browse(reference, ctx.paths, |browser| {
-        radicle_source::blob::highlighting::blob::<PeerId>(
-            browser,
-            None,
-            path.as_str(),
-            Some("base16-ocean.dark"),
-        )
+        radicle_source::blob::highlighting::blob::<PeerId>(browser, None, path.as_str(), theme)
     })
     .await
     .map_err(error::Error::from)?;
@@ -157,12 +170,9 @@ async fn readme_handler(
     ];
     let blob = browse(reference, ctx.paths, |browser| {
         for path in paths {
-            if let Ok(blob) = radicle_source::blob::highlighting::blob::<PeerId>(
-                browser,
-                None,
-                path,
-                Some("base16-ocean.dark"),
-            ) {
+            if let Ok(blob) =
+                radicle_source::blob::highlighting::blob::<PeerId>(browser, None, path, None)
+            {
                 return Ok(blob);
             }
         }

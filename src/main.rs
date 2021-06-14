@@ -20,6 +20,10 @@ pub struct Options {
     /// peer/device identifier (a.k.a Device ID)
     #[argh(option)]
     pub peer_id: PeerId,
+
+    /// syntax highlight theme
+    #[argh(option, default = r#"String::from("base16-ocean.dark")"#)]
+    pub theme: String,
 }
 
 impl Options {
@@ -34,6 +38,7 @@ impl From<Options> for api::Options {
             root: other.root,
             listen: other.listen,
             peer_id: other.peer_id,
+            theme: other.theme,
         }
     }
 }
