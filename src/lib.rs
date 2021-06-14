@@ -7,6 +7,7 @@ use std::convert::TryInto as _;
 use std::net;
 use std::path::PathBuf;
 
+use serde_json::json;
 use warp::hyper::StatusCode;
 use warp::reply;
 use warp::reply::Json;
@@ -209,12 +210,21 @@ async fn tree_handler(
     let revision = Revision::<PeerId>::Sha {
         sha: revision.as_str().try_into().unwrap(),
     };
-    let tree = browse(reference, ctx.paths, |mut browser| {
-        radicle_source::tree(&mut browser, Some(revision), Some(path.as_str().to_owned()))
+    let (tree, stats) = browse(reference, ctx.paths, |mut browser| {
+        Ok((
+            radicle_source::tree(&mut browser, Some(revision), Some(path.as_str().to_owned()))?,
+            browser.get_stats()?,
+        ))
     })
     .await?;
 
-    Ok(warp::reply::json(&tree))
+    let response = json!({
+        "path": &tree.path,
+        "entries": &tree.entries,
+        "info": &tree.info,
+        "stats": &stats,
+    });
+    Ok(warp::reply::json(&response))
 }
 
 async fn browse<T, F>(reference: Reference<Single>, paths: Paths, callback: F) -> Result<T, Error>

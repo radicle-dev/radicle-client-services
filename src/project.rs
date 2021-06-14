@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::error;
 
 /// Project info.
-#[derive(Deserialize, Serialize)]
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Info {
     /// Project head commit hash.
