@@ -36,6 +36,10 @@ pub enum Error {
     #[error(transparent)]
     Storage(#[from] radicle_daemon::git::storage::Error),
 
+    /// An error occured with initializing read-only storage.
+    #[error(transparent)]
+    Init(#[from] radicle_daemon::git::storage::read::error::Init),
+
     /// An error occured with radicle source.
     #[error(transparent)]
     Source(#[from] radicle_source::error::Error),

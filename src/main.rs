@@ -1,7 +1,6 @@
 use std::net;
 use std::path::PathBuf;
 
-use radicle_daemon::PeerId;
 use radicle_http_api as api;
 
 use argh::FromArgs;
@@ -16,10 +15,6 @@ pub struct Options {
     /// radicle root path, for key and git storage
     #[argh(option)]
     pub root: PathBuf,
-
-    /// peer/device identifier (a.k.a Device ID)
-    #[argh(option)]
-    pub peer_id: PeerId,
 
     /// syntax highlight theme
     #[argh(option, default = r#"String::from("base16-ocean.dark")"#)]
@@ -37,7 +32,6 @@ impl From<Options> for api::Options {
         Self {
             root: other.root,
             listen: other.listen,
-            peer_id: other.peer_id,
             theme: other.theme,
         }
     }

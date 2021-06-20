@@ -1,6 +1,5 @@
 mod error;
 mod project;
-mod signer;
 
 use std::convert::TryFrom as _;
 use std::convert::TryInto as _;
@@ -16,7 +15,7 @@ use warp::{self, filters::BoxedFilter, path, Filter, Rejection, Reply};
 use either::Either;
 
 use radicle_daemon::librad::git::identities;
-use radicle_daemon::librad::git::storage::Storage;
+use radicle_daemon::librad::git::storage::read::ReadOnly;
 use radicle_daemon::librad::git::types::{Reference, Single};
 use radicle_daemon::{git::types::Namespace, Paths, PeerId, Urn};
 use radicle_source::surf::file_system::Path;
@@ -31,24 +30,20 @@ use error::Error;
 pub struct Options {
     pub root: PathBuf,
     pub listen: net::SocketAddr,
-    pub peer_id: PeerId,
     pub theme: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct Context {
     paths: Paths,
-    signer: signer::Signer,
     theme: String,
 }
 
 /// Run the HTTP API.
 pub async fn run(options: Options) {
     let paths = Paths::from_root(options.root).unwrap();
-    let signer = signer::Signer::new(options.peer_id);
     let ctx = Context {
         paths,
-        signer,
         theme: options.theme,
     };
     let api = path("v1")
@@ -188,7 +183,7 @@ async fn readme_handler(
 }
 
 async fn project_handler(ctx: Context, urn: Urn) -> Result<Json, Rejection> {
-    let info = project_info(urn, ctx.signer, ctx.paths)?;
+    let info = project_info(urn, ctx.paths)?;
 
     Ok(warp::reply::json(&info))
 }
@@ -247,8 +242,8 @@ where
     Ok(callback(&mut browser)?)
 }
 
-fn project_info(urn: Urn, signer: signer::Signer, paths: Paths) -> Result<Info, Error> {
-    let storage = Storage::open(&paths, signer)?;
+fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
+    let storage = ReadOnly::open(&paths)?;
     let project = identities::project::get(&storage, &urn)?.ok_or(Error::NotFound)?;
 
     let remote = project
