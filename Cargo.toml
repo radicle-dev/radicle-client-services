@@ -1,4 +1,5 @@
 [workspace]
 members = [
-  "http-api"
+  "http-api",
+  "org-node",
 ]

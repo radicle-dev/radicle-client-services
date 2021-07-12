@@ -1,0 +1,12 @@
+query OrgAnchors($timestamp: BigInt!, $orgs: [ID]!) {
+    anchors(where: {
+        timestamp_gt: $timestamp,
+        org_in: $orgs,
+    }, orderBy: timestamp) {
+        id
+        timestamp
+        org { id }
+        objectId
+        tag
+    }
+}

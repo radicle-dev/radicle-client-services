@@ -1,0 +1,11 @@
+query AllAnchors($timestamp: BigInt!) {
+    anchors(where: {
+        timestamp_gt: $timestamp,
+    }, orderBy: timestamp) {
+        id
+        timestamp
+        org { id }
+        objectId
+        tag
+    }
+}

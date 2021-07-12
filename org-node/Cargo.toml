@@ -1,0 +1,16 @@
+[package]
+name = "radicle-org-node"
+license = "MIT OR Apache-2.0"
+version = "0.1.0"
+authors = ["Alexis Sellier <self@cloudhead.io>"]
+edition = "2018"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
+radicle-daemon = { version = "0.1.0", git = "https://github.com/radicle-dev/radicle-link", branch = "master" }
+thiserror = { version = "1" }
+argh = { version = "0.1.4" }
+tracing = "0.1"
+tracing-subscriber = "0.2"
+ureq = { version = "2.1.1", features = ["json"] }
