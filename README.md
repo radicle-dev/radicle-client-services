@@ -1,7 +1,3 @@
-# Radicle HTTP API
+# Radicle Client Services
 
-> ✨ Interact with Radicle, via HTTP.
-
-# Running
-
-    $ radicle-http-api --root ~/.radicle
+🏕️ Services backing the Radicle client interfaces.
