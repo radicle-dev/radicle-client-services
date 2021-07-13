@@ -60,7 +60,7 @@ fn parse_orgs(value: &str) -> Result<Vec<node::OrgId>, String> {
     if value.is_empty() {
         Ok(vec![])
     } else {
-        Ok(value.split(',').map(|s| s.to_owned()).collect())
+        Ok(value.split(',').map(|s| s.to_ascii_lowercase()).collect())
     }
 }
 

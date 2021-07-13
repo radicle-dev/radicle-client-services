@@ -75,7 +75,7 @@ pub fn run(options: Options) -> Result<(), io::Error> {
     loop {
         match query(&options.subgraph, store.state.timestamp, &options.orgs) {
             Ok(projects) => {
-                tracing::info!("found {} projects", projects.len());
+                tracing::info!("found {} project(s)", projects.len());
 
                 for project in projects {
                     tracing::debug!("{:?}", project);
