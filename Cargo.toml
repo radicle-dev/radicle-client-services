@@ -3,3 +3,7 @@ members = [
   "http-api",
   "org-node",
 ]
+
+[patch.crates-io.radicle-daemon]
+git = "https://github.com/radicle-dev/radicle-link"
+branch = "master"

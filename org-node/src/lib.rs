@@ -20,6 +20,9 @@ mod store;
 /// Approximates Ethereum block time.
 pub const DEFAULT_POLL_INTERVAL: time::Duration = time::Duration::from_secs(14);
 
+/// Org identifier (Ethereum address).
+pub type OrgId = String;
+
 #[derive(Debug, Clone)]
 pub struct Options {
     pub root: PathBuf,
@@ -27,6 +30,7 @@ pub struct Options {
     pub listen: net::SocketAddr,
     pub subgraph: String,
     pub poll_interval: time::Duration,
+    pub orgs: Vec<OrgId>,
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -41,7 +45,7 @@ struct Anchor {
 
 #[derive(serde::Deserialize, Debug)]
 struct Org {
-    id: String,
+    id: OrgId,
 }
 
 /// Run the Node.
@@ -60,11 +64,14 @@ pub fn run(options: Options) -> Result<(), io::Error> {
             store
         }
     };
+    tracing::info!("orgs = {:?}", options.orgs);
     tracing::info!("timestamp = {}", store.state.timestamp);
 
     loop {
-        match query(&options.subgraph, store.state.timestamp, &[]) {
+        match query(&options.subgraph, store.state.timestamp, &options.orgs) {
             Ok(anchors) => {
+                tracing::info!("found {} anchors", anchors.len());
+
                 for anchor in anchors {
                     if anchor.timestamp > store.state.timestamp {
                         tracing::info!("timestamp = {}", anchor.timestamp);
@@ -85,7 +92,7 @@ pub fn run(options: Options) -> Result<(), io::Error> {
     }
 }
 
-fn query(subgraph: &str, timestamp: u64, orgs: &[&str]) -> Result<Vec<Anchor>, ureq::Error> {
+fn query(subgraph: &str, timestamp: u64, orgs: &[OrgId]) -> Result<Vec<Anchor>, ureq::Error> {
     let query = if orgs.is_empty() {
         ureq::json!({
             "query": query::ALL_ANCHORS,

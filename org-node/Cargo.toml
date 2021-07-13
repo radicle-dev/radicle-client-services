@@ -8,7 +8,7 @@ edition = "2018"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
-radicle-daemon = { version = "0.1.0", git = "https://github.com/radicle-dev/radicle-link", branch = "master" }
+radicle-daemon = { version = "0.1" }
 thiserror = { version = "1" }
 argh = { version = "0.1.4" }
 tracing = "0.1"

@@ -11,7 +11,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 serde_urlencoded = { version = "0.7.0" }
 radicle-source = { version = "0.2.0", features = ["syntax"] }
-radicle-daemon = { version = "0.1.0", git = "https://github.com/radicle-dev/radicle-link", branch = "master" }
+radicle-daemon = { version = "0.1.0" }
 radicle-keystore = { version = "0.1.1" }
 thiserror = { version = "1" }
 git2 = { version = "0.13", default-features = false, features = [] }

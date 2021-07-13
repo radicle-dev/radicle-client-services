@@ -28,6 +28,10 @@ pub struct Options {
     /// poll interval for subgraph updates (seconds)
     #[argh(option)]
     pub poll_interval: Option<u64>,
+
+    /// org addresses to watch, ','-delimited (default: all)
+    #[argh(option, from_str_fn(parse_orgs))]
+    pub orgs: Option<Vec<node::OrgId>>,
 }
 
 impl Options {
@@ -47,7 +51,16 @@ impl From<Options> for node::Options {
                 .poll_interval
                 .map(time::Duration::from_secs)
                 .unwrap_or(node::DEFAULT_POLL_INTERVAL),
+            orgs: other.orgs.unwrap_or_default(),
         }
+    }
+}
+
+fn parse_orgs(value: &str) -> Result<Vec<node::OrgId>, String> {
+    if value.is_empty() {
+        Ok(vec![])
+    } else {
+        Ok(value.split(',').map(|s| s.to_owned()).collect())
     }
 }
 
