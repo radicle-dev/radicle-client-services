@@ -1,11 +1,9 @@
-query AllAnchors($timestamp: BigInt!) {
-    anchors(where: {
+query AllProjects($timestamp: BigInt!) {
+    projects(where: {
         timestamp_gt: $timestamp,
     }, orderBy: timestamp) {
-        id
         timestamp
         org { id }
-        objectId
-        tag
+        anchor { objectId, multihash }
     }
 }

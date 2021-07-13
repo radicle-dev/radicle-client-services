@@ -1,2 +1,2 @@
-pub const ALL_ANCHORS: &str = include_str!("graphql/AllAnchors.gql");
-pub const ORG_ANCHORS: &str = include_str!("graphql/OrgAnchors.gql");
+pub const ALL_PROJECTS: &str = include_str!("graphql/AllProjects.gql");
+pub const ORG_PROJECTS: &str = include_str!("graphql/OrgProjects.gql");

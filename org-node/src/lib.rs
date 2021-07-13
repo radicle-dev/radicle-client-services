@@ -34,13 +34,18 @@ pub struct Options {
 }
 
 #[derive(serde::Deserialize, Debug)]
-struct Anchor {
-    id: String,
-    #[serde(rename(deserialize = "objectId"))]
-    object_id: String,
+struct Project {
     #[serde(deserialize_with = "self::deserialize_timestamp")]
     timestamp: u64,
+    anchor: Anchor,
     org: Org,
+}
+
+#[derive(serde::Deserialize, Debug)]
+struct Anchor {
+    #[serde(rename(deserialize = "objectId"))]
+    object_id: String,
+    multihash: String,
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -69,14 +74,16 @@ pub fn run(options: Options) -> Result<(), io::Error> {
 
     loop {
         match query(&options.subgraph, store.state.timestamp, &options.orgs) {
-            Ok(anchors) => {
-                tracing::info!("found {} anchors", anchors.len());
+            Ok(projects) => {
+                tracing::info!("found {} projects", projects.len());
 
-                for anchor in anchors {
-                    if anchor.timestamp > store.state.timestamp {
-                        tracing::info!("timestamp = {}", anchor.timestamp);
+                for project in projects {
+                    tracing::debug!("{:?}", project);
 
-                        store.state.timestamp = anchor.timestamp;
+                    if project.timestamp > store.state.timestamp {
+                        tracing::info!("timestamp = {}", project.timestamp);
+
+                        store.state.timestamp = project.timestamp;
                         store.write()?;
                     }
                 }
@@ -92,15 +99,15 @@ pub fn run(options: Options) -> Result<(), io::Error> {
     }
 }
 
-fn query(subgraph: &str, timestamp: u64, orgs: &[OrgId]) -> Result<Vec<Anchor>, ureq::Error> {
+fn query(subgraph: &str, timestamp: u64, orgs: &[OrgId]) -> Result<Vec<Project>, ureq::Error> {
     let query = if orgs.is_empty() {
         ureq::json!({
-            "query": query::ALL_ANCHORS,
+            "query": query::ALL_PROJECTS,
             "variables": { "timestamp": timestamp }
         })
     } else {
         ureq::json!({
-            "query": query::ORG_ANCHORS,
+            "query": query::ORG_PROJECTS,
             "variables": {
                 "timestamp": timestamp,
                 "orgs": orgs,
@@ -108,7 +115,7 @@ fn query(subgraph: &str, timestamp: u64, orgs: &[OrgId]) -> Result<Vec<Anchor>, 
         })
     };
     let response: serde_json::Value = ureq::post(subgraph).send_json(query)?.into_json()?;
-    let response = &response["data"]["anchors"];
+    let response = &response["data"]["projects"];
     let anchors = serde_json::from_value(response.clone()).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
