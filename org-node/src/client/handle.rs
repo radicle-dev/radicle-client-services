@@ -68,7 +68,7 @@ impl Handle {
     ) -> Result<Result<PeerId, TrackProjectError>, Error> {
         let (tx, rx) = oneshot::channel();
         self.channel
-            .try_send(Request::TrackProject(urn, tx))
+            .try_send(Request::TrackProject(urn, self.timeout * 2, tx))
             .map_err(Error::SendFailed)?;
 
         time::timeout(self.timeout, rx).await?.map_err(Error::from)
@@ -83,7 +83,11 @@ pub enum Request {
     /// Get connected peers.
     GetPeers(oneshot::Sender<Vec<PeerId>>),
     /// Track a project
-    TrackProject(Urn, oneshot::Sender<Result<PeerId, TrackProjectError>>),
+    TrackProject(
+        Urn,
+        std::time::Duration,
+        oneshot::Sender<Result<PeerId, TrackProjectError>>,
+    ),
 }
 
 /// Error when using the [`Request::TrackProject`] request.

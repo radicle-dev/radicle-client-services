@@ -228,8 +228,8 @@ impl Client {
                     .send(peers)
                     .map_err(|_| Error::Reply("GetPeers".to_string()))
             }
-            Request::TrackProject(urn, reply) => {
-                let mut peers = api.providers(urn.clone(), Duration::from_secs(30));
+            Request::TrackProject(urn, timeout, reply) => {
+                let mut peers = api.providers(urn.clone(), timeout);
 
                 // Attempt to track until we succeed.
                 while let Some(peer) = peers.next().await {
