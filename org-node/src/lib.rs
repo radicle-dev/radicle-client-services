@@ -35,6 +35,7 @@ pub struct Options {
     pub root: PathBuf,
     pub store: PathBuf,
     pub identity: PathBuf,
+    pub bootstrap: Vec<(PeerId, net::SocketAddr)>,
     pub listen: net::SocketAddr,
     pub subgraph: String,
     pub poll_interval: time::Duration,
@@ -121,6 +122,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
         signer,
         client::Config {
             listen: options.listen,
+            bootstrap: options.bootstrap,
             ..client::Config::default()
         },
     );
