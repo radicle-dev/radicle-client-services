@@ -67,7 +67,7 @@ impl Project {
 
         let mut hex = self.anchor.object_id.as_str();
 
-        if hex.starts_with("0x") && hex.len() % 2 != 0 {
+        if hex.starts_with("0x") {
             hex = &hex[2..];
         } else {
             return Err(ParseUrnError::Invalid(hex.to_owned()));
@@ -77,7 +77,14 @@ impl Project {
             .step_by(2)
             .map(|i| u8::from_str_radix(&hex[i..i + 2], 16))
             .collect::<Result<Vec<_>, _>>()?;
-        let id = bytes.as_slice().try_into()?;
+
+        // In Ethereum, the ID is stored as a `bytes32`.
+        if bytes.len() != 32 {
+            return Err(ParseUrnError::Invalid(hex.to_owned()));
+        }
+        // We only use the last 20 bytes for Git hashes (SHA-1).
+        let bytes = &bytes[bytes.len() - 20..];
+        let id = bytes.try_into()?;
 
         Ok(Urn { id, path: None })
     }
@@ -151,11 +158,12 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
                 for project in projects {
                     tracing::debug!("{:?}", project);
 
-                    let urn = if let Ok(urn) = project.urn() {
-                        urn
-                    } else {
-                        tracing::error!("Invalid project URN for project {:?}", project);
-                        continue;
+                    let urn = match project.urn() {
+                        Ok(urn) => urn,
+                        Err(err) => {
+                            tracing::error!("Invalid URN for project: {}", err);
+                            continue;
+                        }
                     };
 
                     match futures::executor::block_on(handle.track_project(urn))? {
