@@ -6,9 +6,16 @@ authors = ["Alexis Sellier <self@cloudhead.io>"]
 edition = "2018"
 
 [dependencies]
+async-trait = { version = "0.1" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
+git2 = { version = "0.13", default-features = false }
 radicle-daemon = { version = "0.1" }
+radicle-keystore = { version = "0" }
+librad = { version = "0" }
+tokio = { version = "1", features = ["time"] }
+tokio-stream = { version = "0.1", default-features = false }
+futures = { version = "0.3" }
 thiserror = { version = "1" }
 argh = { version = "0.1.4" }
 tracing = "0.1"

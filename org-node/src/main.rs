@@ -29,6 +29,10 @@ pub struct Options {
     #[argh(option)]
     pub poll_interval: Option<u64>,
 
+    /// node identity file path
+    #[argh(option)]
+    pub identity: PathBuf,
+
     /// org addresses to watch, ','-delimited (default: all)
     #[argh(option, from_str_fn(parse_orgs))]
     pub orgs: Option<Vec<node::OrgId>>,
@@ -51,6 +55,7 @@ impl From<Options> for node::Options {
                 .poll_interval
                 .map(time::Duration::from_secs)
                 .unwrap_or(node::DEFAULT_POLL_INTERVAL),
+            identity: other.identity,
             orgs: other.orgs.unwrap_or_default(),
         }
     }
@@ -65,7 +70,13 @@ fn parse_orgs(value: &str) -> Result<Vec<node::OrgId>, String> {
 }
 
 fn main() {
-    let options = Options::from_env();
     tracing_subscriber::fmt::init();
-    node::run(options.into()).unwrap();
+
+    let options = Options::from_env();
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    node::run(rt, options.into()).unwrap();
 }

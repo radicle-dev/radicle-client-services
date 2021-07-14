@@ -4,6 +4,14 @@ members = [
   "org-node",
 ]
 
+[patch.crates-io.radicle-keystore]
+git = "https://github.com/radicle-dev/radicle-keystore"
+branch = "master"
+
 [patch.crates-io.radicle-daemon]
+git = "https://github.com/radicle-dev/radicle-link"
+branch = "master"
+
+[patch.crates-io.librad]
 git = "https://github.com/radicle-dev/radicle-link"
 branch = "master"

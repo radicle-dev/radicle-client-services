@@ -6,15 +6,22 @@
 /// The org node can be configured to listen to any number of orgs, or *all*
 /// orgs.
 use radicle_daemon::Paths;
+use thiserror::Error;
 
+use std::fs::File;
 use std::io;
 use std::net;
 use std::path::PathBuf;
 use std::thread;
 use std::time;
 
+mod client;
 mod query;
 mod store;
+
+pub use client::PeerId;
+
+use client::{Client, Urn};
 
 /// Default time to wait between polls of the subgraph.
 /// Approximates Ethereum block time.
@@ -27,6 +34,7 @@ pub type OrgId = String;
 pub struct Options {
     pub root: PathBuf,
     pub store: PathBuf,
+    pub identity: PathBuf,
     pub listen: net::SocketAddr,
     pub subgraph: String,
     pub poll_interval: time::Duration,
@@ -41,6 +49,39 @@ struct Project {
     org: Org,
 }
 
+/// Error parsing a Radicle URN.
+#[derive(Error, Debug)]
+enum ParseUrnError {
+    #[error("invalid hex string: {0}")]
+    Invalid(String),
+    #[error(transparent)]
+    Int(#[from] std::num::ParseIntError),
+    #[error(transparent)]
+    Git(#[from] git2::Error),
+}
+
+impl Project {
+    fn urn(&self) -> Result<Urn, ParseUrnError> {
+        use std::convert::TryInto;
+
+        let mut hex = self.anchor.object_id.as_str();
+
+        if hex.starts_with("0x") && hex.len() % 2 != 0 {
+            hex = &hex[2..];
+        } else {
+            return Err(ParseUrnError::Invalid(hex.to_owned()));
+        }
+
+        let bytes = (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16))
+            .collect::<Result<Vec<_>, _>>()?;
+        let id = bytes.as_slice().try_into()?;
+
+        Ok(Urn { id, path: None })
+    }
+}
+
 #[derive(serde::Deserialize, Debug)]
 struct Anchor {
     #[serde(rename(deserialize = "objectId"))]
@@ -53,24 +94,47 @@ struct Org {
     id: OrgId,
 }
 
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+
+    #[error(transparent)]
+    Handle(#[from] client::handle::Error),
+}
+
 /// Run the Node.
-pub fn run(options: Options) -> Result<(), io::Error> {
-    let _paths = Paths::from_root(options.root).unwrap();
+pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
+    let paths = Paths::from_root(options.root).unwrap();
+    let identity = File::open(options.identity)?;
+    let signer = client::Signer::new(identity)?;
+    let client = Client::new(
+        paths,
+        signer,
+        client::Config {
+            listen: options.listen,
+            ..client::Config::default()
+        },
+    );
+    let mut handle = client.handle();
     let mut store = match store::Store::create(&options.store) {
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
             tracing::info!("Found existing store {:?}", options.store);
             store::Store::open(&options.store)?
         }
         Err(err) => {
-            return Err(err);
+            return Err(err.into());
         }
         Ok(store) => {
             tracing::info!("Initializing new store {:?}", options.store);
             store
         }
     };
-    tracing::info!("orgs = {:?}", options.orgs);
-    tracing::info!("timestamp = {}", store.state.timestamp);
+    tracing::info!("Orgs = {:?}", options.orgs);
+    tracing::info!("Timestamp = {}", store.state.timestamp);
+    tracing::info!("Starting protocol client..");
+
+    rt.spawn(client.run());
 
     loop {
         match query(&options.subgraph, store.state.timestamp, &options.orgs) {
@@ -80,8 +144,24 @@ pub fn run(options: Options) -> Result<(), io::Error> {
                 for project in projects {
                     tracing::debug!("{:?}", project);
 
+                    let urn = if let Ok(urn) = project.urn() {
+                        urn
+                    } else {
+                        tracing::error!("Invalid project URN for project {:?}", project);
+                        continue;
+                    };
+
+                    match futures::executor::block_on(handle.track_project(urn))? {
+                        Ok(peer_id) => {
+                            tracing::debug!("Project {:?} fetched from {}", project.urn(), peer_id);
+                        }
+                        Err(client::TrackProjectError::NotFound) => {
+                            tracing::debug!("Project {:?} was not found", project.urn());
+                        }
+                    }
+
                     if project.timestamp > store.state.timestamp {
-                        tracing::info!("timestamp = {}", project.timestamp);
+                        tracing::info!("Timestamp = {}", project.timestamp);
 
                         store.state.timestamp = project.timestamp;
                         store.write()?;
