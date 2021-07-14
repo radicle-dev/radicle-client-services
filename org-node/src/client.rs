@@ -139,7 +139,7 @@ impl Client {
     }
 
     /// Run the client. This function runs indefinitely until a fatal error occurs.
-    pub async fn run(self) -> Result<(), Error> {
+    pub async fn run(self, rt: tokio::runtime::Handle) {
         let storage = peer::config::Storage {
             protocol: peer::config::ProtocolStorage {
                 fetch_slot_wait_timeout: Default::default(),
@@ -163,33 +163,34 @@ impl Client {
             },
             storage,
         };
-        let peer = Peer::new(peer_config)?;
+        let peer = Peer::new(peer_config).unwrap();
         let mut requests = ReceiverStream::new(self.requests).fuse();
 
         // Spawn the peer thread.
-        let mut protocol = tokio::spawn({
-            let peer = peer.clone();
-            let disco = discovery::Static::resolve(self.config.bootstrap.clone())?;
+        let mut protocol = rt
+            .spawn({
+                let peer = peer.clone();
+                let disco = discovery::Static::resolve(self.config.bootstrap.clone()).unwrap();
 
-            async move {
-                loop {
-                    match peer.bind().await {
-                        Ok(bound) => {
-                            let (_kill, run) = bound.accept(disco.clone().discover());
+                async move {
+                    loop {
+                        match peer.bind().await {
+                            Ok(bound) => {
+                                let (_kill, run) = bound.accept(disco.clone().discover());
 
-                            if let Err(e) = run.await {
-                                tracing::error!(err = ?e, "Accept error")
+                                if let Err(e) = run.await {
+                                    tracing::error!(err = ?e, "Accept error")
+                                }
                             }
-                        }
-                        Err(e) => {
-                            tracing::error!(err = ?e, "Bind error");
-                            tokio::time::sleep(Duration::from_secs(2)).await
+                            Err(e) => {
+                                tracing::error!(err = ?e, "Bind error");
+                                tokio::time::sleep(Duration::from_secs(2)).await
+                            }
                         }
                     }
                 }
-            }
-        })
-        .fuse();
+            })
+            .fuse();
 
         loop {
             select! {
@@ -201,7 +202,7 @@ impl Client {
                     if let Some(r) = request {
                         let peer = peer.clone();
 
-                        tokio::spawn(async move {
+                       rt.spawn(async move {
                             if let Err(err) = Client::handle_request(r, &peer).await {
                                 tracing::error!(err = ?err, "Request fulfilment failed");
                             }
@@ -210,8 +211,6 @@ impl Client {
                 }
             }
         }
-
-        Ok(())
     }
 
     /// Handle user requests.

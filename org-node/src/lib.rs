@@ -148,7 +148,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
     tracing::info!("Timestamp = {}", store.state.timestamp);
     tracing::info!("Starting protocol client..");
 
-    rt.spawn(client.run());
+    rt.spawn(client.run(rt.handle().clone()));
 
     loop {
         match query(&options.subgraph, store.state.timestamp, &options.orgs) {
