@@ -166,7 +166,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
                         }
                     };
 
-                    match futures::executor::block_on(handle.track_project(urn))? {
+                    match rt.block_on(handle.track_project(urn))? {
                         Ok(peer_id) => {
                             tracing::debug!("Project {:?} fetched from {}", project.urn(), peer_id);
                         }
