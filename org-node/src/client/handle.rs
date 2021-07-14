@@ -19,8 +19,8 @@ pub enum Error {
     ReceiveFailed(#[from] oneshot::error::RecvError),
 
     /// Failed to send request to backend.
-    #[error("send failed")]
-    SendFailed,
+    #[error("send failed {0}")]
+    SendFailed(mpsc::error::TrySendError<Request>),
 
     /// Request timed out awaiting response.
     #[error("request timed out")]
@@ -45,7 +45,7 @@ impl Handle {
         let (tx, rx) = oneshot::channel();
         self.channel
             .try_send(Request::GetMembership(tx))
-            .map_err(|_| Error::SendFailed)?;
+            .map_err(|e| Error::SendFailed(e))?;
 
         time::timeout(self.timeout, rx).await?.map_err(Error::from)
     }
@@ -56,7 +56,7 @@ impl Handle {
         let (tx, rx) = oneshot::channel();
         self.channel
             .try_send(Request::GetPeers(tx))
-            .map_err(|_| Error::SendFailed)?;
+            .map_err(|e| Error::SendFailed(e))?;
 
         time::timeout(self.timeout, rx).await?.map_err(Error::from)
     }
@@ -69,13 +69,14 @@ impl Handle {
         let (tx, rx) = oneshot::channel();
         self.channel
             .try_send(Request::TrackProject(urn, tx))
-            .map_err(|_| Error::SendFailed)?;
+            .map_err(|e| Error::SendFailed(e))?;
 
         time::timeout(self.timeout, rx).await?.map_err(Error::from)
     }
 }
 
 /// User request to the seed node.
+#[derive(Debug)]
 pub enum Request {
     /// Get current membership info.
     GetMembership(oneshot::Sender<MembershipInfo>),
