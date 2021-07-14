@@ -1,10 +1,10 @@
-/// # Org Node
-///
-/// The purpose of the org node is to listen for on-chain anchor events and
-/// start replicating the associated radicle projects.
-///
-/// The org node can be configured to listen to any number of orgs, or *all*
-/// orgs.
+//! # Org Node
+//!
+//! The purpose of the org node is to listen for on-chain anchor events and
+//! start replicating the associated radicle projects.
+//!
+//! The org node can be configured to listen to any number of orgs, or *all*
+//! orgs.
 use radicle_daemon::Paths;
 use thiserror::Error;
 
@@ -165,15 +165,15 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
     loop {
         match query(&options.subgraph, store.state.timestamp, &options.orgs) {
             Ok(projects) => {
-                tracing::info!("found {} project(s)", projects.len());
+                tracing::info!(target: "org-node", "Found {} project(s)", projects.len());
 
                 for project in projects {
-                    tracing::debug!("{:?}", project);
+                    tracing::debug!(target: "org-node", "{:?}", project);
 
                     let urn = match project.urn() {
                         Ok(urn) => urn,
                         Err(err) => {
-                            tracing::error!("Invalid URN for project: {}", err);
+                            tracing::error!(target: "org-node", "Invalid URN for project: {}", err);
                             continue;
                         }
                     };
@@ -182,7 +182,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
                     work.blocking_send(urn)?;
 
                     if project.timestamp > store.state.timestamp {
-                        tracing::info!("Timestamp = {}", project.timestamp);
+                        tracing::info!(target: "org-node", "Timestamp = {}", project.timestamp);
 
                         store.state.timestamp = project.timestamp;
                         store.write()?;
@@ -190,10 +190,10 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
                 }
             }
             Err(ureq::Error::Transport(err)) => {
-                tracing::error!("query failed: {}", err);
+                tracing::error!(target: "org-node", "Query failed: {}", err);
             }
             Err(err) => {
-                tracing::error!("{}", err);
+                tracing::error!(target: "org-node", "{}", err);
             }
         }
         thread::sleep(options.poll_interval);
