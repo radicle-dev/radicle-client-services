@@ -33,6 +33,10 @@ pub struct Options {
     #[argh(option)]
     pub identity: PathBuf,
 
+    /// start syncing from a given unix timestamp (seconds)
+    #[argh(option)]
+    pub timestamp: Option<u64>,
+
     /// org addresses to watch, ','-delimited (default: all)
     #[argh(option, from_str_fn(parse_orgs))]
     pub orgs: Option<Vec<node::OrgId>>,
@@ -56,6 +60,7 @@ impl From<Options> for node::Options {
                 .map(time::Duration::from_secs)
                 .unwrap_or(node::DEFAULT_POLL_INTERVAL),
             identity: other.identity,
+            timestamp: other.timestamp,
             orgs: other.orgs.unwrap_or_default(),
         }
     }

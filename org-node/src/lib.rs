@@ -39,6 +39,7 @@ pub struct Options {
     pub subgraph: String,
     pub poll_interval: time::Duration,
     pub orgs: Vec<OrgId>,
+    pub timestamp: Option<u64>,
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -130,6 +131,12 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
             store
         }
     };
+
+    if let Some(timestamp) = options.timestamp {
+        store.state.timestamp = timestamp;
+        store.write()?;
+    }
+
     tracing::info!("Orgs = {:?}", options.orgs);
     tracing::info!("Timestamp = {}", store.state.timestamp);
     tracing::info!("Starting protocol client..");
