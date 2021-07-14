@@ -17,9 +17,9 @@ use librad::{
     paths::Paths,
 };
 
-use crate::client::handle::{Handle, Request};
+use crate::client::handle::Request;
 
-pub use handle::TrackProjectError;
+pub use handle::{Handle, TrackProjectError};
 pub use librad::git::identities::Urn;
 pub use librad::peer::PeerId;
 pub use signer::Signer;

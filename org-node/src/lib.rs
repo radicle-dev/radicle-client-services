@@ -8,6 +8,9 @@
 use radicle_daemon::Paths;
 use thiserror::Error;
 
+use tokio::sync::mpsc;
+
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io;
 use std::net;
@@ -110,6 +113,9 @@ pub enum Error {
 
     #[error("client request failed: {0}")]
     Handle(#[from] client::handle::Error),
+
+    #[error(transparent)]
+    Channel(#[from] mpsc::error::SendError<Urn>),
 }
 
 /// Run the Node.
@@ -126,7 +132,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
             ..client::Config::default()
         },
     );
-    let mut handle = client.handle();
+    let handle = client.handle();
     let mut store = match store::Store::create(&options.store) {
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
             tracing::info!("Found existing store {:?}", options.store);
@@ -146,11 +152,15 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
         store.write()?;
     }
 
-    tracing::info!("Orgs = {:?}", options.orgs);
-    tracing::info!("Timestamp = {}", store.state.timestamp);
-    tracing::info!("Starting protocol client..");
+    tracing::info!(target: "org-node", "Orgs = {:?}", options.orgs);
+    tracing::info!(target: "org-node", "Timestamp = {}", store.state.timestamp);
+    tracing::info!(target: "org-node", "Starting protocol client..");
+
+    // Queue of projects to track.
+    let (work, queue) = mpsc::channel(256);
 
     rt.spawn(client.run(rt.handle().clone()));
+    rt.spawn(track_projects(handle, queue));
 
     loop {
         match query(&options.subgraph, store.state.timestamp, &options.orgs) {
@@ -168,17 +178,8 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
                         }
                     };
 
-                    match rt
-                        .block_on(handle.track_project(urn))
-                        .map_err(Error::Handle)?
-                    {
-                        Ok(peer_id) => {
-                            tracing::debug!("Project {:?} fetched from {}", project.urn(), peer_id);
-                        }
-                        Err(client::TrackProjectError::NotFound) => {
-                            tracing::debug!("Project {:?} was not found", project.urn());
-                        }
-                    }
+                    tracing::info!(target: "org-node", "Queueing {}", urn);
+                    work.blocking_send(urn)?;
 
                     if project.timestamp > store.state.timestamp {
                         tracing::info!("Timestamp = {}", project.timestamp);
@@ -199,6 +200,8 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
     }
 }
 
+/// Get projects updated or created since the given timestamp, from the given orgs.
+/// If no org is specified, gets projects from *all* orgs.
 fn query(subgraph: &str, timestamp: u64, orgs: &[OrgId]) -> Result<Vec<Project>, ureq::Error> {
     let query = if orgs.is_empty() {
         ureq::json!({
@@ -236,4 +239,69 @@ where
     let buf = String::deserialize(deserializer)?;
 
     u64::from_str(&buf).map_err(serde::de::Error::custom)
+}
+
+/// Track projects sent via the queue.
+///
+/// This function only returns if the channels it uses to communicate with other
+/// tasks are closed.
+async fn track_projects(mut handle: client::Handle, mut queue: mpsc::Receiver<Urn>) {
+    // URNs to track are added to the back of this queue, and taken from the front.
+    let mut work = VecDeque::new();
+
+    loop {
+        // Drain ascynchronous tracking queue, moving URNs to work queue.
+        // This ensures that we aren't only retrying existing URNs that have timed out
+        // and have been added back to the work queue.
+        loop {
+            tokio::select! {
+                result = queue.recv() => {
+                    match result {
+                        Some(urn) => work.push_back(urn),
+                        None => {
+                            tracing::warn!(target: "org-node", "Tracking channel closed, exiting task");
+                            return;
+                        }
+                    }
+                }
+                else => {
+                    break;
+                }
+            }
+        }
+
+        // If we have something to work on now, work on it, otherwise block on the
+        // async tracking queue. We do this to avoid spin-looping, since the queue
+        // is drained without blocking.
+        let urn = if let Some(front) = work.pop_front() {
+            front
+        } else if let Some(urn) = queue.recv().await {
+            urn
+        } else {
+            // This only happens if the tracking queue was closed from another task.
+            // In this case we expect the condition to be caught in the next iteration.
+            continue;
+        };
+
+        // If we fail to track, re-add the URN to the back of the queue.
+        match handle.track_project(urn.clone()).await {
+            Ok(reply) => match reply {
+                Ok(peer_id) => {
+                    tracing::info!(target: "org-node", "Project {} fetched from {}", urn, peer_id);
+                }
+                Err(client::TrackProjectError::NotFound) => {
+                    tracing::info!(target: "org-node", "Project {} was not found", urn);
+                    work.push_back(urn);
+                }
+            },
+            Err(client::handle::Error::Timeout(err)) => {
+                tracing::info!(target: "org-node", "Project {} tracking timed out: {}", urn, err);
+                work.push_back(urn);
+            }
+            Err(err) => {
+                tracing::warn!(target: "org-node", "Tracking handle failed, exiting task ({})", err);
+                return;
+            }
+        }
+    }
 }
