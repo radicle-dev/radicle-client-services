@@ -45,7 +45,7 @@ impl Handle {
         let (tx, rx) = oneshot::channel();
         self.channel
             .try_send(Request::GetMembership(tx))
-            .map_err(|e| Error::SendFailed(e))?;
+            .map_err(Error::SendFailed)?;
 
         time::timeout(self.timeout, rx).await?.map_err(Error::from)
     }
@@ -56,7 +56,7 @@ impl Handle {
         let (tx, rx) = oneshot::channel();
         self.channel
             .try_send(Request::GetPeers(tx))
-            .map_err(|e| Error::SendFailed(e))?;
+            .map_err(Error::SendFailed)?;
 
         time::timeout(self.timeout, rx).await?.map_err(Error::from)
     }
@@ -69,7 +69,7 @@ impl Handle {
         let (tx, rx) = oneshot::channel();
         self.channel
             .try_send(Request::TrackProject(urn, tx))
-            .map_err(|e| Error::SendFailed(e))?;
+            .map_err(Error::SendFailed)?;
 
         time::timeout(self.timeout, rx).await?.map_err(Error::from)
     }
