@@ -108,7 +108,7 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] io::Error),
 
-    #[error(transparent)]
+    #[error("client request failed: {0}")]
     Handle(#[from] client::handle::Error),
 }
 
@@ -168,7 +168,10 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
                         }
                     };
 
-                    match rt.block_on(handle.track_project(urn))? {
+                    match rt
+                        .block_on(handle.track_project(urn))
+                        .map_err(Error::Handle)?
+                    {
                         Ok(peer_id) => {
                             tracing::debug!("Project {:?} fetched from {}", project.urn(), peer_id);
                         }

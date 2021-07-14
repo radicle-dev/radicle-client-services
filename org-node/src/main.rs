@@ -112,5 +112,8 @@ fn main() {
         .build()
         .unwrap();
 
-    node::run(rt, options.into()).unwrap();
+    if let Err(e) = node::run(rt, options.into()) {
+        tracing::error!("Exiting: {}", e);
+        std::process::exit(1);
+    }
 }

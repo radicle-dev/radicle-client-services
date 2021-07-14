@@ -68,7 +68,7 @@ impl Handle {
     ) -> Result<Result<PeerId, TrackProjectError>, Error> {
         let (tx, rx) = oneshot::channel();
         self.channel
-            .try_send(Request::TrackProject(urn, self.timeout * 2, tx))
+            .try_send(Request::TrackProject(urn, self.timeout / 2, tx))
             .map_err(Error::SendFailed)?;
 
         time::timeout(self.timeout, rx).await?.map_err(Error::from)

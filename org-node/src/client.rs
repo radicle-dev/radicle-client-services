@@ -100,7 +100,7 @@ impl Default for Limits {
     fn default() -> Self {
         Self {
             request_queue_size: 64,
-            request_timeout: Duration::from_secs(6),
+            request_timeout: Duration::from_secs(60),
         }
     }
 }
