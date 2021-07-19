@@ -2,11 +2,15 @@
 
 > ✨ Host your Radicle Org projects!
 
-# Building
+## Building
 
     $ cargo build --release
 
-# Running
+## Installing
+
+    $ cargo install
+
+## Running
 
 Generate a key, eg. with `radicle-keyutils`, then run the org node like this,
 for example:
