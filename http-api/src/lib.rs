@@ -57,11 +57,15 @@ pub async fn run(options: Options) {
 }
 
 async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible> {
-    let (status, res) = if err.is_not_found() {
-        (StatusCode::NOT_FOUND, reply::json(&["error"]))
+    let status = if err.is_not_found() {
+        StatusCode::NOT_FOUND
     } else {
-        (StatusCode::BAD_REQUEST, reply::json(&["error"]))
+        StatusCode::BAD_REQUEST
     };
+    let res = reply::json(&json!({
+        "error": status.canonical_reason(),
+        "code": status.as_u16()
+    }));
 
     Ok(reply::with_header(
         reply::with_status(res, status),
