@@ -8,7 +8,9 @@
 use radicle_daemon::Paths;
 use thiserror::Error;
 
+use futures::StreamExt;
 use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 
 use std::collections::VecDeque;
 use std::fs::File;
@@ -246,21 +248,22 @@ where
 ///
 /// This function only returns if the channels it uses to communicate with other
 /// tasks are closed.
-async fn track_projects(mut handle: client::Handle, mut queue: mpsc::Receiver<Urn>) {
+async fn track_projects(mut handle: client::Handle, queue: mpsc::Receiver<Urn>) {
     // URNs to track are added to the back of this queue, and taken from the front.
     let mut work = VecDeque::new();
+    let mut queue = ReceiverStream::new(queue).fuse();
 
     loop {
         // Drain ascynchronous tracking queue, moving URNs to work queue.
         // This ensures that we aren't only retrying existing URNs that have timed out
         // and have been added back to the work queue.
         loop {
-            tokio::select! {
-                result = queue.recv() => {
+            futures::select! {
+                result = queue.next() => {
                     match result {
                         Some(urn) => {
-                            tracing::debug!(target: "org-node", "{}: Added to the work queue", urn);
-                            work.push_back(urn);
+                            work.push_back(urn.clone());
+                            tracing::debug!(target: "org-node", "{}: Added to the work queue ({})", urn, work.len());
                         }
                         None => {
                             tracing::warn!(target: "org-node", "Tracking channel closed, exiting task");
@@ -268,7 +271,8 @@ async fn track_projects(mut handle: client::Handle, mut queue: mpsc::Receiver<Ur
                         }
                     }
                 }
-                else => {
+                default => {
+                    tracing::debug!(target: "org-node", "Channel is empty");
                     break;
                 }
             }
@@ -279,14 +283,14 @@ async fn track_projects(mut handle: client::Handle, mut queue: mpsc::Receiver<Ur
         // is drained without blocking.
         let urn = if let Some(front) = work.pop_front() {
             front
-        } else if let Some(urn) = queue.recv().await {
+        } else if let Some(urn) = queue.next().await {
             urn
         } else {
             // This only happens if the tracking queue was closed from another task.
             // In this case we expect the condition to be caught in the next iteration.
             continue;
         };
-        tracing::info!(target: "org-node", "{}: Attempting to track..", urn);
+        tracing::info!(target: "org-node", "{}: Attempting to track.. ({})", urn, work.len());
 
         // If we fail to track, re-add the URN to the back of the queue.
         match handle.track_project(urn.clone()).await {
