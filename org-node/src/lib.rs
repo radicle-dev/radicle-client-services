@@ -38,7 +38,7 @@ pub type OrgId = String;
 #[derive(Debug, Clone)]
 pub struct Options {
     pub root: PathBuf,
-    pub store: PathBuf,
+    pub cache: PathBuf,
     pub identity: PathBuf,
     pub bootstrap: Vec<(PeerId, net::SocketAddr)>,
     pub listen: net::SocketAddr,
@@ -135,16 +135,16 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
         },
     );
     let handle = client.handle();
-    let mut store = match store::Store::create(&options.store) {
+    let mut store = match store::Store::create(&options.cache) {
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-            tracing::info!("Found existing store {:?}", options.store);
-            store::Store::open(&options.store)?
+            tracing::info!("Found existing cache {:?}", options.cache);
+            store::Store::open(&options.cache)?
         }
         Err(err) => {
             return Err(err.into());
         }
         Ok(store) => {
-            tracing::info!("Initializing new store {:?}", options.store);
+            tracing::info!("Initializing new cache {:?}", options.cache);
             store
         }
     };
