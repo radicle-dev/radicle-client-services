@@ -259,7 +259,7 @@ async fn track_projects(mut handle: client::Handle, mut queue: mpsc::Receiver<Ur
                 result = queue.recv() => {
                     match result {
                         Some(urn) => {
-                            tracing::debug!(target: "org-node", "{}: added to the work queue", urn);
+                            tracing::debug!(target: "org-node", "{}: Added to the work queue", urn);
                             work.push_back(urn);
                         }
                         None => {
@@ -286,21 +286,21 @@ async fn track_projects(mut handle: client::Handle, mut queue: mpsc::Receiver<Ur
             // In this case we expect the condition to be caught in the next iteration.
             continue;
         };
-        tracing::info!(target: "org-node", "{}: attempting to track..", urn);
+        tracing::info!(target: "org-node", "{}: Attempting to track..", urn);
 
         // If we fail to track, re-add the URN to the back of the queue.
         match handle.track_project(urn.clone()).await {
             Ok(reply) => match reply {
                 Ok(peer_id) => {
-                    tracing::info!(target: "org-node", "{}: fetched from {}", urn, peer_id);
+                    tracing::info!(target: "org-node", "{}: Fetched from {}", urn, peer_id);
                 }
                 Err(client::TrackProjectError::NotFound) => {
-                    tracing::info!(target: "org-node", "{}: not found", urn);
+                    tracing::info!(target: "org-node", "{}: Not found", urn);
                     work.push_back(urn);
                 }
             },
             Err(client::handle::Error::Timeout(err)) => {
-                tracing::info!(target: "org-node", "{}: tracking timed out: {}", urn, err);
+                tracing::info!(target: "org-node", "{}: Tracking timed out: {}", urn, err);
                 work.push_back(urn);
             }
             Err(err) => {
