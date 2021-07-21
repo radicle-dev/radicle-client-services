@@ -164,7 +164,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
 
     loop {
         match query(&options.subgraph, store.state.timestamp, &options.orgs) {
-            Ok(projects) => {
+            Ok(projects) if !projects.is_empty() => {
                 tracing::info!(target: "org-node", "Found {} project(s)", projects.len());
 
                 for project in projects {
@@ -195,6 +195,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
             Err(err) => {
                 tracing::error!(target: "org-node", "{}", err);
             }
+            _ => {}
         }
         thread::sleep(options.poll_interval);
     }
@@ -257,7 +258,10 @@ async fn track_projects(mut handle: client::Handle, mut queue: mpsc::Receiver<Ur
             tokio::select! {
                 result = queue.recv() => {
                     match result {
-                        Some(urn) => work.push_back(urn),
+                        Some(urn) => {
+                            tracing::debug!(target: "org-node", "{}: added to the work queue", urn);
+                            work.push_back(urn);
+                        }
                         None => {
                             tracing::warn!(target: "org-node", "Tracking channel closed, exiting task");
                             return;
@@ -282,20 +286,21 @@ async fn track_projects(mut handle: client::Handle, mut queue: mpsc::Receiver<Ur
             // In this case we expect the condition to be caught in the next iteration.
             continue;
         };
+        tracing::info!(target: "org-node", "{}: attempting to track..", urn);
 
         // If we fail to track, re-add the URN to the back of the queue.
         match handle.track_project(urn.clone()).await {
             Ok(reply) => match reply {
                 Ok(peer_id) => {
-                    tracing::info!(target: "org-node", "Project {} fetched from {}", urn, peer_id);
+                    tracing::info!(target: "org-node", "{}: fetched from {}", urn, peer_id);
                 }
                 Err(client::TrackProjectError::NotFound) => {
-                    tracing::info!(target: "org-node", "Project {} was not found", urn);
+                    tracing::info!(target: "org-node", "{}: not found", urn);
                     work.push_back(urn);
                 }
             },
             Err(client::handle::Error::Timeout(err)) => {
-                tracing::info!(target: "org-node", "Project {} tracking timed out: {}", urn, err);
+                tracing::info!(target: "org-node", "{}: tracking timed out: {}", urn, err);
                 work.push_back(urn);
             }
             Err(err) => {
