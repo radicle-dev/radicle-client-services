@@ -16,6 +16,14 @@ pub struct Options {
     #[argh(option)]
     pub root: PathBuf,
 
+    /// TLS certificate path
+    #[argh(option)]
+    pub tls_cert: Option<PathBuf>,
+
+    /// TLS key path
+    #[argh(option)]
+    pub tls_key: Option<PathBuf>,
+
     /// syntax highlight theme
     #[argh(option, default = r#"String::from("base16-ocean.dark")"#)]
     pub theme: String,
@@ -31,6 +39,8 @@ impl From<Options> for api::Options {
     fn from(other: Options) -> Self {
         Self {
             root: other.root,
+            tls_cert: other.tls_cert,
+            tls_key: other.tls_key,
             listen: other.listen,
             theme: other.theme,
         }

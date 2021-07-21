@@ -30,6 +30,8 @@ use error::Error;
 pub struct Options {
     pub root: PathBuf,
     pub listen: net::SocketAddr,
+    pub tls_cert: Option<PathBuf>,
+    pub tls_key: Option<PathBuf>,
     pub theme: String,
 }
 
@@ -52,8 +54,18 @@ pub async fn run(options: Options) {
         .recover(recover)
         .with(warp::cors().allow_any_origin())
         .with(warp::log("http::api"));
+    let server = warp::serve(api);
 
-    warp::serve(api).run(options.listen).await
+    if let (Some(cert), Some(key)) = (options.tls_cert, options.tls_key) {
+        server
+            .tls()
+            .cert_path(cert)
+            .key_path(key)
+            .run(options.listen)
+            .await
+    } else {
+        server.run(options.listen).await
+    }
 }
 
 async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible> {
