@@ -10,8 +10,8 @@ use argh::FromArgs;
 /// Radicle Org Node.
 #[derive(FromArgs)]
 pub struct Options {
-    /// listen on the following address for HTTP connections (default: 0.0.0.0:8888)
-    #[argh(option, default = "std::net::SocketAddr::from(([0, 0, 0, 0], 8888))")]
+    /// listen on the following address for peer messages (default: 0.0.0.0:8776)
+    #[argh(option, default = "std::net::SocketAddr::from(([0, 0, 0, 0], 8776))")]
     pub listen: net::SocketAddr,
 
     /// radicle root path, for key and git storage
