@@ -125,6 +125,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
     let paths = Paths::from_root(options.root).unwrap();
     let identity = File::open(options.identity)?;
     let signer = client::Signer::new(identity)?;
+    let peer_id = PeerId::from(signer.clone());
     let client = Client::new(
         paths,
         signer,
@@ -154,8 +155,8 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
         store.write()?;
     }
 
-    tracing::info!(target: "org-node", "Listening on {}...", options.listen);
-    tracing::info!(target: "org-node", "Bootstrap = {:?}...", options.bootstrap);
+    tracing::info!(target: "org-node", "Peer ID = {}", peer_id);
+    tracing::info!(target: "org-node", "Bootstrap = {:?}", options.bootstrap);
     tracing::info!(target: "org-node", "Orgs = {:?}", options.orgs);
     tracing::info!(target: "org-node", "Timestamp = {}", store.state.timestamp);
     tracing::info!(target: "org-node", "Starting protocol client..");
@@ -165,6 +166,8 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
 
     rt.spawn(client.run(rt.handle().clone()));
     rt.spawn(track_projects(handle, queue));
+
+    tracing::info!(target: "org-node", "Listening on {}...", options.listen);
 
     loop {
         match query(&options.subgraph, store.state.timestamp, &options.orgs) {
