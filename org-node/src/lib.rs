@@ -130,7 +130,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
         signer,
         client::Config {
             listen: options.listen,
-            bootstrap: options.bootstrap,
+            bootstrap: options.bootstrap.clone(),
             ..client::Config::default()
         },
     );
@@ -154,6 +154,8 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
         store.write()?;
     }
 
+    tracing::info!(target: "org-node", "Listening on {}...", options.listen);
+    tracing::info!(target: "org-node", "Bootstrap = {:?}...", options.bootstrap);
     tracing::info!(target: "org-node", "Orgs = {:?}", options.orgs);
     tracing::info!(target: "org-node", "Timestamp = {}", store.state.timestamp);
     tracing::info!(target: "org-node", "Starting protocol client..");
