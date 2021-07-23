@@ -5,7 +5,7 @@
 ## Setting up an *Org Seed Node*
 
 An *org seed node* is a type of node that replicates and distributes Radicle
-projects under one or more Radicle org, making them freely and publicly
+projects under one or more Radicle orgs, making them freely and publicly
 accessible on the web.
 
 Though it's possible to rely on shared infrastructure and community seed nodes,
@@ -18,13 +18,14 @@ optionally `radicle-http-api` on a server or instance in the cloud.
 The *org node* service is a peer-to-peer service which uses the Radicle Link protocol
 to connect to peers and replicate projects under the specified org(s). To find
 which projects to replicate, it listens for events and updates on the Ethereum
-network where Radicle orgs are hosted. When a new project is added to an org via
-a process called *anchoring*, the org node attempts to fetch this project
-from the network.
+network where Radicle orgs keep their state.
 
-It is recommend to configure your Radicle client to use your org node(s) as seeds,
+When a new project is added to an org via a process called *anchoring*, the org
+node attempts to fetch this project from the network.
+
+> 💡 It is recommend to configure your Radicle clients to use your org node(s) as seeds,
 so that changes you make to projects as well as projects you create are made available
-to the org node with minimal delay.
+to the org node with minimal delay, and thus the rest of the network.
 
 Though the org node helps with reliable code distribution over the Radicle Link
 network, it does not expose projects in a way that is accessible to web and other
