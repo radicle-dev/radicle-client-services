@@ -57,6 +57,26 @@ which is the path to the monorepo, eg.:
 
 This ensures the API can read the org node's state.
 
+#### Bootstrapping
+
+It's generally useful for the org seed node to connect to a pre-existing
+node to replicate projects from and find peers. This is done via the
+`--bootstrap` flag. See `radicle-org-node --help` for details on the format.
+
+Any (seed) node will do as a bootstrap peer. Multiple bootstrap nodes may
+be specified by separating them with a `,`.
+
+#### Identity file
+
+Nodes on the Radicle peer-to-peer network are identified with a *Peer ID*,
+which is essentially an encoding of a public key. This identity needs to
+be specified on the CLI via the `--identity` flag, similar to SSH's `-i`
+flag. Specifically, the path to the private key file should be used.
+
+To generate a new private key, the `radicle-keyutil` utility may be used. The
+key may then be copied via `scp` to the remote host where the org seed service
+is running.
+
 #### Firewall configuration
 
 For `radicle-org-node`, a UDP port of your choosing should be opened. This port
@@ -73,6 +93,12 @@ For `radicle-http-api`, it's important to setup TLS when running in production.
 This is to allow for compatibility with web clients that will mostly be using
 the `https` protocol. Web browser nowadays do not allow requests to unencrypted
 HTTP servers from websites using TLS.
+
+The API service has built-in support for TLS, so there is no need to set up
+HTTPS termination via a separate service. Simply pass in the `--tls-cert`
+and `--tls-key` flags to enable TLS.
+
+Certificates can be obtained from *Let's Encrypt*, using [Certbot](https://certbot.eff.org/).
 
 #### Logging
 
