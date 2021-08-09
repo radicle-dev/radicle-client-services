@@ -124,3 +124,46 @@ TXT record, usually labeled "Seed API" to your HTTP API endpoint, eg.
 These records can be set on the web client at <https://app.radicle.network/registrations/acme>
 for an org registered under `acme.radicle.eth`. Replace `acme` with the name
 of your org.
+
+### Docker
+
+There are `Dockerfile` provided for both services in the respective directories.
+
+#### Building
+
+To build the containers, run:
+
+    $ docker build -t radicle-services/org-node -f org-node/Dockerfile .
+    $ docker build -t radicle-services/http-api -f http-api/Dockerfile .
+
+#### Running
+
+To run the org node after it is built, you can run for example:
+
+    $ docker run \
+        --init \
+        -e RUST_LOG=info \
+        -p 8776:8776 \
+        -v $HOME/.radicle:/app/radicle radicle-services/org-node \
+        --subgraph https://api.thegraph.com/subgraphs/name/radicle-dev/radicle-orgs \
+        --orgs 0xceAa01bd5A428d2910C82BBEfE1Bc7a8Cc6207D9
+
+Make sure the *identity* file can be found under `$HOME/.radicle/identity` and
+that you replace the org address with your own. Don't forget to specify the
+`--bootstrap` option if needed.
+
+To run the HTTP API, run:
+
+    $ docker run \
+        --init \
+        -e RUST_LOG=info \
+        -p 8777:8777 \
+        -v $HOME/.radicle:/app/radicle radicle-services/http-api \
+        --tls-cert /app/radicle/fullchain.pem \
+        --tls-key /app/radicle/privkey.pem
+
+Make sure your TLS certificate files can be found under `$HOME/.radicle`. If you
+are using TLS termination, simply omit the `--tls-*` arguments.
+
+You may also want to detach the process (`-d`) and run with a TTY in interactive
+mode (`-it`).
