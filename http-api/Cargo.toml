@@ -8,7 +8,7 @@ edition = "2018"
 [dependencies]
 warp = { version = "0.3.1", features = ["tls"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1" }
+serde_json = { version = "1", features = ["preserve_order"] }
 serde_urlencoded = { version = "0.7.0" }
 radicle-source = { version = "0.2.0", features = ["syntax"] }
 radicle-daemon = { version = "0.1.0" }

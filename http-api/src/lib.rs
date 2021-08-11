@@ -26,6 +26,8 @@ use crate::project::Info;
 
 use error::Error;
 
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[derive(Debug, Clone)]
 pub struct Options {
     pub root: PathBuf,
@@ -51,6 +53,7 @@ pub async fn run(options: Options) {
     let api = path("v1")
         .and(path("projects"))
         .and(filters(ctx))
+        .or(warp::get().and(path::end()).and_then(root_handler))
         .recover(recover)
         .with(warp::cors().allow_any_origin())
         .with(warp::log("http::api"));
@@ -142,6 +145,23 @@ fn tree_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Reject
         .and(path::param::<String>())
         .and(path::tail())
         .and_then(tree_handler)
+}
+
+async fn root_handler() -> Result<impl Reply, Rejection> {
+    let response = json!({
+        "message": "Welcome!",
+        "service": "radicle-http-api",
+        "version": VERSION,
+        "path": "/",
+        "links": [
+            {
+                "href": "/v1/projects",
+                "rel": "projects",
+                "type": "GET"
+            }
+        ]
+    });
+    Ok(warp::reply::json(&response))
 }
 
 async fn blob_handler(
