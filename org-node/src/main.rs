@@ -46,6 +46,10 @@ pub struct Options {
     /// org addresses to watch, ','-delimited (default: all)
     #[argh(option, from_str_fn(parse_orgs))]
     pub orgs: Option<Vec<node::OrgId>>,
+
+    /// disable colored log output (default: false)
+    #[argh(switch)]
+    pub no_color: bool,
 }
 
 impl Options {
@@ -104,9 +108,12 @@ fn parse_bootstrap(value: &str) -> Result<Vec<(PeerId, net::SocketAddr)>, String
 }
 
 fn main() {
-    tracing_subscriber::fmt::init();
-
     let options = Options::from_env();
+
+    tracing_subscriber::fmt()
+        .with_ansi(!options.no_color)
+        .init();
+
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

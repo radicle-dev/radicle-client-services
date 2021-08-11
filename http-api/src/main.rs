@@ -27,6 +27,10 @@ pub struct Options {
     /// syntax highlight theme
     #[argh(option, default = r#"String::from("base16-ocean.dark")"#)]
     pub theme: String,
+
+    /// disable colored log output (default: false)
+    #[argh(switch)]
+    pub no_color: bool,
 }
 
 impl Options {
@@ -50,6 +54,10 @@ impl From<Options> for api::Options {
 #[tokio::main]
 async fn main() {
     let options = Options::from_env();
-    tracing_subscriber::fmt::init();
+
+    tracing_subscriber::fmt()
+        .with_ansi(!options.no_color)
+        .init();
+
     api::run(options.into()).await;
 }

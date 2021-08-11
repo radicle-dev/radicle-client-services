@@ -13,4 +13,4 @@ FROM debian:buster-slim
 EXPOSE 8777/tcp
 COPY --from=build /usr/local/cargo/bin/radicle-http-api /usr/local/bin/radicle-http-api
 WORKDIR /app/radicle
-ENTRYPOINT ["/usr/local/bin/radicle-http-api", "--root", "/app/radicle/root", "--listen", "0.0.0.0:8777"]
+ENTRYPOINT ["/usr/local/bin/radicle-http-api", "--root", "/app/radicle/root", "--listen", "0.0.0.0:8777", "--no-color"]
