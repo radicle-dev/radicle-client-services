@@ -75,6 +75,9 @@ async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible>
     let status = if err.is_not_found() {
         StatusCode::NOT_FOUND
     } else {
+        // Log the non-standard errors.
+        tracing::error!("Error: {:?}", err);
+
         StatusCode::BAD_REQUEST
     };
     let res = reply::json(&json!({
