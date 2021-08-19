@@ -300,8 +300,11 @@ async fn track_projects(mut handle: client::Handle, queue: mpsc::Receiver<Urn>) 
         // If we fail to track, re-add the URN to the back of the queue.
         match handle.track_project(urn.clone()).await {
             Ok(reply) => match reply {
-                Ok(peer_id) => {
+                Ok(Some(peer_id)) => {
                     tracing::info!(target: "org-node", "{}: Fetched from {}", urn, peer_id);
+                }
+                Ok(None) => {
+                    tracing::debug!(target: "org-node", "{}: Already have", urn);
                 }
                 Err(client::TrackProjectError::NotFound) => {
                     tracing::info!(target: "org-node", "{}: Not found", urn);

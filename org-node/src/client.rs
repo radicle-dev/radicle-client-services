@@ -233,9 +233,10 @@ impl Client {
 
                 // Attempt to track until we succeed.
                 while let Some(peer) = peers.next().await {
-                    if Client::track_project(api, &urn, &peer).await.is_ok() {
+                    if let Ok(tracked) = Client::track_project(api, &urn, &peer).await {
+                        let response = if tracked { Some(peer.peer_id) } else { None };
                         return reply
-                            .send(Ok(peer.peer_id))
+                            .send(Ok(response))
                             .map_err(|_| Error::Reply("TrackProject".to_string()));
                     }
                 }
@@ -251,7 +252,7 @@ impl Client {
         api: &Peer<Signer>,
         urn: &Urn,
         peer_info: &PeerInfo<std::net::SocketAddr>,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         let peer_id = peer_info.peer_id;
         let addr_hints = peer_info.seen_addrs.iter().copied().collect::<Vec<_>>();
 
@@ -260,19 +261,27 @@ impl Client {
             let urn = urn.clone();
 
             api.using_storage(move |storage| {
-                let fetcher = fetcher::PeerToPeer::new(urn.clone(), peer_id, addr_hints)
-                    .build(storage)
-                    .map_err(|e| Error::Fetcher(e.into()))??;
-                replication::replicate(storage, fetcher, cfg, None)?;
-                tracking::track(storage, &urn, peer_id)?;
+                if tracking::track(storage, &urn, peer_id)? {
+                    let fetcher = fetcher::PeerToPeer::new(urn.clone(), peer_id, addr_hints)
+                        .build(storage)
+                        .map_err(|e| Error::Fetcher(e.into()))??;
 
-                Ok::<_, Error>(())
+                    replication::replicate(storage, fetcher, cfg, None)?;
+
+                    Ok::<_, Error>(true)
+                } else {
+                    Ok(false)
+                }
             })
             .await?
         };
 
         match &result {
-            Ok(()) => tracing::info!("Successfully tracked project {} from peer {}", urn, peer_id),
+            Ok(tracked) => {
+                if *tracked {
+                    tracing::info!("Successfully tracked project {} from peer {}", urn, peer_id)
+                }
+            }
             Err(err) => {
                 tracing::info!(
                     "Error tracking project {} from peer {}: {}",

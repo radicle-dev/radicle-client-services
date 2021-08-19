@@ -65,7 +65,7 @@ impl Handle {
     pub async fn track_project(
         &mut self,
         urn: Urn,
-    ) -> Result<Result<PeerId, TrackProjectError>, Error> {
+    ) -> Result<Result<Option<PeerId>, TrackProjectError>, Error> {
         let (tx, rx) = oneshot::channel();
         self.channel
             .try_send(Request::TrackProject(urn, self.timeout / 2, tx))
@@ -86,7 +86,7 @@ pub enum Request {
     TrackProject(
         Urn,
         std::time::Duration,
-        oneshot::Sender<Result<PeerId, TrackProjectError>>,
+        oneshot::Sender<Result<Option<PeerId>, TrackProjectError>>,
     ),
 }
 
