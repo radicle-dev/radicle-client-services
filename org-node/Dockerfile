@@ -13,6 +13,7 @@ RUN cargo install --path .
 FROM debian:buster-slim
 
 EXPOSE 8776/udp
+RUN apt-get update && apt-get install -y libssl1.1 && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/cargo/bin/radicle-org-node /usr/local/bin/radicle-org-node
 WORKDIR /app/radicle
 ENTRYPOINT [ \

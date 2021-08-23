@@ -11,6 +11,7 @@ RUN cargo install --path .
 FROM debian:buster-slim
 
 EXPOSE 8777/tcp
+RUN apt-get update && apt-get install -y libssl1.1 && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/cargo/bin/radicle-http-api /usr/local/bin/radicle-http-api
 WORKDIR /app/radicle
 ENTRYPOINT ["/usr/local/bin/radicle-http-api", "--root", "/app/radicle/root", "--listen", "0.0.0.0:8777", "--no-color"]
