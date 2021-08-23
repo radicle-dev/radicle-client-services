@@ -77,6 +77,14 @@ To generate a new private key, the `radicle-keyutil` utility may be used. The
 key may then be copied via `scp` to the remote host where the org seed service
 is running.
 
+#### JSON-RPC URL
+
+For `radicle-org-node`, it's necessary to specify a WebSocket URL to an
+Ethereum full node with JSON-RPC and WebSocket support, using the `--rpc-url`
+option.  This could be the address to your own node running locally, eg.
+`ws://localhost:8545`, or the URL of a third-party API such as Alchemy or
+Infura.
+
 #### Firewall configuration
 
 For `radicle-org-node`, a UDP port of your choosing should be opened. This port
@@ -146,7 +154,8 @@ To run the org node after it is built, you can run for example:
         -p 8776:8776 \
         -v $HOME/.radicle:/app/radicle radicle-services/org-node \
         --subgraph https://api.thegraph.com/subgraphs/name/radicle-dev/radicle-orgs \
-        --orgs 0xceAa01bd5A428d2910C82BBEfE1Bc7a8Cc6207D9
+        --orgs 0xceAa01bd5A428d2910C82BBEfE1Bc7a8Cc6207D9 \
+        --rpc-url ws://localhost:8545
 
 Make sure the *identity* file can be found under `$HOME/.radicle/identity` and
 that you replace the org address with your own. Don't forget to specify the

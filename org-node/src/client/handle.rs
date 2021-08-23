@@ -6,9 +6,7 @@ use tokio::{
     time,
 };
 
-use librad::{
-    git::identities::Urn, net::protocol::event::downstream::MembershipInfo, peer::PeerId,
-};
+use librad::{git::identities::Urn, net::protocol::event::downstream::MembershipInfo, PeerId};
 
 /// An error returned by the [`Handle`].
 #[derive(Debug, Error)]

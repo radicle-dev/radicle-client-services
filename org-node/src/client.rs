@@ -21,7 +21,7 @@ use crate::client::handle::Request;
 
 pub use handle::{Handle, TrackProjectError};
 pub use librad::git::identities::Urn;
-pub use librad::peer::PeerId;
+pub use librad::PeerId;
 pub use signer::Signer;
 
 pub mod handle;

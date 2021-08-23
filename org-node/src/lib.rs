@@ -5,6 +5,10 @@
 //!
 //! The org node can be configured to listen to any number of orgs, or *all*
 //! orgs.
+use ethers::abi::Address;
+use ethers::prelude::*;
+use ethers::providers::{Provider, Ws};
+
 use radicle_daemon::Paths;
 use thiserror::Error;
 
@@ -17,8 +21,6 @@ use std::fs::File;
 use std::io;
 use std::net;
 use std::path::PathBuf;
-use std::thread;
-use std::time;
 
 mod client;
 mod query;
@@ -27,10 +29,6 @@ mod store;
 pub use client::PeerId;
 
 use client::{Client, Urn};
-
-/// Default time to wait between polls of the subgraph.
-/// Approximates Ethereum block time.
-pub const DEFAULT_POLL_INTERVAL: time::Duration = time::Duration::from_secs(14);
 
 /// Org identifier (Ethereum address).
 pub type OrgId = String;
@@ -41,9 +39,9 @@ pub struct Options {
     pub cache: PathBuf,
     pub identity: PathBuf,
     pub bootstrap: Vec<(PeerId, net::SocketAddr)>,
+    pub rpc_url: String,
     pub listen: net::SocketAddr,
     pub subgraph: String,
-    pub poll_interval: time::Duration,
     pub orgs: Vec<OrgId>,
     pub timestamp: Option<u64>,
 }
@@ -118,6 +116,12 @@ pub enum Error {
 
     #[error(transparent)]
     Channel(#[from] mpsc::error::SendError<Urn>),
+
+    #[error(transparent)]
+    FromHex(#[from] rustc_hex::FromHexError),
+
+    #[error(transparent)]
+    Query(#[from] Box<ureq::Error>),
 }
 
 /// Run the Node.
@@ -154,6 +158,11 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
         store.state.timestamp = timestamp;
         store.write()?;
     }
+    let addresses = options
+        .orgs
+        .iter()
+        .map(|a| a.parse())
+        .collect::<Result<Vec<_>, _>>()?;
 
     tracing::info!(target: "org-node", "Peer ID = {}", peer_id);
     tracing::info!(target: "org-node", "Bootstrap = {:?}", options.bootstrap);
@@ -164,37 +173,25 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
     // Queue of projects to track.
     let (work, queue) = mpsc::channel(256);
 
+    // Queue of events on orgs.
+    let (update, mut events) = mpsc::channel(256);
+
     rt.spawn(client.run(rt.handle().clone()));
     rt.spawn(track_projects(handle, queue));
 
     tracing::info!(target: "org-node", "Listening on {}...", options.listen);
 
-    loop {
-        match query(&options.subgraph, store.state.timestamp, &options.orgs) {
-            Ok(projects) if !projects.is_empty() => {
-                tracing::info!(target: "org-node", "Found {} project(s)", projects.len());
+    // First get up to speed with existing anchors, before we start listening for events.
+    let projects = query(&options.subgraph, store.state.timestamp, &addresses).map_err(Box::new)?;
+    process_anchors(projects, &mut store, &work)?;
 
-                for project in projects {
-                    tracing::debug!(target: "org-node", "{:?}", project);
+    // Now launch the event subscriber and listen on events.
+    rt.spawn(subscribe_events(options.rpc_url, addresses, update));
 
-                    let urn = match project.urn() {
-                        Ok(urn) => urn,
-                        Err(err) => {
-                            tracing::error!(target: "org-node", "Invalid URN for project: {}", err);
-                            continue;
-                        }
-                    };
-
-                    tracing::info!(target: "org-node", "Queueing {}", urn);
-                    work.blocking_send(urn)?;
-
-                    if project.timestamp > store.state.timestamp {
-                        tracing::info!(target: "org-node", "Timestamp = {}", project.timestamp);
-
-                        store.state.timestamp = project.timestamp;
-                        store.write()?;
-                    }
-                }
+    while let Some(event) = events.blocking_recv() {
+        match query(&options.subgraph, store.state.timestamp, &[event.address]) {
+            Ok(projects) => {
+                process_anchors(projects, &mut store, &work)?;
             }
             Err(ureq::Error::Transport(err)) => {
                 tracing::error!(target: "org-node", "Query failed: {}", err);
@@ -202,15 +199,50 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
             Err(err) => {
                 tracing::error!(target: "org-node", "{}", err);
             }
-            _ => {}
         }
-        thread::sleep(options.poll_interval);
     }
+    tracing::info!(target: "org-node", "Exiting..");
+
+    Ok(())
+}
+
+fn process_anchors(
+    projects: Vec<Project>,
+    store: &mut store::Store,
+    work: &mpsc::Sender<Urn>,
+) -> Result<(), Error> {
+    if projects.is_empty() {
+        return Ok(());
+    }
+    tracing::info!(target: "org-node", "Found {} project(s)", projects.len());
+
+    for project in projects {
+        tracing::debug!(target: "org-node", "{:?}", project);
+
+        let urn = match project.urn() {
+            Ok(urn) => urn,
+            Err(err) => {
+                tracing::error!(target: "org-node", "Invalid URN for project: {}", err);
+                continue;
+            }
+        };
+
+        tracing::info!(target: "org-node", "Queueing {}", urn);
+        work.blocking_send(urn)?;
+
+        if project.timestamp > store.state.timestamp {
+            tracing::info!(target: "org-node", "Timestamp = {}", project.timestamp);
+
+            store.state.timestamp = project.timestamp;
+            store.write()?;
+        }
+    }
+    Ok(())
 }
 
 /// Get projects updated or created since the given timestamp, from the given orgs.
 /// If no org is specified, gets projects from *all* orgs.
-fn query(subgraph: &str, timestamp: u64, orgs: &[OrgId]) -> Result<Vec<Project>, ureq::Error> {
+fn query(subgraph: &str, timestamp: u64, orgs: &[Address]) -> Result<Vec<Project>, ureq::Error> {
     let query = if orgs.is_empty() {
         ureq::json!({
             "query": query::ALL_PROJECTS,
@@ -249,6 +281,37 @@ where
     u64::from_str(&buf).map_err(serde::de::Error::custom)
 }
 
+/// Subscribe to events emitted by the given org contracts.
+async fn subscribe_events(url: String, addresses: Vec<Address>, update: mpsc::Sender<Log>) {
+    let provider = match Provider::<Ws>::connect(url).await {
+        Ok(provider) => provider,
+        Err(err) => {
+            tracing::error!(target: "org-node", "WebSocket connection failed, exiting task ({})", err);
+            return;
+        }
+    };
+    let filter = Filter::new()
+        .address(ValueOrArray::Array(addresses))
+        .event("Anchored(bytes32,uint32,bytes)");
+    let mut stream = match provider.subscribe_logs(&filter).await {
+        Ok(stream) => stream,
+        Err(err) => {
+            tracing::error!(target: "org-node", "Event subscribe failed, exiting task ({})", err);
+            return;
+        }
+    };
+
+    while let Some(event) = stream.next().await {
+        match update.send(event).await {
+            Ok(()) => {}
+            Err(err) => {
+                tracing::error!(target: "org-node", "Send event failed, exiting task ({})", err);
+                return;
+            }
+        }
+    }
+}
+
 /// Track projects sent via the queue.
 ///
 /// This function only returns if the channels it uses to communicate with other
@@ -271,7 +334,7 @@ async fn track_projects(mut handle: client::Handle, queue: mpsc::Receiver<Urn>) 
                             tracing::debug!(target: "org-node", "{}: Added to the work queue ({})", urn, work.len());
                         }
                         None => {
-                            tracing::warn!(target: "org-node", "Tracking channel closed, exiting task");
+                            tracing::error!(target: "org-node", "Tracking channel closed, exiting task");
                             return;
                         }
                     }
@@ -316,7 +379,7 @@ async fn track_projects(mut handle: client::Handle, queue: mpsc::Receiver<Urn>) 
                 work.push_back(urn);
             }
             Err(err) => {
-                tracing::warn!(target: "org-node", "Tracking handle failed, exiting task ({})", err);
+                tracing::error!(target: "org-node", "Tracking handle failed, exiting task ({})", err);
                 return;
             }
         }

@@ -1,6 +1,5 @@
 use std::net;
 use std::path::PathBuf;
-use std::time;
 
 use node::PeerId;
 use radicle_org_node as node;
@@ -26,9 +25,9 @@ pub struct Options {
     #[argh(option)]
     pub subgraph: String,
 
-    /// poll interval for subgraph updates (seconds)
+    /// JSON-RPC WebSocket URL of Ethereum node (eg. ws://localhost:8545)
     #[argh(option)]
-    pub poll_interval: Option<u64>,
+    pub rpc_url: String,
 
     /// node identity file path
     #[argh(option)]
@@ -65,10 +64,7 @@ impl From<Options> for node::Options {
             cache: other.cache,
             listen: other.listen,
             subgraph: other.subgraph,
-            poll_interval: other
-                .poll_interval
-                .map(time::Duration::from_secs)
-                .unwrap_or(node::DEFAULT_POLL_INTERVAL),
+            rpc_url: other.rpc_url,
             identity: other.identity,
             timestamp: other.timestamp,
             bootstrap: other.bootstrap.unwrap_or_default(),
