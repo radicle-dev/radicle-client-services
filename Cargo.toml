@@ -19,3 +19,6 @@ branch = "master"
 [patch.crates-io.ethers]
 git = "https://github.com/gakonst/ethers-rs"
 branch = "master"
+
+[profile.release]
+debug = true
