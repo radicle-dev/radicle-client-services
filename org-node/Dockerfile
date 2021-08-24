@@ -10,7 +10,7 @@ WORKDIR /usr/src/radicle-client-services/org-node
 RUN cargo install --path .
 
 # Run
-FROM debian:buster-slim
+FROM debian:buster-slim@sha256:c8152821b158dd171b4acf92afb0a58fc2faa179a7e0af8ace358fbe1668e99d
 
 EXPOSE 8776/udp
 RUN apt-get update && apt-get install -y libssl1.1 && rm -rf /var/lib/apt/lists/*
