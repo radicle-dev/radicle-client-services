@@ -1,11 +1,33 @@
 use std::net;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use node::PeerId;
 use radicle_org_node as node;
 
 use argh::FromArgs;
 
+pub enum LogFmt {
+    Plain,
+
+    #[cfg(feature = "gcp")]
+    Gcp,
+}
+
+impl FromStr for LogFmt {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "plain" => Ok(LogFmt::Plain),
+
+            #[cfg(feature = "gcp")]
+            "gcp" => Ok(LogFmt::Gcp),
+
+            _ => Err("Unrecognized log format"),
+        }
+    }
+}
 /// Radicle Org Node.
 #[derive(FromArgs)]
 pub struct Options {
@@ -42,9 +64,9 @@ pub struct Options {
     #[argh(option, from_str_fn(parse_orgs))]
     pub orgs: Option<Vec<node::OrgId>>,
 
-    /// disable colored log output (default: false)
-    #[argh(switch)]
-    pub no_color: bool,
+    /// either "plain" or "gcp" (gcp available only when compiled-in)
+    #[argh(option, default = "LogFmt::Plain")]
+    pub log_format: LogFmt,
 }
 
 impl Options {
@@ -78,7 +100,6 @@ fn parse_orgs(value: &str) -> Result<Vec<node::OrgId>, String> {
 
 fn parse_bootstrap(value: &str) -> Result<Vec<(PeerId, net::SocketAddr)>, String> {
     use std::net::ToSocketAddrs;
-    use std::str::FromStr;
 
     let mut peers = Vec::new();
 
@@ -98,12 +119,35 @@ fn parse_bootstrap(value: &str) -> Result<Vec<(PeerId, net::SocketAddr)>, String
     Ok(peers)
 }
 
+fn set_up_plain_log_format(_opts: &Options) {
+    tracing_subscriber::fmt()
+        .init();
+}
+
+#[cfg(not(feature = "gcp"))]
+fn init_logger(opts: &Options) {
+    set_up_plain_log_format(opts)
+}
+
+#[cfg(feature = "gcp")]
+fn init_logger(opts: &Options) {
+    match opts.log_format {
+        LogFmt::Plain => set_up_plain_log_format(opts),
+        LogFmt::Gcp => {
+            use tracing_stackdriver::Stackdriver;
+            use tracing_subscriber::{layer::SubscriberExt, Registry};
+            let stackdriver = Stackdriver::with_writer(std::io::stderr); // writes to std::io::Stderr
+            let subscriber = Registry::default().with(stackdriver);
+            tracing::subscriber::set_global_default(subscriber)
+                .expect("Could not set up global logger");
+        },
+    }
+}
+
 fn main() {
     let options = Options::from_env();
 
-    tracing_subscriber::fmt()
-        .with_ansi(!options.no_color)
-        .init();
+    init_logger(&options);
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

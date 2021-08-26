@@ -586,6 +586,8 @@ dependencies = [
  "libc",
  "num-integer",
  "num-traits",
+ "serde",
+ "time 0.1.43",
  "winapi 0.3.9",
 ]
 
@@ -3445,6 +3447,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-stackdriver",
  "tracing-subscriber",
  "warp",
 ]
@@ -3498,6 +3501,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "tracing-stackdriver",
  "tracing-subscriber",
  "ureq",
 ]
@@ -4677,6 +4681,23 @@ checksum = "fb65ea441fbb84f9f6748fd496cf7f63ec9af5bca94dd86456978d055e8eb28b"
 dependencies = [
  "serde",
  "tracing-core",
+]
+
+[[package]]
+name = "tracing-stackdriver"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0a7fc78ad2f400f707e1f42926490d9fc671ac0a71bc0d74f8a0ced836cb66e"
+dependencies = [
+ "Inflector",
+ "chrono",
+ "futures 0.3.15",
+ "serde",
+ "serde_json",
+ "tracing-core",
+ "tracing-futures",
+ "tracing-serde",
+ "tracing-subscriber",
 ]
 
 [[package]]

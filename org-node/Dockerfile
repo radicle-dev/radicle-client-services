@@ -7,7 +7,7 @@ WORKDIR /usr/src/radicle-client-services
 COPY . .
 
 WORKDIR /usr/src/radicle-client-services/org-node
-RUN cargo install --locked --path .
+RUN cargo install --all-features --locked --path .
 
 # Run
 FROM debian:buster-slim@sha256:c8152821b158dd171b4acf92afb0a58fc2faa179a7e0af8ace358fbe1668e99d
@@ -20,5 +20,4 @@ ENTRYPOINT [ \
   "/usr/local/bin/radicle-org-node", \
   "--root", "/app/radicle/root", \
   "--identity", "/app/radicle/identity", \
-  "--no-color", \
   "--listen", "0.0.0.0:8776" ]
