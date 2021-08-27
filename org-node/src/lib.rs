@@ -24,7 +24,6 @@ use std::path::PathBuf;
 
 mod client;
 mod query;
-mod store;
 
 pub use client::PeerId;
 
@@ -36,7 +35,6 @@ pub type OrgId = String;
 #[derive(Debug, Clone)]
 pub struct Options {
     pub root: PathBuf,
-    pub cache: PathBuf,
     pub identity: PathBuf,
     pub bootstrap: Vec<(PeerId, net::SocketAddr)>,
     pub rpc_url: String,
@@ -140,34 +138,17 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
         },
     );
     let handle = client.handle();
-    let mut store = match store::Store::create(&options.cache) {
-        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-            tracing::info!("Found existing cache {:?}", options.cache);
-            store::Store::open(&options.cache)?
-        }
-        Err(err) => {
-            return Err(err.into());
-        }
-        Ok(store) => {
-            tracing::info!("Initializing new cache {:?}", options.cache);
-            store
-        }
-    };
-
-    if let Some(timestamp) = options.timestamp {
-        store.state.timestamp = timestamp;
-        store.write()?;
-    }
     let addresses = options
         .orgs
         .iter()
         .map(|a| a.parse())
         .collect::<Result<Vec<_>, _>>()?;
+    let timestamp = options.timestamp.unwrap_or_default();
 
     tracing::info!(target: "org-node", "Peer ID = {}", peer_id);
     tracing::info!(target: "org-node", "Bootstrap = {:?}", options.bootstrap);
     tracing::info!(target: "org-node", "Orgs = {:?}", options.orgs);
-    tracing::info!(target: "org-node", "Timestamp = {}", store.state.timestamp);
+    tracing::info!(target: "org-node", "Timestamp = {}", timestamp);
     tracing::info!(target: "org-node", "Starting protocol client..");
 
     // Queue of projects to track.
@@ -182,16 +163,16 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
     tracing::info!(target: "org-node", "Listening on {}...", options.listen);
 
     // First get up to speed with existing anchors, before we start listening for events.
-    let projects = query(&options.subgraph, store.state.timestamp, &addresses).map_err(Box::new)?;
-    process_anchors(projects, &mut store, &work)?;
+    let projects = query(&options.subgraph, timestamp, &addresses).map_err(Box::new)?;
+    process_anchors(projects, &work)?;
 
     // Now launch the event subscriber and listen on events.
     rt.spawn(subscribe_events(options.rpc_url, addresses, update));
 
     while let Some(event) = events.blocking_recv() {
-        match query(&options.subgraph, store.state.timestamp, &[event.address]) {
+        match query(&options.subgraph, timestamp, &[event.address]) {
             Ok(projects) => {
-                process_anchors(projects, &mut store, &work)?;
+                process_anchors(projects, &work)?;
             }
             Err(ureq::Error::Transport(err)) => {
                 tracing::error!(target: "org-node", "Query failed: {}", err);
@@ -206,11 +187,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
     Ok(())
 }
 
-fn process_anchors(
-    projects: Vec<Project>,
-    store: &mut store::Store,
-    work: &mpsc::Sender<Urn>,
-) -> Result<(), Error> {
+fn process_anchors(projects: Vec<Project>, work: &mpsc::Sender<Urn>) -> Result<(), Error> {
     if projects.is_empty() {
         return Ok(());
     }
@@ -229,13 +206,6 @@ fn process_anchors(
 
         tracing::info!(target: "org-node", "Queueing {}", urn);
         work.blocking_send(urn)?;
-
-        if project.timestamp > store.state.timestamp {
-            tracing::info!(target: "org-node", "Timestamp = {}", project.timestamp);
-
-            store.state.timestamp = project.timestamp;
-            store.write()?;
-        }
     }
     Ok(())
 }

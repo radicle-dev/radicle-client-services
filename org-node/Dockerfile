@@ -20,6 +20,5 @@ ENTRYPOINT [ \
   "/usr/local/bin/radicle-org-node", \
   "--root", "/app/radicle/root", \
   "--identity", "/app/radicle/identity", \
-  "--cache", "/app/radicle/org-node.json", \
   "--no-color", \
   "--listen", "0.0.0.0:8776" ]

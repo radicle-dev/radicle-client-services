@@ -17,10 +17,6 @@ pub struct Options {
     #[argh(option)]
     pub root: PathBuf,
 
-    /// node cache path (default: radicle-org-node.json)
-    #[argh(option, default = "PathBuf::from(\"radicle-org-node.json\")")]
-    pub cache: PathBuf,
-
     /// radicle orgs subgraph (url)
     #[argh(option)]
     pub subgraph: String,
@@ -61,7 +57,6 @@ impl From<Options> for node::Options {
     fn from(other: Options) -> Self {
         Self {
             root: other.root,
-            cache: other.cache,
             listen: other.listen,
             subgraph: other.subgraph,
             rpc_url: other.rpc_url,
