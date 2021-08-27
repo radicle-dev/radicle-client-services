@@ -121,6 +121,10 @@ fn parse_bootstrap(value: &str) -> Result<Vec<(PeerId, net::SocketAddr)>, String
 
 fn set_up_plain_log_format(_opts: &Options) {
     tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or(tracing_subscriber::EnvFilter::new("info")),
+        )
         .init();
 }
 
@@ -135,12 +139,16 @@ fn init_logger(opts: &Options) {
         LogFmt::Plain => set_up_plain_log_format(opts),
         LogFmt::Gcp => {
             use tracing_stackdriver::Stackdriver;
+            use tracing_subscriber::Layer;
             use tracing_subscriber::{layer::SubscriberExt, Registry};
-            let stackdriver = Stackdriver::with_writer(std::io::stderr); // writes to std::io::Stderr
-            let subscriber = Registry::default().with(stackdriver);
-            tracing::subscriber::set_global_default(subscriber)
+            let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or(tracing_subscriber::EnvFilter::new("info"));
+            let stackdriver_layer = Stackdriver::default();
+            let subscriber = Registry::default().with(stackdriver_layer);
+            let result = env_filter.with_subscriber(subscriber);
+            tracing::subscriber::set_global_default(result)
                 .expect("Could not set up global logger");
-        },
+        }
     }
 }
 

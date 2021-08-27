@@ -4686,14 +4686,14 @@ dependencies = [
 [[package]]
 name = "tracing-stackdriver"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0a7fc78ad2f400f707e1f42926490d9fc671ac0a71bc0d74f8a0ced836cb66e"
+source = "git+https://github.com/adaszko/tracing-stackdriver.git#f161dad5e37249b14c35df78602471679747fe48"
 dependencies = [
  "Inflector",
  "chrono",
  "futures 0.3.15",
  "serde",
  "serde_json",
+ "thiserror",
  "tracing-core",
  "tracing-futures",
  "tracing-serde",

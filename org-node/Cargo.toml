@@ -23,7 +23,7 @@ tracing-subscriber = "0.2"
 ureq = { version = "2.1.1", features = ["json"] }
 ethers = { version = "0.4" }
 rustc-hex = { version = "2.1" }
-tracing-stackdriver = { version = "0.1.0", optional = true }
+tracing-stackdriver = { git = "https://github.com/adaszko/tracing-stackdriver.git", optional = true }
 
 [features]
 default = []
