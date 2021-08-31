@@ -32,15 +32,11 @@ fn set_up_plain_log_format(_log_format: LogFmt) {
         .init();
 }
 
-#[cfg(not(feature = "gcp"))]
-pub fn init_logger(log_format: LogFmt) {
-    set_up_plain_log_format(log_format)
-}
-
-#[cfg(feature = "gcp")]
 pub fn init_logger(log_format: LogFmt) {
     match log_format {
         LogFmt::Plain => set_up_plain_log_format(log_format),
+
+        #[cfg(feature = "gcp")]
         LogFmt::Gcp => {
             use tracing_stackdriver::Stackdriver;
             use tracing_subscriber::Layer;
