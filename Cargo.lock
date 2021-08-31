@@ -3444,10 +3444,10 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
+ "shared",
  "thiserror",
  "tokio",
  "tracing",
- "tracing-stackdriver",
  "tracing-subscriber",
  "warp",
 ]
@@ -3497,11 +3497,11 @@ dependencies = [
  "rustc-hex",
  "serde",
  "serde_json",
+ "shared",
  "thiserror",
  "tokio",
  "tokio-stream",
  "tracing",
- "tracing-stackdriver",
  "tracing-subscriber",
  "ureq",
 ]
@@ -4137,6 +4137,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "79c719719ee05df97490f80a45acfc99e5a30ce98a1e4fb67aee422745ae14e3"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "shared"
+version = "0.1.0"
+dependencies = [
+ "tracing",
+ "tracing-stackdriver",
+ "tracing-subscriber",
 ]
 
 [[package]]
