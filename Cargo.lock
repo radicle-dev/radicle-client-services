@@ -4695,7 +4695,7 @@ dependencies = [
 [[package]]
 name = "tracing-stackdriver"
 version = "0.1.0"
-source = "git+https://github.com/adaszko/tracing-stackdriver.git#f161dad5e37249b14c35df78602471679747fe48"
+source = "git+https://github.com/radicle-dev/tracing-stackdriver.git#f161dad5e37249b14c35df78602471679747fe48"
 dependencies = [
  "Inflector",
  "chrono",
