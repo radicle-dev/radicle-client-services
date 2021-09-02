@@ -30,7 +30,7 @@ pub fn init_logger(log_format: LogFmt) {
                 .with_ansi(false)
                 .with_env_filter(
                     tracing_subscriber::EnvFilter::try_from_default_env()
-                        .unwrap_or(tracing_subscriber::EnvFilter::new("info")),
+                        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
                 )
                 .init();
         }
@@ -41,7 +41,7 @@ pub fn init_logger(log_format: LogFmt) {
             use tracing_subscriber::Layer;
             use tracing_subscriber::{layer::SubscriberExt, Registry};
             let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or(tracing_subscriber::EnvFilter::new("info"));
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
             let stackdriver_layer = Stackdriver::default();
             let subscriber = Registry::default().with(stackdriver_layer);
             let result = env_filter.with_subscriber(subscriber);
