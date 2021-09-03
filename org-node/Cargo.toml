@@ -12,7 +12,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 git2 = { version = "0.13", default-features = false }
 radicle-daemon = { version = "0.1" }
-radicle-keystore = { version = "0" }
 librad = { version = "0" }
 tokio = { version = "1", features = ["time", "rt", "rt-multi-thread"] }
 tokio-stream = { version = "0.1", default-features = false }

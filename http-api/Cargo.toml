@@ -13,7 +13,6 @@ serde_json = { version = "1", features = ["preserve_order"] }
 serde_urlencoded = { version = "0.7.0" }
 radicle-source = { version = "0.2.0", features = ["syntax"] }
 radicle-daemon = { version = "0.1.0" }
-radicle-keystore = { version = "0.1.1" }
 thiserror = { version = "1" }
 git2 = { version = "0.13", default-features = false, features = [] }
 tokio = { version = "1.2", features = ["macros", "rt", "sync"] }

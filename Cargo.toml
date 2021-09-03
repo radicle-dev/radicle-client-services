@@ -5,10 +5,6 @@ members = [
   "shared",
 ]
 
-[patch.crates-io.radicle-keystore]
-git = "https://github.com/radicle-dev/radicle-keystore"
-branch = "master"
-
 [patch.crates-io.radicle-daemon]
 git = "https://github.com/radicle-dev/radicle-link"
 branch = "master"
@@ -20,6 +16,10 @@ branch = "master"
 [patch.crates-io.ethers]
 git = "https://github.com/gakonst/ethers-rs"
 branch = "master"
+
+[patch.crates-io.thrussh-encoding]
+git = "https://github.com/FintanH/thrussh.git"
+branch = "generic-agent"
 
 [profile.release]
 debug = true
