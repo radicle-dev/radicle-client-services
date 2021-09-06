@@ -1,0 +1,31 @@
+version: "3.7"
+services:
+  http-api:
+    image: gcr.io/radicle-services/http-api:$DOCKER_TAG
+    build:
+      dockerfile: ./http-api/Dockerfile
+      context: .
+    ports:
+      - 8777:8777
+    volumes:
+      - $HOME/.radicle:/app/radicle:ro
+    environment:
+      RUST_LOG: info
+    init: true
+    container_name: http-api
+    restart: unless-stopped
+  org-node:
+    image: gcr.io/radicle-services/org-node:$DOCKER_TAG
+    build:
+      dockerfile: ./org-node/Dockerfile
+      context: .
+    ports:
+      - 8776:8776/udp
+    volumes:
+      - $HOME/.radicle:/app/radicle
+    environment:
+      RUST_LOG: org-node=debug,info
+    init: true
+    container_name: org-node
+    restart: unless-stopped
+    command: ["--subgraph", "https://gateway.thegraph.com/api/1758a78ae257ad4906f9c638e4a68c19/subgraphs/id/0x2f0963e77ca6ac0c2dad1bf4147b6b40e0dd8728-0", "--orgs", "0x8152237402e0f194176154c3a6ea1eb99b611482"]
