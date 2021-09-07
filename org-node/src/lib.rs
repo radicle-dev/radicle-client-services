@@ -5,6 +5,7 @@
 //!
 //! The org node can be configured to listen to any number of orgs, or *all*
 //! orgs.
+use anyhow::Context;
 use ethers::abi::Address;
 use ethers::prelude::*;
 use ethers::providers::{Provider, Ws};
@@ -123,9 +124,11 @@ pub enum Error {
 }
 
 /// Run the Node.
-pub fn run(rt: tokio::runtime::Runtime, options: Options) -> Result<(), Error> {
+pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> {
     let paths = Paths::from_root(options.root).unwrap();
-    let identity = File::open(options.identity)?;
+    let identity_path = options.identity.clone();
+    let identity = File::open(options.identity)
+        .with_context(|| format!("Unable to open {:?}", &identity_path))?;
     let signer = client::Signer::new(identity)?;
     let peer_id = PeerId::from(signer.clone());
     let client = Client::new(

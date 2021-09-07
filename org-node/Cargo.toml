@@ -23,6 +23,7 @@ tracing-subscriber = "0.2"
 ureq = { version = "2.1.1", features = ["json"] }
 ethers = { version = "0.4" }
 rustc-hex = { version = "2.1" }
+anyhow = "1.0"
 
 [features]
 gcp = ["shared/gcp"]
