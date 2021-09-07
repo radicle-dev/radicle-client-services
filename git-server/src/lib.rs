@@ -190,18 +190,15 @@ fn git(
     };
 
     // Read stderr.
-    if let Some(status) = child.try_wait()? {
-        if !status.success() {
-            if let Some(mut out) = child.stderr.take() {
-                let mut buf = Vec::new();
-                out.read_to_end(&mut buf).ok();
+    if let Some(mut out) = child.stderr.take() {
+        let mut buf = Vec::new();
+        out.read_to_end(&mut buf).ok();
 
-                if let Ok(err) = String::from_utf8(buf) {
-                    tracing::error!("http-backend: {}", err);
-                }
-            }
+        if let Ok(err) = String::from_utf8(buf) {
+            tracing::error!("http-backend: {}", err);
         }
     }
+    child.try_wait()?;
 
     let mut body = Vec::new();
     reader.read_to_end(&mut body)?;
