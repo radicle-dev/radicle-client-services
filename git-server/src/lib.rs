@@ -93,17 +93,19 @@ fn git(
     path: warp::filters::path::Tail,
     query: String,
 ) -> Result<(http::StatusCode, HashMap<String, Vec<String>>, Vec<u8>), Error> {
-    let path_info = if path.as_str().starts_with('/') {
-        path.as_str().to_owned()
-    } else {
-        format!("/{}", path.as_str())
-    };
     let content_type =
         if let Some(Ok(content_type)) = headers.get("Content-Type").map(|h| h.to_str()) {
             content_type
         } else {
             ""
         };
+    let mut parts = path.as_str().splitn(2, '/');
+    let namespace = parts.next().unwrap();
+    let rest = parts.next().unwrap();
+    let path = format!("/git/{}", rest);
+
+    tracing::debug!("namespace: {}", namespace);
+    tracing::debug!("path: {}", path);
 
     let mut cmd = Command::new("git");
 
@@ -111,7 +113,8 @@ fn git(
 
     cmd.env("REQUEST_METHOD", method.as_str());
     cmd.env("GIT_PROJECT_ROOT", &ctx.root);
-    cmd.env("PATH_INFO", path_info);
+    cmd.env("GIT_NAMESPACE", namespace);
+    cmd.env("PATH_INFO", path);
     cmd.env("CONTENT_TYPE", content_type);
     // "The backend process sets GIT_COMMITTER_NAME to $REMOTE_USER and GIT_COMMITTER_EMAIL to
     // ${REMOTE_USER}@http.${REMOTE_ADDR}, ensuring that any reflogs created by git-receive-pack
