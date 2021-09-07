@@ -176,3 +176,11 @@ are using TLS termination, simply omit the `--tls-*` arguments.
 
 You may also want to detach the process (`-d`) and run with a TTY in interactive
 mode (`-it`).
+
+### GCP Deployment
+
+In order to deploy on GCP, you will need to decrypt .env file that contains
+requisite configuration encrypted with
+[sops](https://github.com/mozilla/sops):
+
+    sops --decrypt --in-place --input-type dotenv --output-type dotenv --gcp-kms projects/radicle-services/locations/global/keyRings/sops/cryptoKeys/sops-key .env
