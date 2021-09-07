@@ -2,6 +2,7 @@
 members = [
   "http-api",
   "org-node",
+  "git-server",
   "shared",
 ]
 
