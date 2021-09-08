@@ -195,7 +195,9 @@ fn git(
         out.read(&mut buf).ok();
 
         if let Ok(err) = String::from_utf8(buf) {
-            tracing::error!("http-backend: {}", err);
+            if !err.trim().is_empty() {
+                tracing::error!("http-backend: {}", err);
+            }
         }
     }
 
