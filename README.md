@@ -179,8 +179,8 @@ mode (`-it`).
 
 ### GCP Deployment
 
-In order to deploy on GCP, you will need to decrypt .env file that contains
-requisite configuration encrypted with
+In order to deploy on GCP, you will need to decrypt the .env file that contains
+additional required environment variables encrypted with
 [sops](https://github.com/mozilla/sops):
 
     sops --decrypt --in-place --input-type dotenv --output-type dotenv --gcp-kms projects/radicle-services/locations/global/keyRings/sops/cryptoKeys/sops-key .env
