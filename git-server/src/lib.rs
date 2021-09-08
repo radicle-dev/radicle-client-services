@@ -3,7 +3,7 @@ mod error;
 
 use std::collections::HashMap;
 use std::io::{BufRead, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::{io, net};
 
@@ -22,16 +22,21 @@ pub struct Options {
     pub listen: net::SocketAddr,
     pub tls_cert: Option<PathBuf>,
     pub tls_key: Option<PathBuf>,
+    pub git_receive_pack: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct Context {
     root: PathBuf,
+    git_receive_pack: bool,
 }
 
 /// Run the Git Server.
 pub async fn run(options: Options) {
-    let ctx = Context { root: options.root };
+    let ctx = Context {
+        root: options.root,
+        git_receive_pack: options.git_receive_pack,
+    };
     let server = warp::filters::any::any()
         .map(move || ctx.clone())
         .and(warp::method())
@@ -61,6 +66,24 @@ pub async fn run(options: Options) {
     }
 }
 
+fn authenticate(headers: &HeaderMap) -> Result<String, Error> {
+    if let Some(Ok(auth)) = headers.get("Authorization").map(|h| h.to_str()) {
+        if let Some(encoded) = auth.strip_prefix("Basic ") {
+            let decoded = base64::decode(encoded).map_err(|_| Error::InvalidAuthorization)?;
+            let credentials =
+                String::from_utf8(decoded).map_err(|_| Error::InvalidAuthorization)?;
+            let mut parts = credentials.splitn(2, ':');
+            let username = parts.next().ok_or(Error::InvalidAuthorization)?;
+            let _password = parts.next().ok_or(Error::InvalidAuthorization)?;
+
+            return Ok(username.to_owned());
+        } else {
+            return Err(Error::InvalidAuthorization);
+        }
+    }
+    Err(Error::Unauthorized)
+}
+
 async fn git_handler(
     ctx: Context,
     method: Method,
@@ -69,7 +92,7 @@ async fn git_handler(
     remote: Option<net::SocketAddr>,
     path: warp::filters::path::Tail,
     query: String,
-) -> Result<impl Reply, Rejection> {
+) -> Result<Box<dyn Reply>, Rejection> {
     let remote = remote.expect("there is always a remote for HTTP connections");
     let (status, headers, body) = git(ctx, method, headers, body, remote, path, query)?;
     let mut builder = http::Response::builder().status(status);
@@ -81,7 +104,7 @@ async fn git_handler(
     }
     let response = builder.body(body).map_err(Error::from)?;
 
-    Ok(response)
+    Ok(Box::new(response))
 }
 
 fn git(
@@ -101,11 +124,28 @@ fn git(
         };
     let mut parts = path.as_str().splitn(2, '/');
     let namespace = parts.next().unwrap();
-    let rest = parts.next().unwrap();
-    let path = format!("/git/{}", rest);
+    let request = parts.next().unwrap();
+    let path = Path::new("/git").join(request);
+
+    let username = match (request, query.as_str()) {
+        // Eg. `git push`
+        ("git-receive-pack", _) | (_, "service=git-receive-pack") => {
+            if ctx.git_receive_pack {
+                if let Ok(username) = authenticate(&headers) {
+                    username
+                } else {
+                    return Err(Error::Unauthorized);
+                }
+            } else {
+                return Err(Error::ServiceUnavailable("git-receive-pack"));
+            }
+        }
+        // Other
+        _ => String::default(),
+    };
 
     tracing::debug!("namespace: {}", namespace);
-    tracing::debug!("path: {}", path);
+    tracing::debug!("path: {:?}", path);
 
     let mut cmd = Command::new("git");
 
@@ -119,7 +159,7 @@ fn git(
     // "The backend process sets GIT_COMMITTER_NAME to $REMOTE_USER and GIT_COMMITTER_EMAIL to
     // ${REMOTE_USER}@http.${REMOTE_ADDR}, ensuring that any reflogs created by git-receive-pack
     // contain some identifying information of the remote user who performed the push."
-    cmd.env("REMOTE_USER", remote.to_string());
+    cmd.env("REMOTE_USER", username);
     cmd.env("REMOTE_ADDR", remote.to_string());
     cmd.env("QUERY_STRING", query);
     // "The GIT_HTTP_EXPORT_ALL environmental variable may be passed to git-http-backend to bypass
@@ -207,16 +247,23 @@ fn git(
     Ok((status, headers, body))
 }
 
-async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible> {
+async fn recover(err: Rejection) -> Result<Box<dyn Reply>, std::convert::Infallible> {
     let status = if err.is_not_found() {
         StatusCode::NOT_FOUND
     } else if let Some(error) = err.find::<Error>() {
         tracing::error!("{}", error);
 
+        if let Error::Unauthorized = error {
+            return Ok(Box::new(reply::with_header(
+                reply::with_status(String::default(), http::StatusCode::UNAUTHORIZED),
+                http::header::WWW_AUTHENTICATE,
+                r#"Basic realm="radicle", charset="UTF-8""#,
+            )));
+        }
         error.status()
     } else {
         StatusCode::BAD_REQUEST
     };
 
-    Ok(reply::with_status(String::default(), status))
+    Ok(Box::new(reply::with_status(String::default(), status)))
 }

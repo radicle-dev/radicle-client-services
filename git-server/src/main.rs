@@ -29,6 +29,10 @@ pub struct Options {
     /// either "plain" or "gcp" (gcp available only when compiled-in)
     #[argh(option, default = "LogFmt::Plain")]
     pub log_format: LogFmt,
+
+    /// service 'git-receive-pack' operations, eg. resulting from a `git push` (default: false)
+    #[argh(switch)]
+    pub git_receive_pack: bool,
 }
 
 impl Options {
@@ -44,6 +48,7 @@ impl From<Options> for server::Options {
             tls_cert: other.tls_cert,
             tls_key: other.tls_key,
             listen: other.listen,
+            git_receive_pack: other.git_receive_pack,
         }
     }
 }
