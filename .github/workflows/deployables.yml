@@ -24,7 +24,7 @@ jobs:
         with:
           file: http-api/Dockerfile
           push: true
-          tags: gcr.io/radicle-services/http-api:latest
+          tags: gcr.io/radicle-services/http-api:latest,gcr.io/radicle-services/http-api:${{ github.sha }}
           cache-from: type=registry,ref=gcr.io/radicle-services/http-api:buildcache
           cache-to: type=registry,ref=gcr.io/radicle-services/http-api:buildcache,mode=max
       - name: Build and push org-node
@@ -33,7 +33,7 @@ jobs:
         with:
           file: org-node/Dockerfile
           push: true
-          tags: gcr.io/radicle-services/org-node:latest
+          tags: gcr.io/radicle-services/org-node:latest,gcr.io/radicle-services/org-node:${{ github.sha }}
           cache-from: type=registry,ref=gcr.io/radicle-services/org-node:buildcache
           cache-to: type=registry,ref=gcr.io/radicle-services/org-node:buildcache,mode=max
       - name: Build and push git-server
@@ -42,6 +42,6 @@ jobs:
         with:
           file: git-server/Dockerfile
           push: true
-          tags: gcr.io/radicle-services/git-server:latest
+          tags: gcr.io/radicle-services/git-server:latest,gcr.io/radicle-services/git-server:${{ github.sha }}
           cache-from: type=registry,ref=gcr.io/radicle-services/git-server:buildcache
           cache-to: type=registry,ref=gcr.io/radicle-services/git-server:buildcache,mode=max
