@@ -1,4 +1,5 @@
 #![allow(clippy::type_complexity)]
+#![allow(clippy::too_many_arguments)]
 mod error;
 
 use std::collections::HashMap;
@@ -43,6 +44,7 @@ pub async fn run(options: Options) {
         .and(warp::filters::header::headers_cloned())
         .and(warp::filters::body::aggregate())
         .and(warp::filters::addr::remote())
+        .and(path::param())
         .and(path::tail())
         .and(
             warp::filters::query::raw()
@@ -90,11 +92,14 @@ async fn git_handler(
     headers: HeaderMap,
     body: impl Buf,
     remote: Option<net::SocketAddr>,
-    path: warp::filters::path::Tail,
+    namespace: String,
+    request: warp::filters::path::Tail,
     query: String,
 ) -> Result<Box<dyn Reply>, Rejection> {
     let remote = remote.expect("there is always a remote for HTTP connections");
-    let (status, headers, body) = git(ctx, method, headers, body, remote, path, query)?;
+    let (status, headers, body) = git(
+        ctx, method, headers, body, remote, namespace, request, query,
+    )?;
     let mut builder = http::Response::builder().status(status);
 
     for (name, vec) in headers.iter() {
@@ -113,7 +118,8 @@ fn git(
     headers: HeaderMap,
     mut body: impl Buf,
     remote: net::SocketAddr,
-    path: warp::filters::path::Tail,
+    namespace: String,
+    request: warp::filters::path::Tail,
     query: String,
 ) -> Result<(http::StatusCode, HashMap<String, Vec<String>>, Vec<u8>), Error> {
     let content_type =
@@ -122,9 +128,7 @@ fn git(
         } else {
             ""
         };
-    let mut parts = path.as_str().splitn(2, '/');
-    let namespace = parts.next().unwrap();
-    let request = parts.next().unwrap();
+    let request = request.as_str();
     let path = Path::new("/git").join(request);
 
     let username = match (request, query.as_str()) {
