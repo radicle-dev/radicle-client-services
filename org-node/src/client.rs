@@ -356,10 +356,6 @@ impl Client {
         }
         let branch_ref = branch_ref.to_string_lossy();
 
-        repository
-            .set_namespace(namespace.as_str())
-            .map_err(|e| Error::SetHead(Box::new(e)))?;
-
         let reference = repository
             .find_reference(&branch_ref)
             .map_err(|e| Error::SetHead(Box::new(e)))?;
@@ -371,12 +367,17 @@ impl Client {
         let local_branch_ref = namespace_path.join("refs").join("heads").join(&branch);
         let local_branch_ref = local_branch_ref.to_str().expect("ref is valid unicode");
 
+        tracing::debug!(target: "org-node", "Setting ref {:?} -> {:?}", &local_branch_ref, oid);
         repository
             .reference(&local_branch_ref, oid, true, "set-local-branch (org-node)")
             .map_err(|e| Error::SetHead(Box::new(e)))?;
+
+        tracing::debug!(target: "org-node", "Setting ref {:?} -> {:?}", &branch_ref, oid);
         repository
             .reference(&branch_ref, oid, true, "set-remote-branch (org-node)")
             .map_err(|e| Error::SetHead(Box::new(e)))?;
+
+        tracing::debug!(target: "org-node", "Setting ref {:?} -> {:?}", &head, local_branch_ref);
         repository
             .reference_symbolic(&head, &local_branch_ref, true, "set-head (org-node)")
             .map_err(|e| Error::SetHead(Box::new(e)))?;
