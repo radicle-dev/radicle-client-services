@@ -163,7 +163,7 @@ impl Client {
             },
             storage,
         };
-        let peer = Peer::new(peer_config).unwrap();
+        let peer = Peer::new(peer_config).expect("signing key must match peer id");
         let mut requests = ReceiverStream::new(self.requests).fuse();
 
         // Spawn the peer thread.
@@ -179,11 +179,11 @@ impl Client {
                                 let (_kill, run) = bound.accept(disco.clone().discover());
 
                                 if let Err(e) = run.await {
-                                    tracing::error!(err = ?e, "Accept error")
+                                    tracing::error!(target: "org-node", err = ?e, "Accept error")
                                 }
                             }
                             Err(e) => {
-                                tracing::error!(err = ?e, "Bind error");
+                                tracing::error!(target: "org-node", err = ?e, "Bind error");
                                 tokio::time::sleep(Duration::from_secs(2)).await
                             }
                         }
@@ -279,11 +279,15 @@ impl Client {
         match &result {
             Ok(tracked) => {
                 if *tracked {
-                    tracing::info!("Successfully tracked project {} from peer {}", urn, peer_id)
+                    tracing::info!(
+                        target: "org-node",
+                        "Successfully tracked project {} from peer {}", urn, peer_id
+                    )
                 }
             }
             Err(err) => {
                 tracing::info!(
+                    target: "org-node",
                     "Error tracking project {} from peer {}: {}",
                     urn,
                     peer_id,

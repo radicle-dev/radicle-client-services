@@ -111,7 +111,7 @@ fn main() {
         .unwrap();
 
     if let Err(e) = node::run(rt, options.into()) {
-        tracing::error!("Exiting: {}", e);
+        tracing::error!(target: "org-node", "Fatal: {:#}", e);
         std::process::exit(1);
     }
 }

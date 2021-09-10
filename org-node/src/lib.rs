@@ -129,7 +129,8 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
     let identity_path = options.identity.clone();
     let identity = File::open(options.identity)
         .with_context(|| format!("unable to open {:?}", &identity_path))?;
-    let signer = client::Signer::new(identity)?;
+    let signer = client::Signer::new(identity)
+        .with_context(|| format!("unable to load identity {:?}", &identity_path))?;
     let peer_id = PeerId::from(signer.clone());
     let client = Client::new(
         paths,
