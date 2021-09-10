@@ -1,5 +1,7 @@
-use std::{net::SocketAddr, panic, time::Duration};
+use std::path::Path;
+use std::{io, net::SocketAddr, panic, time::Duration};
 
+use either::Either;
 use futures::{future::FutureExt as _, select, stream::StreamExt as _};
 use thiserror::Error;
 
@@ -50,6 +52,12 @@ pub enum Error {
 
     #[error(transparent)]
     Replication(#[from] replication::Error),
+
+    #[error("failed to set project head: {0}")]
+    SetHead(Box<dyn std::error::Error + Send + Sync + 'static>),
+
+    #[error("invalid project: {0}: {1}")]
+    Project(Urn, &'static str),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -105,6 +113,12 @@ impl Default for Limits {
     }
 }
 
+/// A head reference.
+pub struct Head {
+    remote: String,
+    branch: String,
+}
+
 /// Client instance.
 pub struct Client {
     /// Paths.
@@ -152,7 +166,7 @@ impl Client {
         let peer_config = peer::Config {
             signer: self.signer,
             protocol: protocol::Config {
-                paths: self.paths,
+                paths: self.paths.clone(),
                 listen_addr: self.config.listen,
                 advertised_addrs: None, // TODO: Should we use this?
                 membership,
@@ -201,10 +215,11 @@ impl Client {
                 request = requests.next() => {
                     if let Some(r) = request {
                         let peer = peer.clone();
+                        let paths = self.paths.clone();
 
                        rt.spawn(async move {
-                            if let Err(err) = Client::handle_request(r, &peer).await {
-                                tracing::error!(err = ?err, "Request fulfilment failed");
+                            if let Err(err) = Client::handle_request(r, &peer, &paths).await {
+                                tracing::error!(target: "org-node", "Request fulfilment failed: {}", err);
                             }
                         });
                     }
@@ -214,7 +229,11 @@ impl Client {
     }
 
     /// Handle user requests.
-    async fn handle_request(request: Request, api: &Peer<Signer>) -> Result<(), Error> {
+    async fn handle_request(
+        request: Request,
+        api: &Peer<Signer>,
+        paths: &Paths,
+    ) -> Result<(), Error> {
         match request {
             Request::GetMembership(reply) => {
                 let info = api.membership().await;
@@ -230,11 +249,37 @@ impl Client {
             }
             Request::TrackProject(urn, timeout, reply) => {
                 let mut peers = api.providers(urn.clone(), timeout);
+                let project = Client::get_project_head(&urn, &api).await?;
+
+                // Don't track projects that already exist locally.
+                if let Some(Head { remote, branch }) = project {
+                    tracing::debug!(target: "org-node", "Project {} exists, (re-)setting head", urn);
+
+                    // Set the project head if it isn't already set.
+                    Client::set_head(&urn, &remote, &branch, &paths)?;
+
+                    return reply
+                        .send(Ok(None))
+                        .map_err(|_| Error::Reply("TrackProject".to_string()));
+                }
 
                 // Attempt to track until we succeed.
                 while let Some(peer) = peers.next().await {
                     if let Ok(tracked) = Client::track_project(api, &urn, &peer).await {
-                        let response = if tracked { Some(peer.peer_id) } else { None };
+                        let response = if tracked {
+                            let Head { remote, branch } = Client::get_project_head(&urn, &api)
+                                .await?
+                                .expect("a project that was just tracked should exist");
+                            // Tracking doesn't automatically set the repository head, we have to do it
+                            // manually. We set the head to the default branch of the project
+                            // maintainer.
+                            Client::set_head(&urn, &remote, &branch, &paths)?;
+
+                            Some(peer.peer_id)
+                        } else {
+                            None
+                        };
+
                         return reply
                             .send(Ok(response))
                             .map_err(|_| Error::Reply("TrackProject".to_string()));
@@ -247,7 +292,99 @@ impl Client {
         }
     }
 
-    /// Attempt to track a project.
+    /// Get the project head, or return nothing if it isn't found.
+    async fn get_project_head(urn: &Urn, api: &Peer<Signer>) -> Result<Option<Head>, Error> {
+        api.using_storage({
+            let urn = urn.clone();
+
+            move |storage| match identities::project::get(&storage, &urn) {
+                Ok(Some(project)) => {
+                    let maintainer = project
+                        .delegations()
+                        .iter()
+                        .flat_map(|either| match either {
+                            Either::Left(pk) => Either::Left(std::iter::once(PeerId::from(*pk))),
+                            Either::Right(indirect) => Either::Right(
+                                indirect.delegations().iter().map(|pk| PeerId::from(*pk)),
+                            ),
+                        })
+                        .next()
+                        .ok_or_else(|| Error::Project(urn.clone(), "project has no maintainer"))?;
+                    let default_branch =
+                        project.subject().default_branch.clone().ok_or_else(|| {
+                            Error::Project(urn.clone(), "project has no default branch")
+                        })?;
+
+                    Ok(Some(Head {
+                        remote: maintainer.default_encoding(),
+                        branch: default_branch.to_string(),
+                    }))
+                }
+                Ok(None) => Ok(None),
+                Err(err) => Err(Error::from(Box::new(err))),
+            }
+        })
+        .await?
+        .map_err(Error::from)
+    }
+
+    /// Set the 'HEAD' of a project.
+    ///
+    /// Creates the necessary refs so that a `git clone` may succeed and checkout the correct
+    /// branch.
+    fn set_head(urn: &Urn, maintainer: &str, branch: &str, paths: &Paths) -> Result<(), Error> {
+        let namespace = urn.encode_id();
+        let repository = git2::Repository::open_bare(paths.git_dir())
+            .map_err(|e| Error::SetHead(Box::new(e)))?;
+
+        // eg. refs/namespaces/<namespace>/refs/remotes/<peer>/heads/master
+        let namespace_path = Path::new("refs").join("namespaces").join(&namespace);
+        let branch_ref = namespace_path
+            .join("refs")
+            .join("remotes")
+            .join(maintainer)
+            .join("heads")
+            .join(branch);
+
+        tracing::debug!(target: "org-node", "Setting repository head for {} to {:?}", urn, branch_ref);
+
+        if !paths.git_dir().join(&branch_ref).exists() {
+            return Err(Error::SetHead(Box::new(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("path {:?} does not exist", paths.git_dir().join(branch_ref)),
+            ))));
+        }
+        let branch_ref = branch_ref.to_string_lossy();
+
+        repository
+            .set_namespace(namespace.as_str())
+            .map_err(|e| Error::SetHead(Box::new(e)))?;
+
+        let reference = repository
+            .find_reference(&branch_ref)
+            .map_err(|e| Error::SetHead(Box::new(e)))?;
+
+        let oid = reference.target().expect("reference target must exist");
+        let head = namespace_path.join("HEAD");
+        let head = head.to_str().unwrap();
+
+        let local_branch_ref = namespace_path.join("refs").join("heads").join(&branch);
+        let local_branch_ref = local_branch_ref.to_str().expect("ref is valid unicode");
+
+        repository
+            .reference(&local_branch_ref, oid, true, "set-local-branch (org-node)")
+            .map_err(|e| Error::SetHead(Box::new(e)))?;
+        repository
+            .reference(&branch_ref, oid, true, "set-remote-branch (org-node)")
+            .map_err(|e| Error::SetHead(Box::new(e)))?;
+        repository
+            .reference_symbolic(&head, &local_branch_ref, true, "set-head (org-node)")
+            .map_err(|e| Error::SetHead(Box::new(e)))?;
+
+        Ok(())
+    }
+
+    /// Attempt to track a project from a peer.
     async fn track_project(
         api: &Peer<Signer>,
         urn: &Urn,
