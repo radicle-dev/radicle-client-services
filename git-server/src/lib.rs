@@ -236,8 +236,12 @@ fn git(
     // Read stderr.
     if let Some(mut out) = child.stderr.take() {
         let mut buf = Vec::new();
-        out.read(&mut buf).ok();
 
+        while let Ok(count) = out.read(&mut buf) {
+            if count == 0 {
+                break;
+            }
+        }
         if let Ok(err) = String::from_utf8(buf) {
             if !err.trim().is_empty() {
                 tracing::error!("http-backend: {}", err);
