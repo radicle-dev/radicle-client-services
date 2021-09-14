@@ -6,12 +6,13 @@
 
 An *org seed node* is a type of node that replicates and distributes Radicle
 projects under one or more Radicle orgs, making them freely and publicly
-accessible on the web.
+accessible on the web, and via peer-to-peer protocols.
 
 Though it's possible to rely on shared infrastructure and community seed nodes,
 it is recommend for most orgs (and users) to self-host their projects in true
 peer-to-peer fashion. This can be achieved by running `radicle-org-node` and
-optionally `radicle-http-api` on a server or instance in the cloud.
+optionally `radicle-http-api` and `radicle-git-server` on a server or instance
+in the cloud.
 
 ### `radicle-org-node`
 
@@ -29,7 +30,8 @@ to the org node with minimal delay, and thus the rest of the network.
 
 Though the org node helps with reliable code distribution over the Radicle Link
 network, it does not expose projects in a way that is accessible to web and other
-HTTP clients. This is what the `radicle-http-api` is for.
+HTTP clients. This is what the `radicle-http-api` is for. To serve `git` clients,
+the `radicle-git-server` should be used.
 
 ### `radicle-http-api`
 
@@ -42,20 +44,32 @@ JSON HTTP API. This can enable clients to query project source code directly
 via HTTP, without having to run a node themselves. In particular, the Radicle
 web client was built around this API.
 
+### `radicle-git-server`
+
+The Radicle Git Server is an HTTP server that can serve repositories managed
+by Radicle. Since Radicle projects are stored in a shared, monolithic repository,
+commands like `git clone` cannot work out of the box. The Radicle Git Server
+maps requests to specific namespaces in the shared repository and allows a Radicle
+node to act as a typical Git server. It is then possible to clone a project
+by simply specifying its ID, for example:
+
+    git clone https://seed.alt-clients.radicle.xyz/hnrkyghsrokxzxpy9pww69xr11dr9q7edbxfo
+
 ### Service setup
 
 Though it's possible to only run the `radicle-org-node`, for maximum accessibility,
-it's recommended to run both services. Since the HTTP API wraps a local monorepo,
+it's recommended to run all services. Since the HTTP API wraps a local monorepo,
 these services should have access to the same file-system. The org node requires
 *write* access to the file system, while the HTTP API only requires *read* access.
 
-For this setup to work, it's import to point both services to the same *root*,
+For this setup to work, it's import to point all services to the same *root*,
 which is the path to the monorepo, eg.:
 
     $ radicle-org-node --root ~/.radicle/root --orgs …
     $ radicle-http-api --root ~/.radicle/root …
+    $ radicle-git-server --root ~/.radicle/root …
 
-This ensures the API can read the org node's state.
+This ensures the API and Git server can read the org node's state.
 
 #### Bootstrapping
 
@@ -95,12 +109,14 @@ For `radicle-http-api`, an HTTP port of your choosing should be opened. This por
 can then be specified via the `--listen` parameter, eg.
 `radicle-http-api --listen 0.0.0.0:8777`.  The default port is `8777`.
 
+For `radicle-git-server`, it is recommended that port `443` be open.
+
 #### TLS
 
-For `radicle-http-api`, it's important to setup TLS when running in production.
-This is to allow for compatibility with web clients that will mostly be using
-the `https` protocol. Web browser nowadays do not allow requests to unencrypted
-HTTP servers from websites using TLS.
+For `radicle-http-api` and `radicle-git-server`, it's important to setup TLS
+when running in production.  This is to allow for compatibility with web
+clients that will mostly be using the `https` protocol. Web browser nowadays do
+not allow requests to unencrypted HTTP servers from websites using TLS.
 
 The API service has built-in support for TLS, so there is no need to set up
 HTTPS termination via a separate service. Simply pass in the `--tls-cert`
@@ -119,19 +135,20 @@ Once these services are running, orgs wishing to point Radicle clients to them
 for project browsing should set the relevant records on ENS. This requires
 an ENS name to be registered for each org.
 
-To point Radicle Link clients to the right seed endpoint, use the `eth.radicle.seed.id`
-TXT record, usually labeled "Seed ID" to your Seed ID, eg.
+To point Radicle clients to the right seed endpoint, use the
+`eth.radicle.seed.id` text record, usually labeled "Seed ID", combined with the
+host address and port, eg.
 
     hynkyndc6w3p8urucfkobzna7sxbgctny7xxtw88dtx3pkf7m3nrzc@seed.acme.org:8776
 
-To point HTTP clients to the right service endpoint, use the `eth.radicle.seed.api`
-TXT record, usually labeled "Seed API" to your HTTP API endpoint, eg.
+To point HTTP clients to the right service endpoint, use the `eth.radicle.seed.host`
+text record, usually labeled "Seed Host", combined with the port number, to
+your HTTP API endpoint, eg.
 
     https://seed.acme.org:8777
 
-These records can be set on the web client at <https://app.radicle.network/registrations/acme>
-for an org registered under `acme.radicle.eth`. Replace `acme` with the name
-of your org.
+These records can be set on the web client. For example, the records for the
+Alt.-clients org can be found at <https://app.radicle.network/registrations/alt-clients>.
 
 ### Docker
 
@@ -143,6 +160,7 @@ To build the containers, run:
 
     $ docker build -t radicle-services/org-node -f org-node/Dockerfile .
     $ docker build -t radicle-services/http-api -f http-api/Dockerfile .
+    $ docker build -t radicle-services/git-server -f git-server/Dockerfile .
 
 #### Running
 
@@ -173,6 +191,8 @@ To run the HTTP API, run:
 
 Make sure your TLS certificate files can be found under `$HOME/.radicle`. If you
 are using TLS termination, simply omit the `--tls-*` arguments.
+
+Running `radicle-git-server` is more or less identical to running the HTTP API.
 
 You may also want to detach the process (`-d`) and run with a TTY in interactive
 mode (`-it`).
