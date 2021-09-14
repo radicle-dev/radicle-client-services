@@ -58,6 +58,7 @@ async fn main() {
     let options = Options::from_env();
 
     shared::init_logger(options.log_format);
+    tracing::info!("version {}-{}", env!("CARGO_PKG_VERSION"), env!("GIT_HEAD"));
 
     api::run(options.into()).await;
 }

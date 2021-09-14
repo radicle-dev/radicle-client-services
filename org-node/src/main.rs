@@ -104,6 +104,7 @@ fn main() {
     let options = Options::from_env();
 
     shared::init_logger(options.log_format);
+    tracing::info!("version {}-{}", env!("CARGO_PKG_VERSION"), env!("GIT_HEAD"));
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
