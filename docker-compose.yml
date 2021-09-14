@@ -14,6 +14,14 @@ services:
     init: true
     container_name: http-api
     restart: unless-stopped
+  caddy:
+    image: caddy:2.4.5
+    ports:
+      - 80:80
+      - 443:443
+    command: caddy reverse-proxy --from $DOMAIN --to http-api:8777
+    depends_on:
+      - http-api
   org-node:
     image: gcr.io/radicle-services/org-node:$DOCKER_TAG
     build:
