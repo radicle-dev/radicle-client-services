@@ -37,3 +37,15 @@ services:
     container_name: org-node
     restart: unless-stopped
     command: ["--subgraph", "https://gateway.thegraph.com/api/1758a78ae257ad4906f9c638e4a68c19/subgraphs/id/0x2f0963e77ca6ac0c2dad1bf4147b6b40e0dd8728-0", "--rpc-url", $ETH_RPC_URL]
+  git-server:
+    image: gcr.io/radicle-services/git-server:$DOCKER_TAG
+    build:
+      dockerfile: ./git-server/Dockerfile
+      context: .
+    ports:
+      - 8779:8778
+    volumes:
+      - $HOME/.radicle:/app/radicle
+    init: true
+    container_name: git-server
+    restart: unless-stopped
