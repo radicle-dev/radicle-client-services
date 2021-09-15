@@ -1,7 +1,7 @@
-DOMAIN {
+{$RAD_DOMAIN} {
     reverse_proxy git-server
 }
 
-DOMAIN:8777 {
+{$RAD_DOMAIN}:8777 {
     reverse_proxy http-api:8777
 }

@@ -45,6 +45,8 @@ services:
       - 8777:8777
     volumes:
       - $PWD/Caddyfile:/etc/caddy/Caddyfile:ro
+    environment:
+      - RAD_DOMAIN=$RAD_DOMAIN
     depends_on:
       - http-api
       - git-server
