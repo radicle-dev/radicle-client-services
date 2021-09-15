@@ -52,7 +52,7 @@ services:
     volumes:
       - $PWD/Caddyfile:/etc/caddy/Caddyfile:ro
     environment:
-      - RAD_DOMAIN=$RAD_DOMAIN
+      - RADICLE_DOMAIN=$RADICLE_DOMAIN
     container_name: radicle-caddy
     networks:
       - radicle-services
