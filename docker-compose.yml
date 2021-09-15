@@ -5,8 +5,6 @@ services:
     build:
       dockerfile: ./http-api/Dockerfile
       context: .
-    ports:
-      - 8777:8777
     volumes:
       - $HOME/.radicle:/app/radicle:ro
     environment:
@@ -14,14 +12,6 @@ services:
     init: true
     container_name: http-api
     restart: unless-stopped
-  caddy:
-    image: caddy:2.4.5
-    ports:
-      - 80:80
-      - 443:443
-    command: caddy reverse-proxy --from $DOMAIN --to http-api:8777
-    depends_on:
-      - http-api
   org-node:
     image: gcr.io/radicle-services/org-node:latest
     build:
@@ -42,10 +32,19 @@ services:
     build:
       dockerfile: ./git-server/Dockerfile
       context: .
-    ports:
-      - 8779:8778
     volumes:
       - $HOME/.radicle:/app/radicle
     init: true
     container_name: git-server
     restart: unless-stopped
+  caddy:
+    image: caddy:2.4.5
+    ports:
+      - 80:80
+      - 443:443
+      - 8777:8777
+    volumes:
+      - $PWD/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - http-api
+      - git-server
