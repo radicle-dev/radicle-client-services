@@ -38,6 +38,14 @@ pub async fn run(options: Options) {
         root: options.root,
         git_receive_pack: options.git_receive_pack,
     };
+
+    let git_version = Command::new("git")
+        .arg("version")
+        .output()
+        .expect("'git' command must be available")
+        .stdout;
+    tracing::info!("{}", std::str::from_utf8(&git_version).unwrap());
+
     let server = warp::filters::any::any()
         .map(move || ctx.clone())
         .and(warp::method())
