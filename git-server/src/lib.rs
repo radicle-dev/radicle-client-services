@@ -44,7 +44,7 @@ pub async fn run(options: Options) {
         .output()
         .expect("'git' command must be available")
         .stdout;
-    tracing::info!("{}", std::str::from_utf8(&git_version).unwrap());
+    tracing::info!("{}", std::str::from_utf8(&git_version).unwrap().trim());
 
     let server = warp::filters::any::any()
         .map(move || ctx.clone())
