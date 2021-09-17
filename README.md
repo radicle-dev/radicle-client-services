@@ -197,6 +197,39 @@ Running `radicle-git-server` is more or less identical to running the HTTP API.
 You may also want to detach the process (`-d`) and run with a TTY in interactive
 mode (`-it`).
 
+### Docker Compose
+
+As an alternative to building the containers yourself, a `docker-compose.yml`
+file is included in the repository. To run the services via Docker Compose, you
+have to:
+
+1. Install Docker and Docker Compose
+2. Clone this repository
+3. Set the necessary environment variables
+4. Start the radicle client services via Docker Compose
+
+To install Docker Compose, run:
+
+    sudo apt-get install docker
+    pip install docker-compose
+
+Then clone this repository and `cd` into it:
+
+    git clone <repository-url> radicle-client-services
+    cd radicle-client-service
+
+Then set `RADICLE_ORGS` to the address of your org, `RADICLE_DOMAIN` to your
+seed node's domain, eg. `seed.cloudhead.io`, `ETH_RPC_URL` to an Ethereum
+JSON-RPC WebSocket endpoint, eg. `ws://localhost:8545`, and `SEED_USER_ID` to
+the user id that should own the `git` files, eg. `id --user $(whoami)` to set
+them to the logged-in user. These can be set in the environment, or in a `.env`
+file in the current directory.
+
+Finally, pull the containers and start the services:
+
+    docker-compose pull
+    docker-compose up --detach
+
 ### GCP Deployment
 
 In order to deploy on GCP, you will need to decrypt the .env file that contains
