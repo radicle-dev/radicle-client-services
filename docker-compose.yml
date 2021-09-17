@@ -38,6 +38,8 @@ services:
       context: .
     volumes:
       - $HOME/.radicle:/app/radicle
+    environment:
+      - RUST_LOG=hyper=warn,debug
     init: true
     container_name: git-server
     restart: unless-stopped
