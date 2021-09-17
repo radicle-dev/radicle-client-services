@@ -159,24 +159,51 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
     let (work, queue) = mpsc::channel(256);
 
     // Queue of events on orgs.
-    let (update, mut events) = mpsc::channel(256);
+    let (update, events) = mpsc::channel(256);
 
-    rt.spawn(client.run(rt.handle().clone()));
-    rt.spawn(track_projects(handle, queue));
+    let client_task = rt.spawn(client.run(rt.handle().clone()));
+    let track_task = rt.spawn(track_projects(handle, queue));
 
     tracing::info!(target: "org-node", "Listening on {}...", options.listen);
 
     // First get up to speed with existing anchors, before we start listening for events.
     let projects = query(&options.subgraph, timestamp, &addresses).map_err(Box::new)?;
-    process_anchors(projects, &work)?;
+    rt.block_on(process_anchors(projects, &work))?;
 
     // Now launch the event subscriber and listen on events.
-    rt.spawn(subscribe_events(options.rpc_url, addresses, update));
+    let event_task = rt.spawn(subscribe_events(options.rpc_url, addresses, update));
+    let query_task = rt.spawn(query_projects(timestamp, options.subgraph, events, work));
 
-    while let Some(event) = events.blocking_recv() {
-        match query(&options.subgraph, timestamp, &[event.address]) {
+    let result = rt.block_on(async {
+        tokio::select! {
+            result = client_task => result,
+            result = track_task => result,
+            result = event_task => result,
+            result = query_task => result,
+        }
+    });
+
+    if let Err(err) = result {
+        tracing::info!(target: "org-node", "Task failed: {}", err);
+    }
+    tracing::info!(target: "org-node", "Exiting..");
+
+    Ok(())
+}
+
+async fn query_projects(
+    timestamp: u64,
+    subgraph: String,
+    mut events: mpsc::Receiver<Log>,
+    work: mpsc::Sender<Urn>,
+) {
+    while let Some(event) = events.recv().await {
+        match query(&subgraph, timestamp, &[event.address]) {
             Ok(projects) => {
-                process_anchors(projects, &work)?;
+                if let Err(err) = process_anchors(projects, &work).await {
+                    tracing::error!(target: "org-node", "Anchor processing failed: {}", err);
+                    return;
+                }
             }
             Err(ureq::Error::Transport(err)) => {
                 tracing::error!(target: "org-node", "Query failed: {}", err);
@@ -186,12 +213,9 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
             }
         }
     }
-    tracing::info!(target: "org-node", "Exiting..");
-
-    Ok(())
 }
 
-fn process_anchors(projects: Vec<Project>, work: &mpsc::Sender<Urn>) -> Result<(), Error> {
+async fn process_anchors(projects: Vec<Project>, work: &mpsc::Sender<Urn>) -> Result<(), Error> {
     if projects.is_empty() {
         return Ok(());
     }
@@ -209,7 +233,7 @@ fn process_anchors(projects: Vec<Project>, work: &mpsc::Sender<Urn>) -> Result<(
         };
 
         tracing::info!(target: "org-node", "Queueing {}", urn);
-        work.blocking_send(urn)?;
+        work.send(urn).await?;
     }
     Ok(())
 }
