@@ -219,10 +219,9 @@ Then clone this repository and `cd` into it:
     cd radicle-client-service
 
 Then set `RADICLE_ORGS` to the address of your org, `RADICLE_DOMAIN` to your
-seed node's domain, eg. `seed.cloudhead.io`, `ETH_RPC_URL` to an Ethereum
-JSON-RPC WebSocket endpoint, eg. `ws://localhost:8545`, and `SEED_USER_ID` to
-the user id that should own the `git` files, eg. `id --user $(whoami)` to set
-them to the logged-in user. These can be set in the environment, or in a `.env`
+seed node's domain, eg. `seed.cloudhead.io`, and `ETH_RPC_URL` to an Ethereum
+JSON-RPC WebSocket endpoint, eg. `ws://localhost:8545` or a third-party provider
+such as Infura or Alchemy. These can be set in the environment, or in a `.env`
 file in the current directory.
 
 Finally, pull the containers and start the services:
@@ -237,3 +236,7 @@ additional required environment variables encrypted with
 [sops](https://github.com/mozilla/sops):
 
     sops --decrypt --in-place --input-type dotenv --output-type dotenv --gcp-kms projects/radicle-services/locations/global/keyRings/sops/cryptoKeys/sops-key .env
+
+You are also encouraged to set the `RADICLE_SEED_USER` environment variable to
+a user id that should own the `git` files, eg. `export RADICLE_SEED_USER=$(id --user)`
+to set it to the logged-in user.

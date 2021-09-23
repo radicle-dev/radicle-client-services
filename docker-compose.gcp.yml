@@ -8,7 +8,7 @@ services:
         tag: docker.http_api
     volumes:
       - /var/opt/radicle-seed/.radicle:/app/radicle:ro
-    user: $SEED_USER_ID:$SEED_USER_ID
+    user: $RADICLE_SEED_USER:$RADICLE_SEED_USER
     command: ["--log-format", "gcp"]
   org-node:
     logging:
@@ -18,7 +18,7 @@ services:
         tag: docker.org_node
     volumes:
       - /var/opt/radicle-seed/.radicle:/app/radicle
-    user: $SEED_USER_ID:$SEED_USER_ID
+    user: $RADICLE_SEED_USER:$RADICLE_SEED_USER
     command: ["--orgs", $RADICLE_ORGS, "--subgraph", "https://gateway.thegraph.com/api/1758a78ae257ad4906f9c638e4a68c19/subgraphs/id/0x2f0963e77ca6ac0c2dad1bf4147b6b40e0dd8728-0", "--rpc-url", $ETH_RPC_URL, "--log-format", "gcp"]
   git-server:
     volumes:
