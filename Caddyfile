@@ -1,5 +1,5 @@
 {$RADICLE_DOMAIN} {
-    reverse_proxy git-server
+    reverse_proxy git-server:8778
 }
 
 {$RADICLE_DOMAIN}:8777 {
