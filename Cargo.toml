@@ -8,15 +8,22 @@ members = [
 
 [patch.crates-io.radicle-daemon]
 git = "https://github.com/radicle-dev/radicle-link"
-branch = "master"
+tag = "cycle/2021-10-19"
 
 [patch.crates-io.librad]
 git = "https://github.com/radicle-dev/radicle-link"
-branch = "master"
+tag = "cycle/2021-10-19"
 
-[patch.crates-io.ethers]
-git = "https://github.com/gakonst/ethers-rs"
-branch = "master"
+# These patches are the same as those listed in
+# https://github.com/radicle-dev/radicle-link/blob/master/Cargo.toml
+
+[patch.crates-io.git2]
+git = "https://github.com/radicle-dev/git2-rs.git"
+rev = "ae027b9e7b125f56397bbb7d8652b3427deeede6"
+
+[patch.crates-io.libgit2-sys]
+git = "https://github.com/radicle-dev/git2-rs.git"
+rev = "ae027b9e7b125f56397bbb7d8652b3427deeede6"
 
 [patch.crates-io.thrussh-encoding]
 git = "https://github.com/FintanH/thrussh.git"
