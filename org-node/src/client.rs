@@ -248,7 +248,6 @@ impl Client {
                     .map_err(|_| Error::Reply("GetPeers".to_string()))
             }
             Request::TrackProject(urn, timeout, reply) => {
-                let mut peers = api.providers(urn.clone(), timeout);
                 let project = Client::get_project_head(&urn, &api).await?;
 
                 // Don't track projects that already exist locally.
@@ -263,7 +262,9 @@ impl Client {
                         .map_err(|_| Error::Reply("TrackProject".to_string()));
                 }
 
-                // Attempt to track until we succeed.
+                // Get potential peers and attempt to track until we succeed.
+                let mut peers = api.providers(urn.clone(), timeout);
+
                 while let Some(peer) = peers.next().await {
                     if let Ok(tracked) = Client::track_project(api, &urn, &peer).await {
                         let response = if tracked {
