@@ -13,7 +13,7 @@ RUN cargo install --all-features --locked --path .
 FROM debian:buster-slim@sha256:c8152821b158dd171b4acf92afb0a58fc2faa179a7e0af8ace358fbe1668e99d
 
 EXPOSE 8776/udp
-RUN apt-get update && apt-get install -y libssl1.1 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y libssl1.1 git && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/cargo/bin/radicle-org-node /usr/local/bin/radicle-org-node
 WORKDIR /app/radicle
 ENTRYPOINT [ \
