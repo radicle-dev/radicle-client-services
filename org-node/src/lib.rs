@@ -300,6 +300,8 @@ async fn subscribe_events(url: String, addresses: Vec<Address>, update: mpsc::Se
     };
 
     while let Some(event) = stream.next().await {
+        tracing::info!(target: "org-node", "Event received from {:?}", event.address);
+
         match update.send(event).await {
             Ok(()) => {}
             Err(err) => {
@@ -340,6 +342,10 @@ async fn track_projects(mut handle: client::Handle, queue: mpsc::Receiver<Urn>) 
                 default => {
                     tracing::debug!(target: "org-node", "Channel is empty");
                     break;
+                }
+                complete => {
+                    tracing::info!(target: "org-node", "Queue shutdown, exiting task");
+                    return;
                 }
             }
         }
