@@ -110,6 +110,9 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] io::Error),
 
+    #[error("'git' command not found")]
+    GitNotFound,
+
     #[error("client request failed: {0}")]
     Handle(#[from] client::handle::Error),
 
@@ -125,6 +128,13 @@ pub enum Error {
 
 /// Run the Node.
 pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> {
+    let git_version = std::process::Command::new("git")
+        .arg("version")
+        .output()
+        .map_err(|_| Error::GitNotFound)?
+        .stdout;
+    tracing::info!(target: "org-node", "{}", std::str::from_utf8(&git_version).unwrap().trim());
+
     let paths = Paths::from_root(options.root).unwrap();
     let identity_path = options.identity.clone();
     let identity = File::open(options.identity)
