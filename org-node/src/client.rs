@@ -272,7 +272,9 @@ impl Client {
                         .map_err(|_| Error::Reply("TrackProject".to_string()));
                 }
 
-                // Get potential peers and attempt to track until we succeed.
+                // ... Looks like the project wasn't replicated yet ...
+
+                // Get potential peers and attempt to replicate until we succeed.
                 let mut peers = api.providers(urn.clone(), timeout);
 
                 while let Some(peer) = peers.next().await {
@@ -282,20 +284,7 @@ impl Client {
                         }
                         Ok(tracked) => {
                             let response = if tracked {
-                                let Head { remote, branch } = Client::get_project_head(&urn, api)
-                                    .await?
-                                    .expect("a project that was just tracked should exist");
-                                // Tracking doesn't automatically set the repository head, we have to do it
-                                // manually. We set the head to the default branch of the project
-                                // maintainer.
-                                match Client::set_head(&urn, &remote, &branch, paths) {
-                                    Err(Error::SetHead(err)) => {
-                                        tracing::error!(target: "org-node", "Error setting head: {}", err);
-                                    }
-                                    Err(err) => return Err(err),
-                                    Ok(()) => {}
-                                }
-                                Client::sign_refs(urn, api).await?;
+                                tracing::debug!(target: "org-node", "Tracking relationship for project {} and peer {} created", urn, peer.peer_id);
 
                                 Some(peer.peer_id)
                             } else {
@@ -303,6 +292,48 @@ impl Client {
 
                                 None
                             };
+                            let cfg = api.protocol_config().replication;
+                            let peer_id = peer.peer_id;
+
+                            // Try to fetch the project. Even though the project might have already
+                            // been tracked, it has not been replicated.
+                            let result = api
+                                .using_storage({
+                                    let urn = urn.clone();
+
+                                    move |s| {
+                                        Client::fetch_project(
+                                            &urn,
+                                            peer_id,
+                                            peer.seen_addrs.to_vec(),
+                                            s,
+                                            cfg,
+                                        )
+                                    }
+                                })
+                                .await?;
+
+                            // If we fail to replicate, try the next peer.
+                            if let Err(err) = result {
+                                tracing::error!(target: "org-node", "Failed to replicate {} from {}: {}", urn, peer_id, err);
+                                continue;
+                            }
+
+                            let Head { remote, branch } = Client::get_project_head(&urn, api)
+                                .await?
+                                .expect("a project that was just replicated should exist");
+
+                            // Fetching doesn't automatically set the repository head, we have to do it
+                            // manually. We set the head to the default branch of the project
+                            // maintainer.
+                            match Client::set_head(&urn, &remote, &branch, paths) {
+                                Err(Error::SetHead(err)) => {
+                                    tracing::error!(target: "org-node", "Error setting head: {}", err);
+                                }
+                                Err(err) => return Err(err),
+                                Ok(()) => {}
+                            }
+                            Client::sign_refs(urn, api).await?;
 
                             return reply
                                 .send(Ok(response))
@@ -439,11 +470,11 @@ impl Client {
     fn fetch_project(
         urn: &Urn,
         peer_id: PeerId,
-        addr_hints: Vec<SocketAddr>,
+        seen_addrs: Vec<SocketAddr>,
         storage: &storage::Storage,
         cfg: replication::Config,
     ) -> Result<(), Error> {
-        let fetcher = fetcher::PeerToPeer::new(urn.clone(), peer_id, addr_hints)
+        let fetcher = fetcher::PeerToPeer::new(urn.clone(), peer_id, seen_addrs)
             .build(storage)
             .map_err(|e| Error::Fetcher(e.into()))??;
 
@@ -460,19 +491,11 @@ impl Client {
         peer_info: &PeerInfo<std::net::SocketAddr>,
     ) -> Result<bool, Error> {
         let peer_id = peer_info.peer_id;
-        let addr_hints = peer_info.seen_addrs.iter().copied().collect::<Vec<_>>();
-
         let result = {
-            let cfg = api.protocol_config().replication;
             let urn = urn.clone();
 
             api.using_storage(move |storage| {
                 if tracking::track(storage, &urn, peer_id)? {
-                    tracing::debug!(target: "org-node", "Tracking relationship for project {} and peer {} created", urn, peer_id);
-                    tracing::debug!(target: "org-node", "Fetching from {} @ {:?}", peer_id, addr_hints);
-
-                    Client::fetch_project(&urn, peer_id, addr_hints, storage, cfg)?;
-
                     Ok::<_, Error>(true)
                 } else {
                     Ok(false)
