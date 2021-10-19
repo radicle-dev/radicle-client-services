@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 use librad::{
-    git::{identities, replication, storage::fetcher, tracking},
+    git::{identities, refs, replication, storage::fetcher, tracking},
     net::{
         discovery::{self, Discovery as _},
         peer::{self, Peer},
@@ -55,6 +55,9 @@ pub enum Error {
 
     #[error("failed to set project head: {0}")]
     SetHead(Box<dyn std::error::Error + Send + Sync + 'static>),
+
+    #[error("error signing refs: {0}")]
+    SignRefs(#[from] refs::stored::Error),
 
     #[error("invalid project: {0}: {1}")]
     Project(Urn, &'static str),
@@ -256,6 +259,7 @@ impl Client {
 
                     // Set the project head if it isn't already set.
                     Client::set_head(&urn, &remote, &branch, paths)?;
+                    Client::sign_refs(urn, api).await?;
 
                     return reply
                         .send(Ok(None))
@@ -275,6 +279,7 @@ impl Client {
                             // manually. We set the head to the default branch of the project
                             // maintainer.
                             Client::set_head(&urn, &remote, &branch, paths)?;
+                            Client::sign_refs(urn, api).await?;
 
                             Some(peer.peer_id)
                         } else {
@@ -329,6 +334,31 @@ impl Client {
         })
         .await?
         .map_err(Error::from)
+    }
+
+    /// Sign updated project refs.
+    async fn sign_refs(urn: Urn, api: &Peer<Signer>) -> Result<refs::Updated, Error> {
+        let updated = api
+            .using_storage({
+                let urn = urn.clone();
+                move |s| refs::Refs::update(s, &urn)
+            })
+            .await?
+            .map_err(Error::SignRefs)?;
+
+        match &updated {
+            refs::Updated::Updated { refs, at } => {
+                tracing::debug!(target: "org-node", "Signed refs for {} updated: heads={:?} at={}", urn, refs.heads, at);
+            }
+            refs::Updated::Unchanged { refs, at } => {
+                tracing::debug!(target: "org-node", "Signed refs for {} unchanged: heads={:?} at={}", urn, refs.heads, at);
+            }
+            refs::Updated::ConcurrentlyModified => {
+                tracing::warn!(target: "org-node", "Signed refs for {} concurrently modified", urn);
+            }
+        }
+
+        Ok(updated)
     }
 
     /// Set the 'HEAD' of a project.
