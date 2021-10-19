@@ -258,7 +258,13 @@ impl Client {
                     tracing::debug!(target: "org-node", "Project {} exists, (re-)setting head", urn);
 
                     // Set the project head if it isn't already set.
-                    Client::set_head(&urn, &remote, &branch, paths)?;
+                    match Client::set_head(&urn, &remote, &branch, paths) {
+                        Err(Error::SetHead(err)) => {
+                            tracing::error!(target: "org-node", "Error setting head: {}", err);
+                        }
+                        Err(err) => return Err(err),
+                        Ok(()) => {}
+                    }
                     Client::sign_refs(urn, api).await?;
 
                     return reply
@@ -278,7 +284,13 @@ impl Client {
                             // Tracking doesn't automatically set the repository head, we have to do it
                             // manually. We set the head to the default branch of the project
                             // maintainer.
-                            Client::set_head(&urn, &remote, &branch, paths)?;
+                            match Client::set_head(&urn, &remote, &branch, paths) {
+                                Err(Error::SetHead(err)) => {
+                                    tracing::error!(target: "org-node", "Error setting head: {}", err);
+                                }
+                                Err(err) => return Err(err),
+                                Ok(()) => {}
+                            }
                             Client::sign_refs(urn, api).await?;
 
                             Some(peer.peer_id)
