@@ -436,11 +436,13 @@ impl Client {
                     tracing::debug!(target: "org-node", "Tracking relationship for project {} and peer {} created", urn, peer_id);
                     tracing::debug!(target: "org-node", "Fetching from {} @ {:?}", peer_id, addr_hints);
 
+                    // TODO: Try to fetch even if already tracked, if project data isn't found.
                     let fetcher = fetcher::PeerToPeer::new(urn.clone(), peer_id, addr_hints)
                         .build(storage)
                         .map_err(|e| Error::Fetcher(e.into()))??;
 
-                    replication::replicate(storage, fetcher, cfg, None)?;
+                    let result = replication::replicate(storage, fetcher, cfg, None)?;
+                    tracing::debug!(target: "org-node", "Replication of {} succeeded: {:?}", urn, result);
 
                     Ok::<_, Error>(true)
                 } else {
