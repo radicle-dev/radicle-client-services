@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 use librad::{
-    git::{identities, refs, replication, storage::fetcher, tracking},
+    git::{identities, refs, replication, storage, storage::fetcher, tracking},
     net::{
         discovery::{self, Discovery as _},
         peer::{self, Peer},
@@ -276,33 +276,38 @@ impl Client {
                 let mut peers = api.providers(urn.clone(), timeout);
 
                 while let Some(peer) = peers.next().await {
-                    if let Ok(tracked) = Client::track_project(api, &urn, &peer).await {
-                        let response = if tracked {
-                            let Head { remote, branch } = Client::get_project_head(&urn, api)
-                                .await?
-                                .expect("a project that was just tracked should exist");
-                            // Tracking doesn't automatically set the repository head, we have to do it
-                            // manually. We set the head to the default branch of the project
-                            // maintainer.
-                            match Client::set_head(&urn, &remote, &branch, paths) {
-                                Err(Error::SetHead(err)) => {
-                                    tracing::error!(target: "org-node", "Error setting head: {}", err);
+                    match Client::track_project(api, &urn, &peer).await {
+                        Err(err) => {
+                            tracing::error!(target: "org-node", "Error tracking {}: {}", urn, err);
+                        }
+                        Ok(tracked) => {
+                            let response = if tracked {
+                                let Head { remote, branch } = Client::get_project_head(&urn, api)
+                                    .await?
+                                    .expect("a project that was just tracked should exist");
+                                // Tracking doesn't automatically set the repository head, we have to do it
+                                // manually. We set the head to the default branch of the project
+                                // maintainer.
+                                match Client::set_head(&urn, &remote, &branch, paths) {
+                                    Err(Error::SetHead(err)) => {
+                                        tracing::error!(target: "org-node", "Error setting head: {}", err);
+                                    }
+                                    Err(err) => return Err(err),
+                                    Ok(()) => {}
                                 }
-                                Err(err) => return Err(err),
-                                Ok(()) => {}
-                            }
-                            Client::sign_refs(urn, api).await?;
+                                Client::sign_refs(urn, api).await?;
 
-                            Some(peer.peer_id)
-                        } else {
-                            tracing::debug!(target: "org-node", "Tracking relationship for project {} already exists", urn);
+                                Some(peer.peer_id)
+                            } else {
+                                tracing::debug!(target: "org-node", "Tracking relationship for project {} already exists", urn);
 
-                            None
-                        };
+                                None
+                            };
 
-                        return reply
-                            .send(Ok(response))
-                            .map_err(|_| Error::Reply("TrackProject".to_string()));
+                            return reply
+                                .send(Ok(response))
+                                .map_err(|_| Error::Reply("TrackProject".to_string()));
+                        }
                     }
                 }
                 reply
@@ -430,6 +435,24 @@ impl Client {
         Ok(())
     }
 
+    /// Attempt to fetch a project from a peer.
+    fn fetch_project(
+        urn: &Urn,
+        peer_id: PeerId,
+        addr_hints: Vec<SocketAddr>,
+        storage: &storage::Storage,
+        cfg: replication::Config,
+    ) -> Result<(), Error> {
+        let fetcher = fetcher::PeerToPeer::new(urn.clone(), peer_id, addr_hints)
+            .build(storage)
+            .map_err(|e| Error::Fetcher(e.into()))??;
+
+        let result = replication::replicate(storage, fetcher, cfg, None)?;
+        tracing::debug!(target: "org-node", "Replication of {} succeeded: {:?}", urn, result);
+
+        Ok(())
+    }
+
     /// Attempt to track a project from a peer.
     async fn track_project(
         api: &Peer<Signer>,
@@ -448,13 +471,7 @@ impl Client {
                     tracing::debug!(target: "org-node", "Tracking relationship for project {} and peer {} created", urn, peer_id);
                     tracing::debug!(target: "org-node", "Fetching from {} @ {:?}", peer_id, addr_hints);
 
-                    // TODO: Try to fetch even if already tracked, if project data isn't found.
-                    let fetcher = fetcher::PeerToPeer::new(urn.clone(), peer_id, addr_hints)
-                        .build(storage)
-                        .map_err(|e| Error::Fetcher(e.into()))??;
-
-                    let result = replication::replicate(storage, fetcher, cfg, None)?;
-                    tracing::debug!(target: "org-node", "Replication of {} succeeded: {:?}", urn, result);
+                    Client::fetch_project(&urn, peer_id, addr_hints, storage, cfg)?;
 
                     Ok::<_, Error>(true)
                 } else {
