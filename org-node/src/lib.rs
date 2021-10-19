@@ -372,7 +372,7 @@ async fn track_projects(mut handle: client::Handle, queue: mpsc::Receiver<Urn>) 
             // In this case we expect the condition to be caught in the next iteration.
             continue;
         };
-        tracing::info!(target: "org-node", "{}: Attempting to track.. ({})", urn, work.len());
+        tracing::info!(target: "org-node", "{}: Attempting to track.. (work={})", urn, work.len());
 
         // If we fail to track, re-add the URN to the back of the queue.
         match handle.track_project(urn.clone()).await {
@@ -381,7 +381,7 @@ async fn track_projects(mut handle: client::Handle, queue: mpsc::Receiver<Urn>) 
                     tracing::info!(target: "org-node", "{}: Fetched from {}", urn, peer_id);
                 }
                 Ok(None) => {
-                    tracing::debug!(target: "org-node", "{}: Already have", urn);
+                    tracing::debug!(target: "org-node", "{}: Nothing to do", urn);
                 }
                 Err(client::TrackProjectError::NotFound) => {
                     tracing::info!(target: "org-node", "{}: Not found", urn);

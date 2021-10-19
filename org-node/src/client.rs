@@ -32,7 +32,7 @@ pub mod signer;
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum Error {
-    #[error("error creating fetcher")]
+    #[error("error creating fetcher: {0}")]
     Fetcher(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
 
     #[error("replication of {urn} from {remote_peer} already in-flight")]
@@ -278,6 +278,8 @@ impl Client {
 
                             Some(peer.peer_id)
                         } else {
+                            tracing::debug!(target: "org-node", "Tracking relationship for project {} already exists", urn);
+
                             None
                         };
 
@@ -401,6 +403,9 @@ impl Client {
 
             api.using_storage(move |storage| {
                 if tracking::track(storage, &urn, peer_id)? {
+                    tracing::debug!(target: "org-node", "Tracking relationship for project {} and peer {} created", urn, peer_id);
+                    tracing::debug!(target: "org-node", "Fetching from {} @ {:?}", peer_id, addr_hints);
+
                     let fetcher = fetcher::PeerToPeer::new(urn.clone(), peer_id, addr_hints)
                         .build(storage)
                         .map_err(|e| Error::Fetcher(e.into()))??;
