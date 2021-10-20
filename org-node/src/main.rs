@@ -48,6 +48,10 @@ pub struct Options {
     #[argh(option, from_str_fn(parse_orgs))]
     pub orgs: Option<Vec<node::OrgId>>,
 
+    /// extra URNs to track, ','-delimited (default: none)
+    #[argh(option, from_str_fn(parse_urns))]
+    pub urns: Option<Vec<node::Urn>>,
+
     /// either "plain" or "gcp" (gcp available only when compiled-in)
     #[argh(option, default = "LogFmt::Plain")]
     pub log_format: LogFmt,
@@ -70,7 +74,19 @@ impl From<Options> for node::Options {
             timestamp: other.timestamp,
             bootstrap: other.bootstrap.unwrap_or_default(),
             orgs: other.orgs.unwrap_or_default(),
+            urns: other.urns.unwrap_or_default(),
         }
+    }
+}
+
+fn parse_urns(value: &str) -> Result<Vec<node::Urn>, String> {
+    if value.is_empty() {
+        Ok(vec![])
+    } else {
+        value
+            .split(',')
+            .map(|s| node::Urn::from_str(s).map_err(|e| e.to_string()))
+            .collect()
     }
 }
 

@@ -27,8 +27,9 @@ mod client;
 mod query;
 
 pub use client::PeerId;
+pub use client::Urn;
 
-use client::{Client, Urn};
+use client::Client;
 
 /// Org identifier (Ethereum address).
 pub type OrgId = String;
@@ -42,6 +43,7 @@ pub struct Options {
     pub listen: net::SocketAddr,
     pub subgraph: String,
     pub orgs: Vec<OrgId>,
+    pub urns: Vec<Urn>,
     pub timestamp: Option<u64>,
 }
 
@@ -179,6 +181,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
     // First get up to speed with existing anchors, before we start listening for events.
     let projects = query(&options.subgraph, timestamp, &addresses).map_err(Box::new)?;
     rt.block_on(process_anchors(projects, &work))?;
+    rt.block_on(process_urns(options.urns, &work))?;
 
     // Now launch the event subscriber and listen on events.
     let event_task = rt.spawn(subscribe_events(options.rpc_url, addresses, update));
@@ -223,6 +226,19 @@ async fn query_projects(
             }
         }
     }
+}
+
+async fn process_urns(urns: Vec<Urn>, work: &mpsc::Sender<Urn>) -> Result<(), Error> {
+    if urns.is_empty() {
+        return Ok(());
+    }
+    tracing::info!(target: "org-node", "Processing {} URNs(s)", urns.len());
+
+    for urn in urns {
+        tracing::info!(target: "org-node", "Queueing {}", urn);
+        work.send(urn).await?;
+    }
+    Ok(())
 }
 
 async fn process_anchors(projects: Vec<Project>, work: &mpsc::Sender<Urn>) -> Result<(), Error> {
