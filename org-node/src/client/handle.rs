@@ -38,8 +38,7 @@ impl Handle {
     }
 
     /// Get peer membership information.
-    #[allow(dead_code)]
-    pub async fn get_membership(&mut self) -> Result<MembershipInfo, Error> {
+    pub async fn get_membership(&self) -> Result<MembershipInfo, Error> {
         let (tx, rx) = oneshot::channel();
         self.channel
             .try_send(Request::GetMembership(tx))
@@ -49,8 +48,7 @@ impl Handle {
     }
 
     /// Get currently connected peers.
-    #[allow(dead_code)]
-    pub async fn get_peers(&mut self) -> Result<Vec<PeerId>, Error> {
+    pub async fn get_peers(&self) -> Result<Vec<PeerId>, Error> {
         let (tx, rx) = oneshot::channel();
         self.channel
             .try_send(Request::GetPeers(tx))

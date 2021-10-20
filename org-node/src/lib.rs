@@ -10,6 +10,8 @@ use ethers::abi::Address;
 use ethers::prelude::*;
 use ethers::providers::{Provider, Ws};
 
+use influx_db_client::{Point, Points, UdpClient};
+use librad::net::peer::MembershipInfo;
 use radicle_daemon::Paths;
 use thiserror::Error;
 
@@ -18,10 +20,12 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 use std::collections::VecDeque;
+use std::convert::TryInto;
 use std::fs::File;
 use std::io;
 use std::net;
 use std::path::PathBuf;
+use std::time::Duration;
 
 mod client;
 mod query;
@@ -34,7 +38,6 @@ use client::Client;
 /// Org identifier (Ethereum address).
 pub type OrgId = String;
 
-#[derive(Debug, Clone)]
 pub struct Options {
     pub root: PathBuf,
     pub identity: PathBuf,
@@ -45,6 +48,7 @@ pub struct Options {
     pub orgs: Vec<OrgId>,
     pub urns: Vec<Urn>,
     pub timestamp: Option<u64>,
+    pub influxdb_client: Option<UdpClient>,
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -68,8 +72,6 @@ enum ParseUrnError {
 
 impl Project {
     fn urn(&self) -> Result<Urn, ParseUrnError> {
-        use std::convert::TryInto;
-
         let mut hex = self.anchor.object_id.as_str();
 
         if hex.starts_with("0x") {
@@ -126,6 +128,9 @@ pub enum Error {
 
     #[error(transparent)]
     Query(#[from] Box<ureq::Error>),
+
+    #[error("Type conversion failed")]
+    ConversionError(#[from] std::num::TryFromIntError),
 }
 
 /// Run the Node.
@@ -173,8 +178,14 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
     // Queue of events on orgs.
     let (update, events) = mpsc::channel(256);
 
+    let mut tasks: Vec<tokio::task::JoinHandle<()>> = Default::default();
+
+    let client_handle_for_metrics = client.handle();
     let client_task = rt.spawn(client.run(rt.handle().clone()));
+    tasks.push(client_task);
+
     let track_task = rt.spawn(track_projects(handle, queue));
+    tasks.push(track_task);
 
     tracing::info!(target: "org-node", "Listening on {}...", options.listen);
 
@@ -185,18 +196,22 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
 
     // Now launch the event subscriber and listen on events.
     let event_task = rt.spawn(subscribe_events(options.rpc_url, addresses, update));
+    tasks.push(event_task);
     let query_task = rt.spawn(query_projects(timestamp, options.subgraph, events, work));
+    tasks.push(query_task);
 
-    let result = rt.block_on(async {
-        tokio::select! {
-            result = client_task => result,
-            result = track_task => result,
-            result = event_task => result,
-            result = query_task => result,
-        }
-    });
+    if let Some(influxdb_client) = options.influxdb_client {
+        let metrics_reporter_task = rt.spawn(report_metrics_periodically(
+            influxdb_client,
+            client_handle_for_metrics,
+            peer_id,
+        ));
+        tasks.push(metrics_reporter_task);
+    }
 
-    if let Err(err) = result {
+    tasks.shrink_to_fit();
+
+    if let (Err(err), _, _) = rt.block_on(futures::future::select_all(tasks)) {
         tracing::info!(target: "org-node", "Task failed: {}", err);
     }
     tracing::info!(target: "org-node", "Exiting..");
@@ -412,6 +427,66 @@ async fn track_projects(mut handle: client::Handle, queue: mpsc::Receiver<Urn>) 
                 tracing::error!(target: "org-node", "Tracking handle failed, exiting task ({})", err);
                 return;
             }
+        }
+    }
+}
+
+fn make_membership_measurement(
+    this_peer_id: PeerId,
+    membership: MembershipInfo,
+) -> Result<Point, Error> {
+    let active: i64 = membership.active.len().try_into()?;
+    let passive: i64 = membership.passive.len().try_into()?;
+    let point = Point::new("membership")
+        .add_tag("peer_id", this_peer_id.default_encoding())
+        .add_field("active", active)
+        .add_field("passive", passive);
+    Ok(point)
+}
+
+fn make_peers_measurement(this_peer_id: PeerId, peers: &[PeerId]) -> Result<Point, Error> {
+    let connected: i64 = peers.len().try_into()?;
+    let point = Point::new("peers")
+        .add_tag("peer_id", this_peer_id.default_encoding())
+        .add_field("connected", connected);
+    Ok(point)
+}
+
+async fn report_metrics_periodically(
+    infludb_client: UdpClient,
+    handle: client::Handle,
+    this_peer_id: PeerId,
+) {
+    let mut interval = tokio::time::interval(Duration::from_secs(15));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        interval.tick().await;
+
+        let (membership, peers) = tokio::join!(handle.get_membership(), handle.get_peers());
+
+        let mut measurements: Vec<Point> = Default::default();
+        let membership = membership
+            .map_err(Error::from)
+            .and_then(|membership| make_membership_measurement(this_peer_id, membership));
+        match membership {
+            Ok(point) => measurements.push(point),
+            Err(e) => tracing::error!("Could not get membership info: {:?}", e),
+        };
+
+        let peers = peers
+            .map_err(Error::from)
+            .and_then(|peers| make_peers_measurement(this_peer_id, &peers));
+        match peers {
+            Ok(point) => measurements.push(point),
+            Err(e) => tracing::error!("Could not get peers info: {:?}", e),
+        };
+
+        if measurements.is_empty() {
+            continue;
+        }
+
+        if let Err(e) = infludb_client.write_points(Points::create_new(measurements)) {
+            tracing::error!("Could not report metrics: {:?}", e);
         }
     }
 }

@@ -28,7 +28,7 @@ services:
     init: true
     container_name: org-node
     restart: unless-stopped
-    command: ["--orgs", $RADICLE_ORGS, "--subgraph", "https://gateway.thegraph.com/api/1758a78ae257ad4906f9c638e4a68c19/subgraphs/id/0x2f0963e77ca6ac0c2dad1bf4147b6b40e0dd8728-0", "--rpc-url", $ETH_RPC_URL]
+    command: ["--orgs", $RADICLE_ORGS, "--subgraph", "https://gateway.thegraph.com/api/1758a78ae257ad4906f9c638e4a68c19/subgraphs/id/0x2f0963e77ca6ac0c2dad1bf4147b6b40e0dd8728-0", "--rpc-url", $ETH_RPC_URL, '--influxdb', 'influxdb:8086']
     networks:
       - radicle-services
   git-server:
@@ -59,6 +59,23 @@ services:
     restart: unless-stopped
     networks:
       - radicle-services
+  influxdb:
+    image: influxdb:2.0
+    container_name: influxdb
+    restart: unless-stopped
+    networks:
+      - radicle-services
+    ports:
+      - 8086:8086
+    volumes:
+      - $HOME/.radicle/influxdb:/var/lib/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=Thohsaelee5Kama7ohbu
+      - DOCKER_INFLUXDB_INIT_ORG=radicle
+      - DOCKER_INFLUXDB_INIT_BUCKET=client-services
+      - DOCKER_INFLUXDB_INIT_RETENTION=30d
 
 networks:
   radicle-services:

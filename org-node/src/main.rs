@@ -1,9 +1,10 @@
 use std::io::Write;
-use std::net;
+use std::net::{self, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{fs, fs::File, os::unix::fs::PermissionsExt};
 
+use influx_db_client::UdpClient;
 use node::PeerId;
 use radicle_org_node as node;
 
@@ -55,6 +56,10 @@ pub struct Options {
     /// either "plain" or "gcp" (gcp available only when compiled-in)
     #[argh(option, default = "LogFmt::Plain")]
     pub log_format: LogFmt,
+
+    /// HOST:PORT pair of the InfluxDB instance to report metrics to over UDP
+    #[argh(option)]
+    pub influxdb: Option<String>,
 }
 
 impl Options {
@@ -65,6 +70,10 @@ impl Options {
 
 impl From<Options> for node::Options {
     fn from(other: Options) -> Self {
+        let influxdb_client = other
+            .influxdb
+            .and_then(|host_port| host_port.to_socket_addrs().unwrap().next())
+            .map(|socket_addr| UdpClient::new(socket_addr));
         Self {
             root: other.root,
             listen: other.listen,
@@ -75,6 +84,7 @@ impl From<Options> for node::Options {
             bootstrap: other.bootstrap.unwrap_or_default(),
             orgs: other.orgs.unwrap_or_default(),
             urns: other.urns.unwrap_or_default(),
+            influxdb_client,
         }
     }
 }
@@ -99,8 +109,6 @@ fn parse_orgs(value: &str) -> Result<Vec<node::OrgId>, String> {
 }
 
 fn parse_bootstrap(value: &str) -> Result<Vec<(PeerId, net::SocketAddr)>, String> {
-    use std::net::ToSocketAddrs;
-
     let mut peers = Vec::new();
 
     for parts in value

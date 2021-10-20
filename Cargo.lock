@@ -2204,6 +2204,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "influx_db_client"
+version = "0.5.0"
+source = "git+https://github.com/radicle-dev/InfluxDBClient-rs.git#05769c95192bd9ec4061aa9b7871b3567bfc37c1"
+dependencies = [
+ "bytes 1.1.0",
+ "futures 0.3.15",
+ "reqwest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "inotify"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3575,6 +3587,7 @@ dependencies = [
  "ethers",
  "futures 0.3.15",
  "git2",
+ "influx_db_client",
  "librad",
  "radicle-daemon",
  "rustc-hex",
