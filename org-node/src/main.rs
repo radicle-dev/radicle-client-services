@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{fs, fs::File, os::unix::fs::PermissionsExt};
 
-use influx_db_client::UdpClient;
+use influx_db_client::Client;
 use node::PeerId;
 use radicle_org_node as node;
 
@@ -57,7 +57,7 @@ pub struct Options {
     #[argh(option, default = "LogFmt::Plain")]
     pub log_format: LogFmt,
 
-    /// HOST:PORT pair of the InfluxDB instance to report metrics to over UDP
+    /// HOST:PORT pair of the InfluxDB instance to report metrics to
     #[argh(option)]
     pub influxdb: Option<String>,
 }
@@ -72,8 +72,8 @@ impl From<Options> for node::Options {
     fn from(other: Options) -> Self {
         let influxdb_client = other
             .influxdb
-            .and_then(|host_port| host_port.to_socket_addrs().unwrap().next())
-            .map(|socket_addr| UdpClient::new(socket_addr));
+            .map(|url| influx_db_client::reqwest::Url::parse(&url).unwrap())
+            .map(|url| Client::new(url, "radicle"));
         Self {
             root: other.root,
             listen: other.listen,

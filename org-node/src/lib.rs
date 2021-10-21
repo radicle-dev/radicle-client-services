@@ -10,7 +10,7 @@ use ethers::abi::Address;
 use ethers::prelude::*;
 use ethers::providers::{Provider, Ws};
 
-use influx_db_client::{Point, Points, UdpClient};
+use influx_db_client::{Client as InfluxDBClient, Point};
 use librad::net::peer::MembershipInfo;
 use radicle_daemon::Paths;
 use thiserror::Error;
@@ -48,7 +48,7 @@ pub struct Options {
     pub orgs: Vec<OrgId>,
     pub urns: Vec<Urn>,
     pub timestamp: Option<u64>,
-    pub influxdb_client: Option<UdpClient>,
+    pub influxdb_client: Option<InfluxDBClient>,
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -453,7 +453,7 @@ fn make_peers_measurement(this_peer_id: PeerId, peers: &[PeerId]) -> Result<Poin
 }
 
 async fn report_metrics_periodically(
-    infludb_client: UdpClient,
+    infludb_client: InfluxDBClient,
     handle: client::Handle,
     this_peer_id: PeerId,
 ) {
@@ -485,7 +485,10 @@ async fn report_metrics_periodically(
             continue;
         }
 
-        if let Err(e) = infludb_client.write_points(Points::create_new(measurements)) {
+        if let Err(e) = infludb_client
+            .write_points(measurements.into_iter(), None, None)
+            .await
+        {
             tracing::error!("Could not report metrics: {:?}", e);
         }
     }
