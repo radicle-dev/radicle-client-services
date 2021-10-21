@@ -10,7 +10,7 @@ use ethers::abi::Address;
 use ethers::prelude::*;
 use ethers::providers::{Provider, Ws};
 
-use radicle_daemon::Paths;
+use librad::{paths::Paths, profile::Profile};
 use thiserror::Error;
 
 use futures::StreamExt;
@@ -40,7 +40,7 @@ use client::Client;
 pub type OrgId = String;
 
 pub struct Options {
-    pub root: PathBuf,
+    pub root: Option<PathBuf>,
     pub identity: PathBuf,
     pub bootstrap: Vec<(PeerId, net::SocketAddr)>,
     pub rpc_url: String,
@@ -154,7 +154,11 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
         .stdout;
     tracing::info!(target: "org-node", "{}", std::str::from_utf8(&git_version).unwrap().trim());
 
-    let paths = Paths::from_root(options.root.clone()).unwrap();
+    let paths = if let Some(ref root) = options.root {
+        Paths::from_root(root).unwrap()
+    } else {
+        Profile::load()?.paths().clone()
+    };
     let identity_path = options.identity.clone();
     let identity = File::open(options.identity.clone())
         .with_context(|| format!("unable to open {:?}", &identity_path))?;
