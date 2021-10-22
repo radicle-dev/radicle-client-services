@@ -26,8 +26,7 @@ ureq = { version = "2.1.1", features = ["json"] }
 ethers = { version = "0.4" }
 rustc-hex = { version = "2.1" }
 anyhow = "1.0"
-influx_db_client = { git = "https://github.com/radicle-dev/InfluxDBClient-rs.git" }
-
+outflux = { git = "https://github.com/radicle-dev/outflux" }
 
 [features]
 gcp = ["shared/gcp"]

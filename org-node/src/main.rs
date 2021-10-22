@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{fs, fs::File, os::unix::fs::PermissionsExt};
 
-use influx_db_client::Client;
 use node::PeerId;
+
 use radicle_org_node as node;
 
 use argh::FromArgs;
@@ -60,6 +60,10 @@ pub struct Options {
     /// HOST:PORT pair of the InfluxDB instance to report metrics to
     #[argh(option)]
     pub influxdb: Option<String>,
+
+    /// influxDB authentication token
+    #[argh(option)]
+    pub influxdb_token: Option<String>,
 }
 
 impl Options {
@@ -70,10 +74,15 @@ impl Options {
 
 impl From<Options> for node::Options {
     fn from(other: Options) -> Self {
-        let influxdb_client = other
-            .influxdb
-            .map(|url| influx_db_client::reqwest::Url::parse(&url).unwrap())
-            .map(|url| Client::new(url, "radicle"));
+        let influxdb_client = if let Some(influxdb) = other.influxdb {
+            let influxdb_token = other
+                .influxdb_token
+                .expect("InfluxDB token is required for metrics reporting");
+            let influxdb_client = outflux::Client::new(&influxdb, &influxdb_token).unwrap();
+            Some(influxdb_client)
+        } else {
+            None
+        };
         Self {
             root: other.root,
             listen: other.listen,

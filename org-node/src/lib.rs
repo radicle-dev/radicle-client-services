@@ -10,8 +10,8 @@ use ethers::abi::Address;
 use ethers::prelude::*;
 use ethers::providers::{Provider, Ws};
 
-use influx_db_client::{Client as InfluxDBClient, Point};
 use librad::net::peer::MembershipInfo;
+use outflux::{Bucket, Client as InfluxDBClient, FieldValue, Measurement};
 use radicle_daemon::Paths;
 use thiserror::Error;
 
@@ -19,7 +19,7 @@ use futures::StreamExt;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::convert::TryInto;
 use std::fs::File;
 use std::io;
@@ -131,6 +131,9 @@ pub enum Error {
 
     #[error("Type conversion failed")]
     ConversionError(#[from] std::num::TryFromIntError),
+
+    #[error("Metrics reporting error")]
+    OutfluxError(#[from] outflux::Error),
 }
 
 /// Run the Node.
@@ -201,8 +204,9 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
     tasks.push(query_task);
 
     if let Some(influxdb_client) = options.influxdb_client {
+        let bucket = influxdb_client.make_bucket("radicle", "client-services")?;
         let metrics_reporter_task = rt.spawn(report_metrics_periodically(
-            influxdb_client,
+            bucket,
             client_handle_for_metrics,
             peer_id,
         ));
@@ -434,29 +438,41 @@ async fn track_projects(mut handle: client::Handle, queue: mpsc::Receiver<Urn>) 
 fn make_membership_measurement(
     this_peer_id: PeerId,
     membership: MembershipInfo,
-) -> Result<Point, Error> {
-    let active: i64 = membership.active.len().try_into()?;
-    let passive: i64 = membership.passive.len().try_into()?;
-    let point = Point::new("membership")
-        .add_tag("peer_id", this_peer_id.default_encoding())
-        .add_field("active", active)
-        .add_field("passive", passive);
-    Ok(point)
+) -> Result<Measurement, Error> {
+    let mut fields: BTreeMap<String, FieldValue> = Default::default();
+    let active: u64 = membership.active.len().try_into()?;
+    let passive: u64 = membership.passive.len().try_into()?;
+    fields.insert("active".to_string(), FieldValue::UInteger(active));
+    fields.insert("passive".to_string(), FieldValue::UInteger(passive));
+
+    let mut tags: BTreeMap<String, String> = Default::default();
+    tags.insert("peer_id".to_string(), this_peer_id.default_encoding());
+
+    let measurement = Measurement::builder("membership")
+        .fields(fields)
+        .tags(tags)
+        .build()?;
+    Ok(measurement)
 }
 
-fn make_peers_measurement(this_peer_id: PeerId, peers: &[PeerId]) -> Result<Point, Error> {
-    let connected: i64 = peers.len().try_into()?;
-    let point = Point::new("peers")
-        .add_tag("peer_id", this_peer_id.default_encoding())
-        .add_field("connected", connected);
-    Ok(point)
+fn make_peers_measurement(this_peer_id: PeerId, peers: &[PeerId]) -> Result<Measurement, Error> {
+    let connected: u64 = peers.len().try_into()?;
+
+    let mut fields: BTreeMap<String, FieldValue> = Default::default();
+    fields.insert("connected".to_string(), FieldValue::UInteger(connected));
+
+    let mut tags: BTreeMap<String, String> = Default::default();
+    tags.insert("peer_id".to_string(), this_peer_id.default_encoding());
+
+    let measurement = Measurement::builder("peers")
+        .fields(fields)
+        .tags(tags)
+        .build()?;
+
+    Ok(measurement)
 }
 
-async fn report_metrics_periodically(
-    infludb_client: InfluxDBClient,
-    handle: client::Handle,
-    this_peer_id: PeerId,
-) {
+async fn report_metrics_periodically(bucket: Bucket, handle: client::Handle, this_peer_id: PeerId) {
     let mut interval = tokio::time::interval(Duration::from_secs(15));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
@@ -464,7 +480,7 @@ async fn report_metrics_periodically(
 
         let (membership, peers) = tokio::join!(handle.get_membership(), handle.get_peers());
 
-        let mut measurements: Vec<Point> = Default::default();
+        let mut measurements: Vec<Measurement> = Default::default();
         let membership = membership
             .map_err(Error::from)
             .and_then(|membership| make_membership_measurement(this_peer_id, membership));
@@ -485,11 +501,8 @@ async fn report_metrics_periodically(
             continue;
         }
 
-        if let Err(e) = infludb_client
-            .write_points(measurements.into_iter(), None, None)
-            .await
-        {
-            tracing::error!("Could not report metrics: {:?}", e);
+        if let Err(e) = bucket.write(&measurements, Duration::from_secs(10)).await {
+            tracing::error!("Could not send metrics: {:?}", e);
         }
     }
 }
