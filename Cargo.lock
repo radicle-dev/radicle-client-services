@@ -3020,7 +3020,7 @@ dependencies = [
 [[package]]
 name = "outflux"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/outflux#8574d1b6c850d4650632b0a9cf4d923c17bed520"
+source = "git+https://github.com/radicle-dev/outflux#df897765b76f8521988d82ad50a27721c7dd7195"
 dependencies = [
  "reqwest",
  "thiserror",

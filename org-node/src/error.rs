@@ -23,6 +23,7 @@ pub enum Error {
     #[error("Type conversion failed")]
     ConversionError(#[from] std::num::TryFromIntError),
 
+    #[cfg(feature = "influxdb-metrics")]
     #[error("Metrics reporting error")]
     OutfluxError(#[from] outflux::Error),
 }

@@ -58,10 +58,12 @@ pub struct Options {
     pub log_format: LogFmt,
 
     /// HOST:PORT pair of the InfluxDB instance to report metrics to
+    #[cfg(feature = "influxdb-metrics")]
     #[argh(option)]
     pub influxdb: Option<String>,
 
     /// influxDB authentication token
+    #[cfg(feature = "influxdb-metrics")]
     #[argh(option)]
     pub influxdb_token: Option<String>,
 }
@@ -73,6 +75,22 @@ impl Options {
 }
 
 impl From<Options> for node::Options {
+    #[cfg(not(feature = "influxdb-metrics"))]
+    fn from(other: Options) -> Self {
+        Self {
+            root: other.root,
+            listen: other.listen,
+            subgraph: other.subgraph,
+            rpc_url: other.rpc_url,
+            identity: other.identity,
+            timestamp: other.timestamp,
+            bootstrap: other.bootstrap.unwrap_or_default(),
+            orgs: other.orgs.unwrap_or_default(),
+            urns: other.urns.unwrap_or_default(),
+        }
+    }
+
+    #[cfg(feature = "influxdb-metrics")]
     fn from(other: Options) -> Self {
         let influxdb_client = if let Some(influxdb) = other.influxdb {
             let influxdb_token = other

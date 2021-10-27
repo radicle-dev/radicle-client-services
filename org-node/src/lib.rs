@@ -10,7 +10,6 @@ use ethers::abi::Address;
 use ethers::prelude::*;
 use ethers::providers::{Provider, Ws};
 
-use outflux::Client as InfluxDBClient;
 use radicle_daemon::Paths;
 use thiserror::Error;
 
@@ -27,7 +26,8 @@ use std::path::PathBuf;
 
 mod client;
 mod error;
-mod observability;
+#[cfg(feature = "influxdb-metrics")]
+mod metrics;
 mod query;
 
 pub use client::PeerId;
@@ -49,7 +49,9 @@ pub struct Options {
     pub orgs: Vec<OrgId>,
     pub urns: Vec<Urn>,
     pub timestamp: Option<u64>,
-    pub influxdb_client: Option<InfluxDBClient>,
+
+    #[cfg(feature = "influxdb-metrics")]
+    pub influxdb_client: Option<outflux::Client>,
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -110,6 +112,39 @@ struct Org {
     id: OrgId,
 }
 
+#[cfg(not(feature = "influxdb-metrics"))]
+fn init_metrics_task(
+    _opts: &Options,
+    _rt: &tokio::runtime::Runtime,
+    _client_handle: client::Handle,
+    _peer_id: PeerId,
+    _tasks: &mut Vec<tokio::task::JoinHandle<()>>,
+) -> Result<(), Error> {
+    Ok(())
+}
+
+#[cfg(feature = "influxdb-metrics")]
+fn init_metrics_task(
+    options: &Options,
+    rt: &tokio::runtime::Runtime,
+    client_handle: client::Handle,
+    peer_id: PeerId,
+    tasks: &mut Vec<tokio::task::JoinHandle<()>>,
+) -> Result<(), Error> {
+    let influxdb_client = match &options.influxdb_client {
+        None => return Ok(()),
+        Some(influxdb_client) => influxdb_client.clone(),
+    };
+    let bucket = influxdb_client.make_bucket("radicle", "client-services")?;
+    let metrics_reporter_task = rt.spawn(metrics::report_metrics_periodically(
+        bucket,
+        client_handle,
+        peer_id,
+    ));
+    tasks.push(metrics_reporter_task);
+    Ok(())
+}
+
 /// Run the Node.
 pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> {
     let git_version = std::process::Command::new("git")
@@ -119,9 +154,9 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
         .stdout;
     tracing::info!(target: "org-node", "{}", std::str::from_utf8(&git_version).unwrap().trim());
 
-    let paths = Paths::from_root(options.root).unwrap();
+    let paths = Paths::from_root(options.root.clone()).unwrap();
     let identity_path = options.identity.clone();
-    let identity = File::open(options.identity)
+    let identity = File::open(options.identity.clone())
         .with_context(|| format!("unable to open {:?}", &identity_path))?;
     let signer = client::Signer::new(identity)
         .with_context(|| format!("unable to load identity {:?}", &identity_path))?;
@@ -169,25 +204,27 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
     // First get up to speed with existing anchors, before we start listening for events.
     let projects = query(&options.subgraph, timestamp, &addresses).map_err(Box::new)?;
     rt.block_on(process_anchors(projects, &work))?;
-    rt.block_on(process_urns(options.urns, &work))?;
+    rt.block_on(process_urns(options.urns.clone(), &work))?;
 
     // Now launch the event subscriber and listen on events.
-    let event_task = rt.spawn(subscribe_events(options.rpc_url, addresses, update));
+    let event_task = rt.spawn(subscribe_events(options.rpc_url.clone(), addresses, update));
     tasks.push(event_task);
-    let query_task = rt.spawn(query_projects(timestamp, options.subgraph, events, work));
+    let query_task = rt.spawn(query_projects(
+        timestamp,
+        options.subgraph.clone(),
+        events,
+        work,
+    ));
     tasks.push(query_task);
 
-    if let Some(influxdb_client) = options.influxdb_client {
-        let bucket = influxdb_client.make_bucket("radicle", "client-services")?;
-        let metrics_reporter_task = rt.spawn(observability::report_metrics_periodically(
-            bucket,
-            client_handle_for_metrics,
-            peer_id,
-        ));
-        tasks.push(metrics_reporter_task);
-    }
-
-    tasks.shrink_to_fit();
+    init_metrics_task(
+        &options,
+        &rt,
+        client_handle_for_metrics,
+        peer_id,
+        &mut tasks,
+    )
+    .unwrap();
 
     if let (Err(err), _, _) = rt.block_on(futures::future::select_all(tasks)) {
         tracing::info!(target: "org-node", "Task failed: {}", err);
