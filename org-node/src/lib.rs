@@ -18,23 +18,27 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 use std::collections::VecDeque;
+use std::convert::TryInto;
 use std::fs::File;
 use std::io;
 use std::net;
 use std::path::PathBuf;
 
 mod client;
+mod error;
+#[cfg(feature = "influxdb-metrics")]
+mod metrics;
 mod query;
 
 pub use client::PeerId;
 pub use client::Urn;
+pub use error::Error;
 
 use client::Client;
 
 /// Org identifier (Ethereum address).
 pub type OrgId = String;
 
-#[derive(Debug, Clone)]
 pub struct Options {
     pub root: PathBuf,
     pub identity: PathBuf,
@@ -45,6 +49,9 @@ pub struct Options {
     pub orgs: Vec<OrgId>,
     pub urns: Vec<Urn>,
     pub timestamp: Option<u64>,
+
+    #[cfg(feature = "influxdb-metrics")]
+    pub influxdb_client: Option<outflux::Client>,
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -68,8 +75,6 @@ enum ParseUrnError {
 
 impl Project {
     fn urn(&self) -> Result<Urn, ParseUrnError> {
-        use std::convert::TryInto;
-
         let mut hex = self.anchor.object_id.as_str();
 
         if hex.starts_with("0x") {
@@ -107,25 +112,37 @@ struct Org {
     id: OrgId,
 }
 
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error(transparent)]
-    Io(#[from] io::Error),
+#[cfg(not(feature = "influxdb-metrics"))]
+fn init_metrics_task(
+    _opts: &Options,
+    _rt: &tokio::runtime::Runtime,
+    _client_handle: client::Handle,
+    _peer_id: PeerId,
+    _tasks: &mut Vec<tokio::task::JoinHandle<()>>,
+) -> Result<(), Error> {
+    Ok(())
+}
 
-    #[error("'git' command not found")]
-    GitNotFound,
-
-    #[error("client request failed: {0}")]
-    Handle(#[from] client::handle::Error),
-
-    #[error(transparent)]
-    Channel(#[from] mpsc::error::SendError<Urn>),
-
-    #[error(transparent)]
-    FromHex(#[from] rustc_hex::FromHexError),
-
-    #[error(transparent)]
-    Query(#[from] Box<ureq::Error>),
+#[cfg(feature = "influxdb-metrics")]
+fn init_metrics_task(
+    options: &Options,
+    rt: &tokio::runtime::Runtime,
+    client_handle: client::Handle,
+    peer_id: PeerId,
+    tasks: &mut Vec<tokio::task::JoinHandle<()>>,
+) -> Result<(), Error> {
+    let influxdb_client = match &options.influxdb_client {
+        None => return Ok(()),
+        Some(influxdb_client) => influxdb_client.clone(),
+    };
+    let bucket = influxdb_client.make_bucket("radicle", "client-services")?;
+    let metrics_reporter_task = rt.spawn(metrics::report_metrics_periodically(
+        bucket,
+        client_handle,
+        peer_id,
+    ));
+    tasks.push(metrics_reporter_task);
+    Ok(())
 }
 
 /// Run the Node.
@@ -137,9 +154,9 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
         .stdout;
     tracing::info!(target: "org-node", "{}", std::str::from_utf8(&git_version).unwrap().trim());
 
-    let paths = Paths::from_root(options.root).unwrap();
+    let paths = Paths::from_root(options.root.clone()).unwrap();
     let identity_path = options.identity.clone();
-    let identity = File::open(options.identity)
+    let identity = File::open(options.identity.clone())
         .with_context(|| format!("unable to open {:?}", &identity_path))?;
     let signer = client::Signer::new(identity)
         .with_context(|| format!("unable to load identity {:?}", &identity_path))?;
@@ -173,30 +190,43 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
     // Queue of events on orgs.
     let (update, events) = mpsc::channel(256);
 
+    let mut tasks: Vec<tokio::task::JoinHandle<()>> = Default::default();
+
+    let client_handle_for_metrics = client.handle();
     let client_task = rt.spawn(client.run(rt.handle().clone()));
+    tasks.push(client_task);
+
     let track_task = rt.spawn(track_projects(handle, queue));
+    tasks.push(track_task);
 
     tracing::info!(target: "org-node", "Listening on {}...", options.listen);
 
     // First get up to speed with existing anchors, before we start listening for events.
     let projects = query(&options.subgraph, timestamp, &addresses).map_err(Box::new)?;
     rt.block_on(process_anchors(projects, &work))?;
-    rt.block_on(process_urns(options.urns, &work))?;
+    rt.block_on(process_urns(options.urns.clone(), &work))?;
 
     // Now launch the event subscriber and listen on events.
-    let event_task = rt.spawn(subscribe_events(options.rpc_url, addresses, update));
-    let query_task = rt.spawn(query_projects(timestamp, options.subgraph, events, work));
+    let event_task = rt.spawn(subscribe_events(options.rpc_url.clone(), addresses, update));
+    tasks.push(event_task);
+    let query_task = rt.spawn(query_projects(
+        timestamp,
+        options.subgraph.clone(),
+        events,
+        work,
+    ));
+    tasks.push(query_task);
 
-    let result = rt.block_on(async {
-        tokio::select! {
-            result = client_task => result,
-            result = track_task => result,
-            result = event_task => result,
-            result = query_task => result,
-        }
-    });
+    init_metrics_task(
+        &options,
+        &rt,
+        client_handle_for_metrics,
+        peer_id,
+        &mut tasks,
+    )
+    .unwrap();
 
-    if let Err(err) = result {
+    if let (Err(err), _, _) = rt.block_on(futures::future::select_all(tasks)) {
         tracing::info!(target: "org-node", "Task failed: {}", err);
     }
     tracing::info!(target: "org-node", "Exiting..");

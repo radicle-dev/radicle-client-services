@@ -1,10 +1,11 @@
 use std::io::Write;
-use std::net;
+use std::net::{self, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{fs, fs::File, os::unix::fs::PermissionsExt};
 
 use node::PeerId;
+
 use radicle_org_node as node;
 
 use argh::FromArgs;
@@ -55,6 +56,16 @@ pub struct Options {
     /// either "plain" or "gcp" (gcp available only when compiled-in)
     #[argh(option, default = "LogFmt::Plain")]
     pub log_format: LogFmt,
+
+    /// HOST:PORT pair of the InfluxDB instance to report metrics to
+    #[cfg(feature = "influxdb-metrics")]
+    #[argh(option)]
+    pub influxdb: Option<String>,
+
+    /// influxDB authentication token
+    #[cfg(feature = "influxdb-metrics")]
+    #[argh(option)]
+    pub influxdb_token: Option<String>,
 }
 
 impl Options {
@@ -64,6 +75,7 @@ impl Options {
 }
 
 impl From<Options> for node::Options {
+    #[cfg(not(feature = "influxdb-metrics"))]
     fn from(other: Options) -> Self {
         Self {
             root: other.root,
@@ -75,6 +87,31 @@ impl From<Options> for node::Options {
             bootstrap: other.bootstrap.unwrap_or_default(),
             orgs: other.orgs.unwrap_or_default(),
             urns: other.urns.unwrap_or_default(),
+        }
+    }
+
+    #[cfg(feature = "influxdb-metrics")]
+    fn from(other: Options) -> Self {
+        let influxdb_client = if let Some(influxdb) = other.influxdb {
+            let influxdb_token = other
+                .influxdb_token
+                .expect("InfluxDB token is required for metrics reporting");
+            let influxdb_client = outflux::Client::new(&influxdb, &influxdb_token).unwrap();
+            Some(influxdb_client)
+        } else {
+            None
+        };
+        Self {
+            root: other.root,
+            listen: other.listen,
+            subgraph: other.subgraph,
+            rpc_url: other.rpc_url,
+            identity: other.identity,
+            timestamp: other.timestamp,
+            bootstrap: other.bootstrap.unwrap_or_default(),
+            orgs: other.orgs.unwrap_or_default(),
+            urns: other.urns.unwrap_or_default(),
+            influxdb_client,
         }
     }
 }
@@ -99,8 +136,6 @@ fn parse_orgs(value: &str) -> Result<Vec<node::OrgId>, String> {
 }
 
 fn parse_bootstrap(value: &str) -> Result<Vec<(PeerId, net::SocketAddr)>, String> {
-    use std::net::ToSocketAddrs;
-
     let mut peers = Vec::new();
 
     for parts in value

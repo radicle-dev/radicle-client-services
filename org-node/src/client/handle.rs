@@ -37,9 +37,9 @@ impl Handle {
         Self { channel, timeout }
     }
 
+    #[cfg(feature = "influxdb-metrics")]
     /// Get peer membership information.
-    #[allow(dead_code)]
-    pub async fn get_membership(&mut self) -> Result<MembershipInfo, Error> {
+    pub async fn get_membership(&self) -> Result<MembershipInfo, Error> {
         let (tx, rx) = oneshot::channel();
         self.channel
             .try_send(Request::GetMembership(tx))
@@ -48,9 +48,9 @@ impl Handle {
         time::timeout(self.timeout, rx).await?.map_err(Error::from)
     }
 
+    #[cfg(feature = "influxdb-metrics")]
     /// Get currently connected peers.
-    #[allow(dead_code)]
-    pub async fn get_peers(&mut self) -> Result<Vec<PeerId>, Error> {
+    pub async fn get_peers(&self) -> Result<Vec<PeerId>, Error> {
         let (tx, rx) = oneshot::channel();
         self.channel
             .try_send(Request::GetPeers(tx))

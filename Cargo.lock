@@ -3018,6 +3018,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "outflux"
+version = "0.1.0"
+source = "git+https://github.com/radicle-dev/outflux#df897765b76f8521988d82ad50a27721c7dd7195"
+dependencies = [
+ "reqwest",
+ "thiserror",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "parity-scale-codec"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3576,6 +3587,7 @@ dependencies = [
  "futures 0.3.15",
  "git2",
  "librad",
+ "outflux",
  "radicle-daemon",
  "rustc-hex",
  "serde",
