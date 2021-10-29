@@ -5,3 +5,7 @@
 {$RADICLE_DOMAIN}:8777 {
     reverse_proxy http-api:8777
 }
+
+{$RADICLE_DOMAIN}:8086 {
+    reverse_proxy influxdb:8086
+}
