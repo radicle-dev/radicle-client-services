@@ -23,3 +23,6 @@ services:
   git-server:
     volumes:
       - /var/opt/radicle-seed/.radicle:/app/radicle
+  influxdb:
+    volumes:
+      - /var/opt/radicle-seed/.radicle/influxdb:/var/lib/influxdb2
