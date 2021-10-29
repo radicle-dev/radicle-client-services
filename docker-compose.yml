@@ -51,11 +51,12 @@ services:
       - 80:80
       - 443:443
       - 8777:8777
+      - 8086:8086
     volumes:
       - $PWD/Caddyfile:/etc/caddy/Caddyfile:ro
     environment:
       - RADICLE_DOMAIN=$RADICLE_DOMAIN
-    container_name: radicle-caddy
+    container_name: caddy
     restart: unless-stopped
     networks:
       - radicle-services
