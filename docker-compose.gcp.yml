@@ -26,3 +26,4 @@ services:
   influxdb:
     volumes:
       - /var/opt/radicle-seed/.radicle/influxdb:/var/lib/influxdb2
+      - $PWD/influxdb:/docker-entrypoint-initdb.d
