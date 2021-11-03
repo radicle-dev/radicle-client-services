@@ -16,7 +16,7 @@ pub struct Options {
 
     /// radicle root path, for key and git storage
     #[argh(option)]
-    pub root: PathBuf,
+    pub root: Option<PathBuf>,
 
     /// TLS certificate path
     #[argh(option)]
@@ -33,6 +33,18 @@ pub struct Options {
     /// service 'git-receive-pack' operations, eg. resulting from a `git push` (default: false)
     #[argh(switch)]
     pub git_receive_pack: bool,
+
+    /// list of comma delimited GPG authorized keys to verify a signed push
+    #[argh(option)]
+    pub authorized_keys: Option<String>,
+
+    /// certificate nonce seed used to enable `push --signed`
+    #[argh(option)]
+    pub cert_nonce_seed: Option<String>,
+
+    /// allow unauthorized keys, ignores gpg certificate verification
+    #[argh(switch)]
+    pub allow_unauthorized_keys: bool,
 }
 
 impl Options {
@@ -49,6 +61,12 @@ impl From<Options> for server::Options {
             tls_key: other.tls_key,
             listen: other.listen,
             git_receive_pack: other.git_receive_pack,
+            authorized_keys: other
+                .authorized_keys
+                .map(|k| k.split(',').map(|s| s.to_owned()).collect::<Vec<String>>())
+                .unwrap_or_default(),
+            cert_nonce_seed: other.cert_nonce_seed,
+            allow_unauthorized_keys: other.allow_unauthorized_keys,
         }
     }
 }

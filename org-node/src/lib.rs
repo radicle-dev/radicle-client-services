@@ -20,8 +20,9 @@ use tokio_stream::wrappers::ReceiverStream;
 use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::fs::File;
-use std::io;
+use std::io::{self, BufRead, BufReader};
 use std::net;
+use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 
 mod client;
@@ -35,6 +36,9 @@ pub use client::Urn;
 pub use error::Error;
 
 use client::Client;
+
+/// UNIX domain socket for communicating project updates.
+pub const ORG_SOCKET_FILE: &str = "org-node.sock";
 
 /// Org identifier (Ethereum address).
 pub type OrgId = String;
@@ -166,7 +170,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
         .with_context(|| format!("unable to load identity {:?}", &identity_path))?;
     let peer_id = PeerId::from(signer.clone());
     let client = Client::new(
-        paths,
+        paths.clone(),
         signer,
         client::Config {
             listen: options.listen,
@@ -200,7 +204,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
     let client_task = rt.spawn(client.run(rt.handle().clone()));
     tasks.push(client_task);
 
-    let track_task = rt.spawn(track_projects(handle, queue));
+    let track_task = rt.spawn(track_projects(handle.clone(), queue));
     tasks.push(track_task);
 
     tracing::info!(target: "org-node", "Listening on {}...", options.listen);
@@ -213,6 +217,10 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
     // Now launch the event subscriber and listen on events.
     let event_task = rt.spawn(subscribe_events(options.rpc_url.clone(), addresses, update));
     tasks.push(event_task);
+
+    let update_refs_task = rt.spawn(update_refs(paths.git_dir().to_path_buf(), handle));
+    tasks.push(update_refs_task);
+
     let query_task = rt.spawn(query_projects(
         timestamp,
         options.subgraph.clone(),
@@ -372,6 +380,51 @@ async fn subscribe_events(url: String, addresses: Vec<Address>, update: mpsc::Se
     }
 }
 
+/// Stream Unix domain socket events and update refs for post-receive requests from the git-server.
+async fn update_refs(root_dir: PathBuf, mut handle: client::Handle) {
+    let mut path = root_dir;
+    // Pop the root git directory to the project root directory.
+    path.pop();
+
+    // Push the org-node.sock file to the project root directory.
+    path.push(ORG_SOCKET_FILE);
+
+    // Remove the `org-node.sock` file on startup before rebinding;
+    std::fs::remove_file(&path).ok();
+
+    match UnixListener::bind(path) {
+        Ok(listener) => {
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(s) => {
+                        let stream = BufReader::new(s);
+                        for urn in stream.lines().flatten() {
+                            if let Ok(urn) = Urn::try_from_id(urn) {
+                                match handle.update_refs(urn).await {
+                                    Ok(()) => {
+                                        tracing::info!(target: "org-node", "Successfully updated refs");
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(target: "org-node", "Failed to send update refs request to client: {}", e);
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(target: "org-node", "Failed to open stream with error: {:?}", e);
+                        return;
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!(target: "org-node", "Failed to bind listener to org-node socket, with error: {:?}", e);
+        }
+    }
+}
+
 /// Track projects sent via the queue.
 ///
 /// This function only returns if the channels it uses to communicate with other
@@ -382,7 +435,7 @@ async fn track_projects(mut handle: client::Handle, queue: mpsc::Receiver<Urn>) 
     let mut queue = ReceiverStream::new(queue).fuse();
 
     loop {
-        // Drain ascynchronous tracking queue, moving URNs to work queue.
+        // Drain asynchronous tracking queue, moving URNs to work queue.
         // This ensures that we aren't only retrying existing URNs that have timed out
         // and have been added back to the work queue.
         loop {

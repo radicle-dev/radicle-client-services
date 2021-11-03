@@ -1,14 +1,20 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
-mod error;
+pub mod error;
+
+#[cfg(feature = "hooks")]
+pub mod hooks;
 
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::{io, net};
 
 use http::{HeaderMap, Method};
+use librad::profile::Profile;
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use warp::hyper::StatusCode;
 use warp::reply;
 use warp::{self, path, Buf, Filter, Rejection, Reply};
@@ -19,25 +25,92 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Clone)]
 pub struct Options {
-    pub root: PathBuf,
+    pub root: Option<PathBuf>,
     pub listen: net::SocketAddr,
     pub tls_cert: Option<PathBuf>,
     pub tls_key: Option<PathBuf>,
     pub git_receive_pack: bool,
+    pub authorized_keys: Vec<String>,
+    pub cert_nonce_seed: Option<String>,
+    pub allow_unauthorized_keys: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct Context {
     root: PathBuf,
     git_receive_pack: bool,
+    authorized_keys: Vec<String>,
+    cert_nonce_seed: Option<String>,
+    allow_unauthorized_keys: bool,
+}
+
+impl TryFrom<&Options> for Context {
+    type Error = Error;
+
+    fn try_from(options: &Options) -> Result<Self, Self::Error> {
+        let root_path = if let Some(root) = &options.root {
+            root.to_owned()
+        } else {
+            let mut root = Profile::load()?.paths().git_dir().to_path_buf();
+            // Remove the `/git/` directory to use the project (parent) directory as the root.
+            root.pop();
+            root
+        };
+
+        tracing::debug!("Root path set to: {:?}", root_path);
+
+        Ok(Context {
+            root: root_path.canonicalize()?,
+            git_receive_pack: options.git_receive_pack,
+            authorized_keys: options.authorized_keys.clone(),
+            cert_nonce_seed: options.cert_nonce_seed.clone(),
+            allow_unauthorized_keys: options.allow_unauthorized_keys,
+        })
+    }
+}
+
+impl Context {
+    /// Sets the config receive.advertisePushOptions, which lets the user known they can provide a push option `-o`,
+    /// to specify unique attributes. This is currently not used, but may be used in the future.
+    pub fn advertise_push_options(&self) -> Result<(), Error> {
+        let field = "receive.advertisePushOptions";
+        let value = "true";
+
+        self.set_root_git_config(field, value)?;
+
+        Ok(())
+    }
+
+    /// Enables users to submit a signed push: `push --signed`
+    pub fn set_cert_nonce_seed(&self) -> Result<(), Error> {
+        let field = "receive.certNonceSeed";
+        let value = self
+            .cert_nonce_seed
+            .clone()
+            .unwrap_or_else(gen_random_string);
+
+        self.set_root_git_config(field, &value)?;
+
+        Ok(())
+    }
+
+    /// updates the git config in the root project
+    pub fn set_root_git_config(&self, field: &str, value: &str) -> Result<(), Error> {
+        let path = self.root.clone().join("git/config");
+
+        tracing::debug!("Searching for git config at: {:?}", path);
+
+        let mut config = git2::Config::open(&path)?;
+
+        config.set_str(field, value)?;
+
+        Ok(())
+    }
 }
 
 /// Run the Git Server.
 pub async fn run(options: Options) {
-    let ctx = Context {
-        root: options.root,
-        git_receive_pack: options.git_receive_pack,
-    };
+    let ctx = Context::try_from(&options).expect("Failed to create context from service options");
 
     let git_version = Command::new("git")
         .arg("version")
@@ -45,6 +118,15 @@ pub async fn run(options: Options) {
         .expect("'git' command must be available")
         .stdout;
     tracing::info!("{}", std::str::from_utf8(&git_version).unwrap().trim());
+
+    if let Err(e) = ctx.set_cert_nonce_seed() {
+        tracing::error!(
+            "Failed to set certificate nonce seed! required to enable `push --signed`: {:?}",
+            e
+        );
+
+        std::process::exit(1);
+    }
 
     let server = warp::filters::any::any()
         .map(move || ctx.clone())
@@ -104,7 +186,7 @@ async fn git_handler(
     request: warp::filters::path::Tail,
     query: String,
 ) -> Result<Box<dyn Reply>, Rejection> {
-    let remote = remote.expect("there is always a remote for HTTP connections");
+    let remote = remote.expect("There is always a remote for HTTP connections");
     let (status, headers, body) = git(
         ctx, method, headers, body, remote, namespace, request, query,
     )?;
@@ -158,13 +240,23 @@ fn git(
 
     tracing::debug!("namespace: {}", namespace);
     tracing::debug!("path: {:?}", path);
+    tracing::debug!("username: {:?}", username);
+    tracing::debug!("method: {:?}", method.as_str());
+    tracing::debug!("remote: {:?}", remote.to_string());
 
     let mut cmd = Command::new("git");
 
     cmd.arg("http-backend");
 
+    // Set Authorized Keys for verifying GPG signatures against key IDs.
+    cmd.env("RADICLE_AUTHORIZED_KEYS", ctx.authorized_keys.join(","));
+
+    if ctx.allow_unauthorized_keys {
+        cmd.env("RADICLE_ALLOW_UNAUTHORIZED_KEYS", "true");
+    }
+
     cmd.env("REQUEST_METHOD", method.as_str());
-    cmd.env("GIT_PROJECT_ROOT", &ctx.root);
+    cmd.env("GIT_PROJECT_ROOT", ctx.root);
     cmd.env("GIT_NAMESPACE", namespace);
     cmd.env("PATH_INFO", path);
     cmd.env("CONTENT_TYPE", content_type);
@@ -208,6 +300,7 @@ fn git(
     // Parse headers returned by git so that we can use them in the client response.
     for line in reader.by_ref().lines() {
         let line = line?;
+
         if line.is_empty() || line == "\r" {
             break;
         }
@@ -282,4 +375,13 @@ async fn recover(err: Rejection) -> Result<Box<dyn Reply>, std::convert::Infalli
     };
 
     Ok(Box::new(reply::with_status(String::default(), status)))
+}
+
+// Helper method to generate random string for cert nonce;
+fn gen_random_string() -> String {
+    thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(12)
+        .map(char::from)
+        .collect()
 }

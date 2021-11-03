@@ -67,6 +67,9 @@ pub enum Error {
 
     #[error("sending reply failed for {0}")]
     Reply(String),
+
+    #[error(transparent)]
+    RefStorage(#[from] Box<radicle_daemon::git::refs::stored::Error>),
 }
 
 impl From<fetcher::Info> for Error {
@@ -217,6 +220,7 @@ impl Client {
                 },
                 request = requests.next() => {
                     if let Some(r) = request {
+                        tracing::debug!(target: "org-node", "Incoming Request: {:?}", r);
                         let peer = peer.clone();
                         let paths = self.paths.clone();
 
@@ -344,6 +348,44 @@ impl Client {
                 reply
                     .send(Err(TrackProjectError::NotFound))
                     .map_err(|_| Error::Reply("TrackProject".to_string()))
+            }
+            Request::UpdateRefs(urn, rx) => {
+                tracing::info!(target: "org-node", "updating refs for urn: {:?}", urn);
+
+                // sign the updated ref;
+                Client::sign_refs(urn.clone(), api).await?;
+
+                let project = Client::get_project_head(&urn, api).await?;
+
+                // Return the project's default branch;
+                let Head { branch, .. } =
+                    project.ok_or_else(|| Error::Project(urn.clone(), "failed to find project"))?;
+
+                let namespace = urn.encode_id();
+                let namespace_path = Path::new("refs").join("namespaces").join(&namespace);
+
+                // Set symbolic "HEAD" to local branch reference;
+                let head = namespace_path.join("HEAD");
+                let local_branch_ref = namespace_path.join("refs").join("heads").join(branch);
+
+                tracing::debug!(target: "org-node", "Setting ref {:?} -> {:?}", &head, local_branch_ref);
+
+                let repository = git2::Repository::open_bare(paths.git_dir())
+                    .map_err(|e| Error::SetHead(Box::new(e)))?;
+
+                // Set symbolic reference;
+                repository
+                    .reference_symbolic(
+                        head.to_str().unwrap_or_default(),
+                        local_branch_ref.to_str().unwrap_or_default(),
+                        true,
+                        "set-head (org-node)",
+                    )
+                    .map_err(|e| Error::SetHead(Box::new(e)))?;
+
+                // return acknowledgement
+                rx.send(())
+                    .map_err(|_| Error::Reply("UpdateRefs".to_string()))
             }
         }
     }

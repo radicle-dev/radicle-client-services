@@ -26,6 +26,7 @@ pub enum Error {
 }
 
 /// Handle used to interact with the seed node.
+#[derive(Clone)]
 pub struct Handle {
     channel: mpsc::Sender<Request>,
     timeout: Duration,
@@ -71,6 +72,16 @@ impl Handle {
 
         time::timeout(self.timeout, rx).await?.map_err(Error::from)
     }
+
+    pub async fn update_refs(&mut self, urn: Urn) -> Result<(), Error> {
+        let (tx, rx) = oneshot::channel();
+        tracing::info!(target: "org-node", "Updating refs");
+        self.channel
+            .try_send(Request::UpdateRefs(urn, tx))
+            .map_err(Error::SendFailed)?;
+
+        time::timeout(self.timeout, rx).await?.map_err(Error::from)
+    }
 }
 
 /// User request to the seed node.
@@ -86,6 +97,7 @@ pub enum Request {
         std::time::Duration,
         oneshot::Sender<Result<Option<PeerId>, TrackProjectError>>,
     ),
+    UpdateRefs(Urn, oneshot::Sender<()>),
 }
 
 /// Error when using the [`Request::TrackProject`] request.

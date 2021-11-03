@@ -6,16 +6,36 @@ authors = ["Alexis Sellier <self@cloudhead.io>"]
 edition = "2018"
 build = "../build.rs"
 
+[[bin]]
+name = "pre-receive"
+path = "bin/pre_receive.rs"
+required-features = ["hooks"]
+
+[[bin]]
+name = "post-receive"
+path = "bin/post_receive.rs"
+required-features = ["hooks"]
+
 [dependencies]
-base64 = { version = "0.13" }
-shared = { path = "../shared", default-features = false }
-warp = { version = "0.3.1", features = ["tls"] }
-http = { version = "0.2" }
-thiserror = { version = "1" }
-tokio = { version = "1.2", features = ["macros", "rt", "rt-multi-thread", "sync"] }
 argh = { version = "0.1.4" }
+base64 = { version = "0.13" }
+git2 = "0.13"
+http = { version = "0.2" }
+librad = { version = "0" }
+shared = { path = "../shared", default-features = false }
+thiserror = { version = "1.0" }
+tokio = { version = "1.2", features = ["macros", "rt", "rt-multi-thread", "sync"] }
 tracing = "0.1"
 tracing-subscriber = "0.2"
+warp = { version = "0.3.1", features = ["tls"] }
+
+# hooks feature enabled dependencies
+envconfig = { version = "0.10.0", optional = true }
+pgp = { version = "0.7.2", optional = true }
+hex = { version = "0.4.3", optional = true }
+rand = "0.8.4"
 
 [features]
 gcp = ["shared/gcp"]
+hooks = ["envconfig", "pgp", "hex"]
+

@@ -1,6 +1,6 @@
 #![allow(clippy::large_enum_variant)]
 
-/// Errors that may occur when interacting with [`librad::net::peer::Peer`].
+/// Errors that may occur when interacting with the radicle git server or git hooks.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// I/O error.
@@ -27,9 +27,59 @@ pub enum Error {
     #[error("invalid authorization")]
     InvalidAuthorization,
 
+    /// Failed certificate verification.
+    #[error("failed certification verification")]
+    FailedCertificateVerification,
+
     /// Unauthorized.
     #[error("unauthorized")]
     Unauthorized,
+
+    /// Namespace not found.
+    #[error("namespace does not exist;")]
+    NamespaceNotFound,
+
+    /// Reference not found.
+    #[error("reference not found")]
+    ReferenceNotFound,
+
+    /// Radicle identity not found for project.
+    #[error("radicle identity is not found for project")]
+    RadicleIdentityNotFound,
+
+    /// Environmental variable error.
+    #[error("environmental variable error: {0}")]
+    VarError(#[from] std::env::VarError),
+
+    /// Git config parser error.
+    #[error("git2 error: {0:?}")]
+    Git2Error(#[from] git2::Error),
+
+    /// Missing certification signer credentials.
+    #[error("missing certificate signer credentials: {0:?}")]
+    MissingCertificateSignerCredentials(String),
+
+    /// Missing environmental variable.
+    #[cfg(feature = "hooks")]
+    #[error("missing environmental config variable: {0:?}")]
+    EnvConfigError(#[from] envconfig::Error),
+
+    /// Failed to parse byte data into string.
+    #[error(transparent)]
+    Utf8Error(#[from] std::str::Utf8Error),
+
+    /// OpenPGP errors.
+    #[cfg(feature = "hooks")]
+    #[error(transparent)]
+    PgpError(#[from] pgp::errors::Error),
+
+    /// Librad profile error.
+    #[error(transparent)]
+    Profile(#[from] librad::profile::Error),
+
+    /// Failed to connect to org-node unix socket.
+    #[error("failed to connect to org-node unix socket")]
+    UnixSocket,
 }
 
 impl Error {
