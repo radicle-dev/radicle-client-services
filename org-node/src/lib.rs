@@ -5,6 +5,9 @@
 //!
 //! The org node can be configured to listen to any number of orgs, or *all*
 //! orgs.
+
+#![feature(box_patterns)]
+
 use anyhow::Context;
 use ethers::abi::Address;
 use ethers::prelude::*;
@@ -52,6 +55,8 @@ pub struct Options {
     pub subgraph: String,
     pub orgs: Vec<OrgId>,
     pub urns: Vec<Urn>,
+    pub peers: Vec<PeerId>,
+    pub allow_unknown_peers: bool,
     pub timestamp: Option<u64>,
 
     #[cfg(feature = "influxdb-metrics")]
@@ -175,6 +180,8 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
         client::Config {
             listen: options.listen,
             bootstrap: options.bootstrap.clone(),
+            peers: options.peers.clone(),
+            allow_unknown_peers: options.allow_unknown_peers,
             ..client::Config::default()
         },
     );

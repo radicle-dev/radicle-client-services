@@ -53,6 +53,14 @@ pub struct Options {
     #[argh(option, from_str_fn(parse_urns))]
     pub urns: Option<Vec<node::Urn>>,
 
+    /// known peer IDs to track, ','-delimited (default: none)
+    #[argh(option, from_str_fn(parse_peer_ids))]
+    pub peers: Option<Vec<PeerId>>,
+
+    /// allow unknown peers to be tracked (default: false)
+    #[argh(option, default = "false")]
+    pub allow_unknown_peers: bool,
+
     /// either "plain" or "gcp" (gcp available only when compiled-in)
     #[argh(option, default = "LogFmt::Plain")]
     pub log_format: LogFmt,
@@ -87,6 +95,8 @@ impl From<Options> for node::Options {
             bootstrap: other.bootstrap.unwrap_or_default(),
             orgs: other.orgs.unwrap_or_default(),
             urns: other.urns.unwrap_or_default(),
+            allow_unknown_peers: other.allow_unknown_peers,
+            peers: other.peers.unwrap_or_default(),
         }
     }
 
@@ -111,6 +121,8 @@ impl From<Options> for node::Options {
             bootstrap: other.bootstrap.unwrap_or_default(),
             orgs: other.orgs.unwrap_or_default(),
             urns: other.urns.unwrap_or_default(),
+            peers: other.peers.unwrap_or_default(),
+            allow_unknown_peers: other.allow_unknown_peers,
             influxdb_client,
         }
     }
@@ -123,6 +135,17 @@ fn parse_urns(value: &str) -> Result<Vec<node::Urn>, String> {
         value
             .split(',')
             .map(|s| node::Urn::from_str(s).map_err(|e| e.to_string()))
+            .collect()
+    }
+}
+
+fn parse_peer_ids(value: &str) -> Result<Vec<PeerId>, String> {
+    if value.is_empty() {
+        Ok(vec![])
+    } else {
+        value
+            .split(',')
+            .map(|s| PeerId::from_str(s).map_err(|e| e.to_string()))
             .collect()
     }
 }

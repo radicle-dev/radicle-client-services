@@ -5,15 +5,15 @@ use either::Either;
 use futures::{future::FutureExt as _, select, stream::StreamExt as _};
 use thiserror::Error;
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 
 use librad::{
     git::{identities, refs, replication, storage, storage::fetcher, tracking},
     net::{
         discovery::{self, Discovery as _},
-        peer::{self, Peer},
-        protocol::{self, membership, PeerInfo},
+        peer::{self, event::upstream::Gossip, Peer, PeerInfo, ProtocolEvent},
+        protocol::{self, broadcast::PutResult::Uninteresting, gossip::Payload, membership},
         Network,
     },
     paths::Paths,
@@ -22,8 +22,7 @@ use librad::{
 use crate::client::handle::Request;
 
 pub use handle::{Handle, TrackProjectError};
-pub use librad::git::identities::Urn;
-pub use librad::PeerId;
+pub use librad::{git::Urn, PeerId};
 pub use signer::Signer;
 
 pub mod handle;
@@ -68,6 +67,17 @@ pub enum Error {
     #[error("sending reply failed for {0}")]
     Reply(String),
 
+    #[error("project head was not found")]
+    ProjectHeadNotFound,
+
+    #[error("project peer failed to be tracked and fetched: {0}")]
+    TrackPeer(String),
+
+    #[error("tokio channel receiver error: {0}")]
+    Recv(#[from] tokio::sync::oneshot::error::RecvError),
+
+    #[error("Join handle error: {0}")]
+    TaskJoin(#[from] tokio::task::JoinError),
     #[error(transparent)]
     RefStorage(#[from] Box<radicle_daemon::git::refs::stored::Error>),
 }
@@ -90,6 +100,10 @@ pub struct Config {
     pub limits: Limits,
     /// Listen address.
     pub listen: SocketAddr,
+    /// Track a list of peers
+    pub peers: Vec<PeerId>,
+    /// Allow tracking unknown peers
+    pub allow_unknown_peers: bool,
 }
 
 impl Default for Config {
@@ -98,6 +112,8 @@ impl Default for Config {
             bootstrap: vec![],
             limits: Default::default(),
             listen: ([0, 0, 0, 0], 0).into(),
+            peers: vec![],
+            allow_unknown_peers: false,
         }
     }
 }
@@ -124,6 +140,19 @@ pub struct Head {
     remote: String,
     branch: String,
 }
+
+/// Project peer contains details used to track the peer for an interested project Urn.
+/// this struct is primarily used by `TrackPeerTransmitter`
+struct TrackPeer {
+    api: Peer<Signer>,
+    peer_info: PeerInfo<std::net::SocketAddr>,
+    paths: Paths,
+    urn: Urn,
+}
+
+/// Project peer struct with a acknowledgement transmitter.
+/// This struct is primarily used by `protocol_listener` and TrackProject request handler.
+type TrackPeerTransmitter = (TrackPeer, oneshot::Sender<Result<Option<PeerId>, Error>>);
 
 /// Client instance.
 pub struct Client {
@@ -186,6 +215,24 @@ impl Client {
         let peer = Peer::new(peer_config).expect("signing key must match peer id");
         let mut requests = ReceiverStream::new(self.requests).fuse();
 
+        // Establish Peer Tracking Channel for protocol listener and request handler.
+        let (peer_tx, peer_rx) =
+            mpsc::channel::<TrackPeerTransmitter>(self.config.limits.request_queue_size);
+
+        // listen for track peers notifications.
+        let mut track_peers = rt.spawn(Client::track_peers(peer_rx)).fuse();
+
+        // Listen for and process protocol events.
+        let mut protocol_listener = rt
+            .spawn(Client::protocol_listener(
+                peer_tx.clone(),
+                peer.clone(),
+                self.paths.clone(),
+                self.config.peers.clone(),
+                self.config.allow_unknown_peers,
+            ))
+            .fuse();
+
         // Spawn the peer thread.
         let mut protocol = rt
             .spawn({
@@ -216,17 +263,23 @@ impl Client {
             select! {
                 p = protocol => match p {
                     Err(e) if e.is_panic() => panic::resume_unwind(e.into_panic()),
+                    Ok(_event) => {
+                        // TODO: Call protocol handle event, and remove protocol_listener above.
+                    },
                     _ => break
                 },
+                _ = track_peers => tracing::error!(target: "org-node", "Peer tracker failed unexpectedly"),
+                _ = protocol_listener => tracing::error!(target: "org-node", "Protocol listener failed unexpectedly"),
                 request = requests.next() => {
                     if let Some(r) = request {
                         tracing::debug!(target: "org-node", "Incoming Request: {:?}", r);
                         let peer = peer.clone();
                         let paths = self.paths.clone();
+                        let tx = peer_tx.clone();
 
                        rt.spawn(async move {
-                            if let Err(err) = Client::handle_request(r, &peer, &paths).await {
-                                tracing::error!(target: "org-node", "Request fulfilment failed: {}", err);
+                            if let Err(err) = Client::handle_request(r, &peer, &paths, tx).await {
+                                tracing::error!(target: "org-node", "Request fulfillment failed: {}", err);
                             }
                         });
                     }
@@ -235,11 +288,172 @@ impl Client {
         }
     }
 
+    /// Track peers that are found by the node that are interested in shared projects;
+    /// This process is spawned within `Client::run` and is run indefinitely.
+    async fn track_peers(mut peer_rx: mpsc::Receiver<TrackPeerTransmitter>) {
+        tracing::info!(target: "org-node", "Spawning Track Peers Listener");
+        while let Some((
+            TrackPeer {
+                api,
+                urn,
+                peer_info,
+                paths,
+            },
+            ack,
+        )) = peer_rx.recv().await
+        {
+            match Client::track_project(&api, &urn, &peer_info).await {
+                Err(err) => {
+                    tracing::error!(target: "org-node", "Error tracking {}: {}", urn, err);
+                    ack.send(Err(err)).ok();
+                }
+                Ok(tracked) => {
+                    let response = if tracked {
+                        tracing::debug!(target: "org-node", "Tracking relationship for project {} and peer {} created", urn, peer_info.peer_id);
+
+                        Some(peer_info.peer_id)
+                    } else {
+                        tracing::debug!(target: "org-node", "Tracking relationship for project {} already exists", urn);
+
+                        None
+                    };
+
+                    let peer_id = peer_info.peer_id;
+                    let seen_addrs = peer_info.seen_addrs.to_vec();
+                    let cfg = api.protocol_config().replication;
+                    tracing::info!(target: "org-node", "Fetching tracked project {} for peer {}", urn, peer_id);
+
+                    match api
+                        .using_storage({
+                            let urn = urn.clone();
+
+                            move |s| Client::fetch_project(&urn, peer_id, seen_addrs, s, cfg)
+                        })
+                        .await
+                    {
+                        Ok(Err(err)) => {
+                            // Check if the response is an error and return early if so.
+                            tracing::error!(target: "org-node", "Failed to replicate {} from {}: {}", urn, peer_id, err);
+                            ack.send(Err(err)).ok();
+                            continue;
+                        }
+                        Err(e) => {
+                            ack.send(Err(Error::Storage(e))).ok();
+                            continue;
+                        }
+                        Ok(_) => {}
+                    }
+
+                    match Client::get_project_head(&urn, &api).await {
+                        Ok(Some(Head { remote, branch })) => {
+                            if let Err(err) = Client::set_head(&urn, &remote, &branch, &paths) {
+                                tracing::error!(target: "org-node", "Error setting head: {}", err);
+                                ack.send(Err(err)).ok();
+                                continue;
+                            }
+
+                            if let Err(err) = Client::sign_refs(urn, &api).await {
+                                tracing::error!(target: "org-node", "Error signing refs: {}", err);
+                                ack.send(Err(err)).ok();
+                                continue;
+                            }
+
+                            // Acknowledge success;
+                            ack.send(Ok(response)).ok();
+                        }
+                        Ok(None) => {
+                            tracing::error!(target: "org-node", "Project head not found! Cannot set head for peer");
+                            ack.send(Err(Error::ProjectHeadNotFound)).ok();
+                        }
+                        Err(err) => {
+                            tracing::error!(target: "org-node", "Error getting project head: {}", err);
+                            ack.send(Err(err)).ok();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    async fn track_peer_handler(
+        peer_tx: mpsc::Sender<TrackPeerTransmitter>,
+        track_peer: TrackPeer,
+    ) -> Result<Option<PeerId>, Error> {
+        // create receiver for Project Peer acknowledgement.
+        let (tx, rx) = oneshot::channel::<Result<Option<PeerId>, Error>>();
+
+        // spawn rx listener to wait for oneshot response from peer_tx.
+        let rx_res = tokio::spawn(rx);
+
+        // notify track peers process to handle tracking and fetching.
+        if let Err(e) = peer_tx.send((track_peer, tx)).await {
+            tracing::error!(target: "org-node", "Failed to send track peer request: {}", e);
+            return Err(Error::TrackPeer(e.to_string()));
+        }
+
+        // return the nested result of the acknowledgement.
+        rx_res.await??
+    }
+
+    /// This process listens for incoming protocol events and processes accordingly.
+    /// It is spawned within `Client::run` and is run indefinitely.
+    async fn protocol_listener(
+        peer_tx: mpsc::Sender<TrackPeerTransmitter>,
+        api: Peer<Signer>,
+        paths: Paths,
+        known_peers: Vec<PeerId>,
+        allow_unknown_peers: bool,
+    ) {
+        tracing::info!(target: "org-node", "Spawning Protocol Event Listener");
+        let events = api.subscribe();
+        events.for_each(|incoming| async {
+            match incoming {
+                Err(e) => {
+                    panic!("Protocol event stream is unavailable, received error: {}", e);
+                }
+                // TODO: We need another match arm for `Interesting` events;
+                // and we only want to set the head of the project for the remote;
+                // We only want to do this once the fetch has taken place, which means,
+                //
+                // Check if the event payload rev matches the current project head, if not
+                // we want to set the head.
+                Ok(ProtocolEvent::Gossip(box Gossip::Put {
+                    payload: Payload { urn, .. },
+                    provider: peer,
+                    result: Uninteresting,
+                })) => {
+                    // Exit early if the peer ID is unknown and `allow_unknown_peers` is false
+                    if !known_peers.contains(&peer.peer_id) && !allow_unknown_peers {
+                        tracing::debug!(target: "org-node", "Ignoring tracking peer: {}", peer.peer_id);
+                        return;
+                    }
+
+                    // Send notification to track peers process;
+                    if let Err(e) = Client::track_peer_handler(
+                        peer_tx.clone(),
+                        TrackPeer {
+                            api: api.clone(),
+                            urn,
+                            peer_info: peer,
+                            paths: paths.clone(),
+                        },
+                    )
+                    .await
+                    {
+                        tracing::error!("Error tracking project peer: {}", e);
+                    }
+                }
+                _ => {}
+            }
+        }).await;
+    }
+
     /// Handle user requests.
     async fn handle_request(
         request: Request,
         api: &Peer<Signer>,
         paths: &Paths,
+        peer_tx: mpsc::Sender<TrackPeerTransmitter>,
     ) -> Result<(), Error> {
         match request {
             Request::GetMembership(reply) => {
@@ -282,69 +496,32 @@ impl Client {
                 let mut peers = api.providers(urn.clone(), timeout);
 
                 while let Some(peer) = peers.next().await {
-                    match Client::track_project(api, &urn, &peer).await {
-                        Err(err) => {
-                            tracing::error!(target: "org-node", "Error tracking {}: {}", urn, err);
+                    // Send notification to track peers process;
+                    let result = Client::track_peer_handler(
+                        peer_tx.clone(),
+                        TrackPeer {
+                            api: api.clone(),
+                            urn: urn.clone(),
+                            peer_info: peer,
+                            paths: paths.clone(),
+                        },
+                    )
+                    .await;
+
+                    // Handle the track peer response
+                    let response = match result {
+                        Ok(response) => response,
+                        Err(e) => {
+                            tracing::error!(target: "org-node", "Error tracking peers: {}", e);
+                            continue;
                         }
-                        Ok(tracked) => {
-                            let response = if tracked {
-                                tracing::debug!(target: "org-node", "Tracking relationship for project {} and peer {} created", urn, peer.peer_id);
+                    };
 
-                                Some(peer.peer_id)
-                            } else {
-                                tracing::debug!(target: "org-node", "Tracking relationship for project {} already exists", urn);
-
-                                None
-                            };
-                            let cfg = api.protocol_config().replication;
-                            let peer_id = peer.peer_id;
-
-                            // Try to fetch the project. Even though the project might have already
-                            // been tracked, it has not been replicated.
-                            let result = api
-                                .using_storage({
-                                    let urn = urn.clone();
-
-                                    move |s| {
-                                        Client::fetch_project(
-                                            &urn,
-                                            peer_id,
-                                            peer.seen_addrs.to_vec(),
-                                            s,
-                                            cfg,
-                                        )
-                                    }
-                                })
-                                .await?;
-
-                            // If we fail to replicate, try the next peer.
-                            if let Err(err) = result {
-                                tracing::error!(target: "org-node", "Failed to replicate {} from {}: {}", urn, peer_id, err);
-                                continue;
-                            }
-
-                            let Head { remote, branch } = Client::get_project_head(&urn, api)
-                                .await?
-                                .expect("a project that was just replicated should exist");
-
-                            // Fetching doesn't automatically set the repository head, we have to do it
-                            // manually. We set the head to the default branch of the project
-                            // maintainer.
-                            match Client::set_head(&urn, &remote, &branch, paths) {
-                                Err(Error::SetHead(err)) => {
-                                    tracing::error!(target: "org-node", "Error setting head: {}", err);
-                                }
-                                Err(err) => return Err(err),
-                                Ok(()) => {}
-                            }
-                            Client::sign_refs(urn, api).await?;
-
-                            return reply
-                                .send(Ok(response))
-                                .map_err(|_| Error::Reply("TrackProject".to_string()));
-                        }
-                    }
+                    return reply
+                        .send(Ok(response))
+                        .map_err(|_| Error::Reply("TrackProject".to_string()));
                 }
+
                 reply
                     .send(Err(TrackProjectError::NotFound))
                     .map_err(|_| Error::Reply("TrackProject".to_string()))
