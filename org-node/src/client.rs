@@ -292,6 +292,7 @@ impl Client {
     /// This process is spawned within `Client::run` and is run indefinitely.
     async fn track_peers(mut peer_rx: mpsc::Receiver<TrackPeerTransmitter>) {
         tracing::info!(target: "org-node", "Spawning Track Peers Listener");
+
         while let Some((
             TrackPeer {
                 api,
@@ -405,8 +406,8 @@ impl Client {
         allow_unknown_peers: bool,
     ) {
         tracing::info!(target: "org-node", "Spawning Protocol Event Listener");
-        let events = api.subscribe();
-        events.for_each(|incoming| async {
+
+        api.subscribe().for_each(|incoming| async {
             match incoming {
                 Err(e) => {
                     panic!("Protocol event stream is unavailable, received error: {}", e);
@@ -440,7 +441,7 @@ impl Client {
                     )
                     .await
                     {
-                        tracing::error!("Error tracking project peer: {}", e);
+                        tracing::error!(target: "org-node", "Error tracking project peer: {}", e);
                     }
                 }
                 _ => {}
