@@ -13,7 +13,13 @@ use librad::{
     net::{
         discovery::{self, Discovery as _},
         peer::{self, event::upstream::Gossip, Peer, PeerInfo, ProtocolEvent},
-        protocol::{self, broadcast::PutResult::Uninteresting, gossip::Payload, membership},
+        protocol::{
+            self,
+            broadcast::PutResult::Applied,
+            broadcast::PutResult::Uninteresting,
+            gossip::{Payload, Rev},
+            membership,
+        },
         Network,
     },
     paths::Paths,
@@ -406,18 +412,37 @@ impl Client {
         allow_unknown_peers: bool,
     ) {
         tracing::info!(target: "org-node", "Spawning Protocol Event Listener");
-
         api.subscribe().for_each(|incoming| async {
             match incoming {
                 Err(e) => {
                     panic!("Protocol event stream is unavailable, received error: {}", e);
                 }
-                // TODO: We need another match arm for `Interesting` events;
-                // and we only want to set the head of the project for the remote;
-                // We only want to do this once the fetch has taken place, which means,
-                //
                 // Check if the event payload rev matches the current project head, if not
                 // we want to set the head.
+                Ok(ProtocolEvent::Gossip(box Gossip::Put {
+                    payload: Payload { urn, .. },
+                    result: Applied(Payload {rev, origin, .. }),
+                    ..
+                })) => {
+                    if let Some(Rev::Git(oid)) = rev {
+                        tracing::info!(target: "org-node", "Applied revision update for urn {}, oid {}", urn, oid);
+                    }
+
+                    if let Some(incoming_remote) = origin {
+                        if let Ok(Some(Head { branch, remote })) =
+                            Client::get_project_head(&urn, &api).await
+                        {
+                            // need to assert that the rev was signed by the maintainer of the project.
+                            // TODO: Ideally, we need an ability to update the head when a specified peer publishes a new revision.
+                            // This is needed in a `multi-maintainer` project, but currently all projects are singly maintained.
+                            if incoming_remote.default_encoding() == remote {
+                                if let Err(e) = Client::set_head(&urn, &remote, &branch, &paths) {
+                                    tracing::error!(target: "org-node", "Error setting head: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
                 Ok(ProtocolEvent::Gossip(box Gossip::Put {
                     payload: Payload { urn, .. },
                     provider: peer,
@@ -482,8 +507,9 @@ impl Client {
                             tracing::error!(target: "org-node", "Error setting head: {}", err);
                         }
                         Err(err) => return Err(err),
-                        Ok(()) => {}
+                        Ok(_) => {}
                     }
+
                     Client::sign_refs(urn, api).await?;
 
                     return reply
@@ -633,7 +659,7 @@ impl Client {
     ///
     /// Creates the necessary refs so that a `git clone` may succeed and checkout the correct
     /// branch.
-    fn set_head(urn: &Urn, maintainer: &str, branch: &str, paths: &Paths) -> Result<(), Error> {
+    fn set_head(urn: &Urn, maintainer: &str, branch: &str, paths: &Paths) -> Result<Rev, Error> {
         let namespace = urn.encode_id();
         let repository = git2::Repository::open_bare(paths.git_dir())
             .map_err(|e| Error::SetHead(Box::new(e)))?;
@@ -683,7 +709,7 @@ impl Client {
             .reference_symbolic(head, local_branch_ref, true, "set-head (org-node)")
             .map_err(|e| Error::SetHead(Box::new(e)))?;
 
-        Ok(())
+        Ok(Rev::Git(oid))
     }
 
     /// Attempt to fetch a project from a peer.
