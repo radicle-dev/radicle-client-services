@@ -34,6 +34,9 @@ mod error;
 mod metrics;
 mod query;
 
+// #[cfg(test)]
+// mod tests;
+
 pub use client::PeerId;
 pub use client::Urn;
 pub use error::Error;
@@ -52,6 +55,7 @@ pub struct Options {
     pub bootstrap: Vec<(PeerId, net::SocketAddr)>,
     pub rpc_url: String,
     pub listen: net::SocketAddr,
+    pub web_server_listen: net::SocketAddr,
     pub subgraph: String,
     pub orgs: Vec<OrgId>,
     pub urns: Vec<Urn>,
@@ -179,6 +183,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
         signer,
         client::Config {
             listen: options.listen,
+            web_server_listen: options.web_server_listen,
             bootstrap: options.bootstrap.clone(),
             peers: options.peers.clone(),
             allow_unknown_peers: options.allow_unknown_peers,

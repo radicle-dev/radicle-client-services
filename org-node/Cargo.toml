@@ -27,6 +27,9 @@ ethers = { version = "0.4" }
 rustc-hex = { version = "2.1" }
 anyhow = "1.0"
 outflux = { git = "https://github.com/radicle-dev/outflux", optional = true }
+warp = "0.3.1"
+futures-util = "0.3.17"
+websocket = "0.26.2"
 
 [features]
 gcp = ["shared/gcp"]

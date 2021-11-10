@@ -1,12 +1,15 @@
+use std::collections::HashMap;
 use std::path::Path;
+use std::str::FromStr;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use std::{io, net::SocketAddr, panic, time::Duration};
 
 use either::Either;
 use futures::{future::FutureExt as _, select, stream::StreamExt as _};
 use thiserror::Error;
-
-use tokio::sync::{mpsc, oneshot};
-use tokio_stream::wrappers::ReceiverStream;
 
 use librad::{
     git::{identities, refs, replication, storage, storage::fetcher, tracking},
@@ -24,6 +27,8 @@ use librad::{
     },
     paths::Paths,
 };
+use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
 
 use crate::client::handle::Request;
 
@@ -33,6 +38,17 @@ pub use signer::Signer;
 
 pub mod handle;
 pub mod signer;
+pub mod webserver;
+
+/// Global unique connect peer id counter.
+/// All peers should be subscription based read-only. There are [currently] no mutations
+/// over websocket to the org-node. Multiple peers, some with the same peer id, may connected
+/// to the websocket service, therefore, we use an atomic usize instead of PeerId for the peer mapping
+/// to the websocket stream handler.
+static WEBSOCKET_CONNECTION_ID: AtomicUsize = AtomicUsize::new(1);
+
+/// Connected Peers Mapping Unbounded Sender to CONNECTED PEER ID as usize.
+type ConnectWebSocketClients = Arc<RwLock<HashMap<usize, mpsc::UnboundedSender<String>>>>;
 
 #[derive(Error, Debug)]
 #[non_exhaustive]
@@ -106,6 +122,8 @@ pub struct Config {
     pub limits: Limits,
     /// Listen address.
     pub listen: SocketAddr,
+    /// Web server listen address.
+    pub web_server_listen: SocketAddr,
     /// Track a list of peers
     pub peers: Vec<PeerId>,
     /// Allow tracking unknown peers
@@ -118,6 +136,7 @@ impl Default for Config {
             bootstrap: vec![],
             limits: Default::default(),
             listen: ([0, 0, 0, 0], 0).into(),
+            web_server_listen: ([0, 0, 0, 0], 1).into(),
             peers: vec![],
             allow_unknown_peers: false,
         }
@@ -149,16 +168,41 @@ pub struct Head {
 
 /// Project peer contains details used to track the peer for an interested project Urn.
 /// this struct is primarily used by `TrackPeerTransmitter`
-struct TrackPeer {
-    api: Peer<Signer>,
-    peer_info: PeerInfo<std::net::SocketAddr>,
-    paths: Paths,
-    urn: Urn,
+pub struct TrackPeer {
+    pub api: Peer<Signer>,
+    pub peer_info: PeerInfo<std::net::SocketAddr>,
+    pub paths: Paths,
+    pub urn: Urn,
 }
 
-/// Project peer struct with a acknowledgement transmitter.
+impl ToString for TrackPeer {
+    fn to_string(&self) -> String {
+        format!("{}:{}", self.peer_info.peer_id, self.urn)
+    }
+}
+
+/// Track peer struct with a acknowledgement transmitter.
 /// This struct is primarily used by `protocol_listener` and TrackProject request handler.
-type TrackPeerTransmitter = (TrackPeer, oneshot::Sender<Result<Option<PeerId>, Error>>);
+type TrackPeerTransmitter = (
+    TrackPeer,
+    Option<oneshot::Sender<Result<Option<PeerId>, Error>>>,
+);
+
+/// General Message Bus for cross-thread communications.
+pub enum MessageBus {
+    TrackPeer(TrackPeerTransmitter),
+    /// Used to inform the message bus a new web socket connection has been established.
+    WebSocketConnection(mpsc::UnboundedSender<String>),
+}
+
+impl ToString for MessageBus {
+    fn to_string(&self) -> String {
+        match self {
+            MessageBus::TrackPeer(peer) => peer.0.to_string(),
+            MessageBus::WebSocketConnection(_) => "WebSocketConnection".to_string(),
+        }
+    }
+}
 
 /// Client instance.
 pub struct Client {
@@ -222,20 +266,27 @@ impl Client {
         let mut requests = ReceiverStream::new(self.requests).fuse();
 
         // Establish Peer Tracking Channel for protocol listener and request handler.
-        let (peer_tx, peer_rx) =
-            mpsc::channel::<TrackPeerTransmitter>(self.config.limits.request_queue_size);
+        let (mb_tx, mb_rx) = mpsc::channel::<MessageBus>(self.config.limits.request_queue_size);
 
         // listen for track peers notifications.
-        let mut track_peers = rt.spawn(Client::track_peers(peer_rx)).fuse();
+        let mut message_bus = rt.spawn(Client::message_bus(mb_rx)).fuse();
 
         // Listen for and process protocol events.
         let mut protocol_listener = rt
             .spawn(Client::protocol_listener(
-                peer_tx.clone(),
+                mb_tx.clone(),
                 peer.clone(),
                 self.paths.clone(),
                 self.config.peers.clone(),
                 self.config.allow_unknown_peers,
+            ))
+            .fuse();
+
+        // Listen for web server events.
+        let mut web_server = rt
+            .spawn(webserver::serve(
+                mb_tx.clone(),
+                self.config.web_server_listen,
             ))
             .fuse();
 
@@ -274,14 +325,22 @@ impl Client {
                     },
                     _ => break
                 },
-                _ = track_peers => tracing::error!(target: "org-node", "Peer tracker failed unexpectedly"),
+                _ = message_bus => tracing::error!(target: "org-node", "Peer tracker failed unexpectedly"),
                 _ = protocol_listener => tracing::error!(target: "org-node", "Protocol listener failed unexpectedly"),
+                ws = web_server => match ws {
+                    Ok(_) => {
+                        tracing::error!(target: "org-node", "Web server shutdown unexpectedly");
+                    },
+                    Err(e) => {
+                        tracing::error!(target: "org-node", err = ?e, "Web server failed unexpectedly with error");
+                    }
+                },
                 request = requests.next() => {
                     if let Some(r) = request {
                         tracing::debug!(target: "org-node", "Incoming Request: {:?}", r);
                         let peer = peer.clone();
                         let paths = self.paths.clone();
-                        let tx = peer_tx.clone();
+                        let tx = mb_tx.clone();
 
                        rt.spawn(async move {
                             if let Err(err) = Client::handle_request(r, &peer, &paths, tx).await {
@@ -296,114 +355,183 @@ impl Client {
 
     /// Track peers that are found by the node that are interested in shared projects;
     /// This process is spawned within `Client::run` and is run indefinitely.
-    async fn track_peers(mut peer_rx: mpsc::Receiver<TrackPeerTransmitter>) {
-        tracing::info!(target: "org-node", "Spawning Track Peers Listener");
+    async fn message_bus(mut peer_rx: mpsc::Receiver<MessageBus>) {
+        tracing::info!(target: "org-node", "Spawning Message Bus Listener");
 
-        while let Some((
-            TrackPeer {
-                api,
-                urn,
-                peer_info,
-                paths,
-            },
-            ack,
-        )) = peer_rx.recv().await
-        {
-            match Client::track_project(&api, &urn, &peer_info).await {
-                Err(err) => {
-                    tracing::error!(target: "org-node", "Error tracking {}: {}", urn, err);
-                    ack.send(Err(err)).ok();
+        // Create an unbounded channel for re
+        let (conn_ws_tx, conn_ws_rx) = mpsc::unbounded_channel::<MessageBus>();
+        let mut conn_ws_rx = UnboundedReceiverStream::new(conn_ws_rx);
+
+        // instantiate an empty peer socket map;
+        let connected_ws_clients = ConnectWebSocketClients::default();
+        let cloned_ws_clients = Arc::clone(&connected_ws_clients);
+        tokio::task::spawn(async move {
+            while let Some(msg) = conn_ws_rx.next().await {
+                // send update to all connected web socket clients.
+                for (_, ws_tx) in cloned_ws_clients.read().await.iter() {
+                    let event = msg.to_string().clone();
+                    if let Err(e) = ws_tx.send(event) {
+                        tracing::error!(target: "org-node", "Failed to send message to web socket client: {}", e);
+                    }
                 }
-                Ok(tracked) => {
-                    let response = if tracked {
-                        tracing::debug!(target: "org-node", "Tracking relationship for project {} and peer {} created", urn, peer_info.peer_id);
+            }
+        });
 
-                        Some(peer_info.peer_id)
-                    } else {
-                        tracing::debug!(target: "org-node", "Tracking relationship for project {} already exists", urn);
-
-                        None
-                    };
-
-                    let peer_id = peer_info.peer_id;
-                    let seen_addrs = peer_info.seen_addrs.to_vec();
-                    let cfg = api.protocol_config().replication;
-                    tracing::info!(target: "org-node", "Fetching tracked project {} for peer {}", urn, peer_id);
-
-                    match api
-                        .using_storage({
-                            let urn = urn.clone();
-
-                            move |s| Client::fetch_project(&urn, peer_id, seen_addrs, s, cfg)
-                        })
+        while let Some(message) = peer_rx.recv().await {
+            match message {
+                // Establish a new web socket connected client mapping.
+                MessageBus::WebSocketConnection(ws_tx) => {
+                    // Add the websocket tx handler to the connected peers collection.
+                    let conn_id = WEBSOCKET_CONNECTION_ID.fetch_add(1, Ordering::Relaxed);
+                    Arc::clone(&connected_ws_clients)
+                        .write()
                         .await
-                    {
-                        Ok(Err(err)) => {
-                            // Check if the response is an error and return early if so.
-                            tracing::error!(target: "org-node", "Failed to replicate {} from {}: {}", urn, peer_id, err);
-                            ack.send(Err(err)).ok();
-                            continue;
-                        }
-                        Err(e) => {
-                            ack.send(Err(Error::Storage(e))).ok();
-                            continue;
-                        }
-                        Ok(_) => {}
-                    }
-
-                    match Client::get_project_head(&urn, &api).await {
-                        Ok(Some(Head { remote, branch })) => {
-                            if let Err(err) = Client::set_head(&urn, &remote, &branch, &paths) {
-                                tracing::error!(target: "org-node", "Error setting head: {}", err);
-                                ack.send(Err(err)).ok();
-                                continue;
-                            }
-
-                            if let Err(err) = Client::sign_refs(urn.clone(), &api).await {
-                                tracing::error!(target: "org-node", "Error signing refs: {}", err);
-                                ack.send(Err(err)).ok();
-                                continue;
-                            }
-
-                            // Announce the peer update to the network.
-                            if let Err(e) = api.announce(Payload {
-                                urn,
-                                // QUESTION: Should the current revision be added here?
-                                rev: None,
-                                origin: Some(peer_id),
-                            }) {
-                                tracing::error!(target: "org-node", "Error announcing peer update: {:?}", e);
-                            }
-
-                            // Acknowledge success;
-                            ack.send(Ok(response)).ok();
-                        }
-                        Ok(None) => {
-                            tracing::error!(target: "org-node", "Project head not found! Cannot set head for peer");
-                            ack.send(Err(Error::ProjectHeadNotFound)).ok();
-                        }
+                        .insert(conn_id, ws_tx);
+                }
+                MessageBus::TrackPeer(msg) => {
+                    let (
+                        TrackPeer {
+                            api,
+                            urn,
+                            peer_info,
+                            paths,
+                        },
+                        ack,
+                    ) = msg;
+                    match Client::track_project(&api, &urn, &peer_info).await {
                         Err(err) => {
-                            tracing::error!(target: "org-node", "Error getting project head: {}", err);
-                            ack.send(Err(err)).ok();
+                            tracing::error!(target: "org-node", "Error tracking {}: {}", urn, err);
+                        }
+                        Ok(tracked) => {
+                            let response = if tracked {
+                                tracing::debug!(target: "org-node", "Tracking relationship for project {} and peer {} created", urn, peer_info.peer_id);
+
+                                Some(peer_info.peer_id)
+                            } else {
+                                tracing::debug!(target: "org-node", "Tracking relationship for project {} already exists", urn);
+
+                                None
+                            };
+
+                            let peer_id = peer_info.peer_id;
+                            let seen_addrs = peer_info.seen_addrs.to_vec();
+                            let cfg = api.protocol_config().replication;
+                            tracing::info!(target: "org-node", "Fetching tracked project {} for peer {}", urn, peer_id);
+
+                            match api
+                                .using_storage({
+                                    let urn = urn.clone();
+
+                                    move |s| {
+                                        Client::fetch_project(&urn, peer_id, seen_addrs, s, cfg)
+                                    }
+                                })
+                                .await
+                            {
+                                Ok(Err(err)) => {
+                                    // Check if the response is an error and return early if so.
+                                    tracing::error!(target: "org-node", "Failed to replicate {} from {}: {}", urn, peer_id, err);
+                                    if let Some(ack_tx) = ack {
+                                        ack_tx.send(Err(err)).ok();
+                                    }
+                                    continue;
+                                }
+                                Err(e) => {
+                                    if let Some(ack_tx) = ack {
+                                        ack_tx.send(Err(Error::Storage(e))).ok();
+                                    }
+
+                                    continue;
+                                }
+                                Ok(_) => {}
+                            }
+
+                            match Client::get_project_head(&urn, &api).await {
+                                Ok(Some(Head { remote, branch })) => {
+                                    if let Err(err) =
+                                        Client::set_head(&urn, &remote, &branch, &paths)
+                                    {
+                                        tracing::error!(target: "org-node", "Error setting head: {}", err);
+                                        if let Some(ack_tx) = ack {
+                                            ack_tx.send(Err(err)).ok();
+                                        }
+                                        continue;
+                                    }
+
+                                    if let Err(err) = Client::sign_refs(urn.clone(), &api).await {
+                                        tracing::error!(target: "org-node", "Error signing refs: {}", err);
+                                        if let Some(ack_tx) = ack {
+                                            ack_tx.send(Err(err)).ok();
+                                        }
+                                        continue;
+                                    }
+
+                                    // Announce the peer update to the network.
+                                    if let Ok(urn) = Urn::from_str(&urn.to_string()) {
+                                        if let Err(e) = api.announce(Payload {
+                                            urn,
+                                            // QUESTION: Should the current revision be added here?
+                                            rev: None,
+                                            origin: Some(peer_id),
+                                        }) {
+                                            tracing::error!(target: "org-node", "Error announcing peer update: {:?}", e);
+                                        }
+
+                                        // Acknowledge success;
+                                        if let Some(ack_tx) = ack {
+                                            ack_tx.send(Ok(response)).ok();
+                                        }
+                                    }
+                                }
+                                Ok(None) => {
+                                    tracing::error!(target: "org-node", "Project head not found! Cannot set head for peer");
+                                    if let Some(ack_tx) = ack {
+                                        ack_tx.send(Err(Error::ProjectHeadNotFound)).ok();
+                                    }
+                                }
+                                Err(err) => {
+                                    tracing::error!(target: "org-node", "Error getting project head: {}", err);
+                                    if let Some(ack_tx) = ack {
+                                        ack_tx.send(Err(err)).ok();
+                                    }
+                                }
+                            }
                         }
                     }
+
+                    // broadcast message bus event to connected web socket clients.
+                    conn_ws_tx
+                        .clone()
+                        .send(MessageBus::TrackPeer((
+                            TrackPeer {
+                                api,
+                                urn,
+                                peer_info,
+                                paths,
+                            },
+                            None,
+                        )))
+                        .ok();
                 }
             }
         }
     }
 
     async fn track_peer_handler(
-        peer_tx: mpsc::Sender<TrackPeerTransmitter>,
+        mb_tx: mpsc::Sender<MessageBus>,
         track_peer: TrackPeer,
     ) -> Result<Option<PeerId>, Error> {
         // create receiver for Project Peer acknowledgement.
         let (tx, rx) = oneshot::channel::<Result<Option<PeerId>, Error>>();
 
-        // spawn rx listener to wait for oneshot response from peer_tx.
+        // spawn rx listener to wait for oneshot response from mb_tx.
         let rx_res = tokio::spawn(rx);
 
         // notify track peers process to handle tracking and fetching.
-        if let Err(e) = peer_tx.send((track_peer, tx)).await {
+        if let Err(e) = mb_tx
+            .send(MessageBus::TrackPeer((track_peer, Some(tx))))
+            .await
+        {
             tracing::error!(target: "org-node", "Failed to send track peer request: {}", e);
             return Err(Error::TrackPeer(e.to_string()));
         }
@@ -415,7 +543,7 @@ impl Client {
     /// This process listens for incoming protocol events and processes accordingly.
     /// It is spawned within `Client::run` and is run indefinitely.
     async fn protocol_listener(
-        peer_tx: mpsc::Sender<TrackPeerTransmitter>,
+        mb_tx: mpsc::Sender<MessageBus>,
         api: Peer<Signer>,
         paths: Paths,
         known_peers: Vec<PeerId>,
@@ -466,7 +594,7 @@ impl Client {
 
                     // Send notification to track peers process;
                     if let Err(e) = Client::track_peer_handler(
-                        peer_tx.clone(),
+                        mb_tx.clone(),
                         TrackPeer {
                             api: api.clone(),
                             urn,
@@ -489,7 +617,7 @@ impl Client {
         request: Request,
         api: &Peer<Signer>,
         paths: &Paths,
-        peer_tx: mpsc::Sender<TrackPeerTransmitter>,
+        mb_tx: mpsc::Sender<MessageBus>,
     ) -> Result<(), Error> {
         match request {
             Request::GetMembership(reply) => {
@@ -535,7 +663,7 @@ impl Client {
                 while let Some(peer) = peers.next().await {
                     // Send notification to track peers process;
                     let result = Client::track_peer_handler(
-                        peer_tx.clone(),
+                        mb_tx.clone(),
                         TrackPeer {
                             api: api.clone(),
                             urn: urn.clone(),
