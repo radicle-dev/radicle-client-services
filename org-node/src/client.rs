@@ -359,10 +359,20 @@ impl Client {
                                 continue;
                             }
 
-                            if let Err(err) = Client::sign_refs(urn, &api).await {
+                            if let Err(err) = Client::sign_refs(urn.clone(), &api).await {
                                 tracing::error!(target: "org-node", "Error signing refs: {}", err);
                                 ack.send(Err(err)).ok();
                                 continue;
+                            }
+
+                            // Announce the peer update to the network.
+                            if let Err(e) = api.announce(Payload {
+                                urn,
+                                // QUESTION: Should the current revision be added here?
+                                rev: None,
+                                origin: Some(peer_id),
+                            }) {
+                                tracing::error!(target: "org-node", "Error announcing peer update: {:?}", e);
                             }
 
                             // Acknowledge success;
