@@ -578,7 +578,7 @@ impl Client {
                     .map_err(|e| Error::SetHead(Box::new(e)))?;
 
                 // Set symbolic reference;
-                repository
+                let reference = repository
                     .reference_symbolic(
                         head.to_str().unwrap_or_default(),
                         local_branch_ref.to_str().unwrap_or_default(),
@@ -586,6 +586,17 @@ impl Client {
                         "set-head (org-node)",
                     )
                     .map_err(|e| Error::SetHead(Box::new(e)))?;
+
+                let oid = reference.target().expect("reference target must exist");
+
+                // Announce the updated refs to the network.
+                if let Err(e) = api.announce(Payload {
+                    urn,
+                    rev: Some(Rev::Git(oid)),
+                    origin: Some(api.peer_id()),
+                }) {
+                    tracing::error!(target: "org-node", "Error announcing refs: {:?}", e);
+                }
 
                 // return acknowledgement
                 rx.send(())
