@@ -353,32 +353,20 @@ impl Client {
 
                     match Client::get_project_head(&urn, &api).await {
                         Ok(Some(Head { remote, branch })) => {
-                            match Client::set_head(&urn, &remote, &branch, &paths) {
-                                Err(err) => {
-                                    tracing::error!(target: "org-node", "Error setting head: {}", err);
-                                    ack.send(Err(err)).ok();
-                                    continue;
-                                }
-                                Ok(rev) => {
-                                    if let Err(err) = Client::sign_refs(urn.clone(), &api).await {
-                                        tracing::error!(target: "org-node", "Error signing refs: {}", err);
-                                        ack.send(Err(err)).ok();
-                                        continue;
-                                    }
-
-                                    // Announce the peer update to the network after setting the head.
-                                    if let Err(e) = api.announce(Payload {
-                                        urn,
-                                        rev: Some(rev),
-                                        origin: Some(peer_id),
-                                    }) {
-                                        tracing::error!(target: "org-node", "Error announcing ref update: {:?}", e);
-                                    }
-
-                                    // Acknowledge success;
-                                    ack.send(Ok(response)).ok();
-                                }
+                            if let Err(err) = Client::set_head(&urn, &remote, &branch, &paths) {
+                                tracing::error!(target: "org-node", "Error setting head: {}", err);
+                                ack.send(Err(err)).ok();
+                                continue;
                             }
+
+                            if let Err(err) = Client::sign_refs(urn, &api).await {
+                                tracing::error!(target: "org-node", "Error signing refs: {}", err);
+                                ack.send(Err(err)).ok();
+                                continue;
+                            }
+
+                            // Acknowledge success;
+                            ack.send(Ok(response)).ok();
                         }
                         Ok(None) => {
                             tracing::error!(target: "org-node", "Project head not found! Cannot set head for peer");
@@ -433,14 +421,14 @@ impl Client {
                 // we want to set the head.
                 Ok(ProtocolEvent::Gossip(box Gossip::Put {
                     payload: Payload { urn, .. },
-                    result: Applied(payload),
+                    result: Applied(Payload {rev, origin, .. }),
                     ..
                 })) => {
-                    if let Some(Rev::Git(oid)) = payload.rev {
+                    if let Some(Rev::Git(oid)) = rev {
                         tracing::info!(target: "org-node", "Applied revision update for urn {}, oid {}", urn, oid);
                     }
 
-                    if let Some(incoming_remote) = payload.origin {
+                    if let Some(incoming_remote) = origin {
                         if let Ok(Some(Head { branch, remote })) =
                             Client::get_project_head(&urn, &api).await
                         {
@@ -450,10 +438,6 @@ impl Client {
                             if incoming_remote.default_encoding() == remote {
                                 if let Err(e) = Client::set_head(&urn, &remote, &branch, &paths) {
                                     tracing::error!(target: "org-node", "Error setting head: {}", e);
-                                }
-
-                                if let Err(e) = api.announce(payload) {
-                                    tracing::error!(target: "org-node", "Error announcing ref update: {:?}", e);
                                 }
                             }
                         }
@@ -602,6 +586,21 @@ impl Client {
                         "set-head (org-node)",
                     )
                     .map_err(|e| Error::SetHead(Box::new(e)))?;
+
+                let reference = repository
+                    .find_reference(local_branch_ref.to_str().unwrap_or_default())
+                    .map_err(|e| Error::SetHead(Box::new(e)))?;
+
+                let oid = reference.target().expect("reference target must exist");
+
+                // Announce the updated refs to the network.
+                if let Err(e) = api.announce(Payload {
+                    urn,
+                    rev: Some(Rev::Git(oid)),
+                    origin: Some(api.peer_id()),
+                }) {
+                    tracing::error!(target: "org-node", "Error announcing refs: {:?}", e);
+                }
 
                 // return acknowledgement
                 rx.send(())
