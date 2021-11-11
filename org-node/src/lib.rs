@@ -175,7 +175,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
         .with_context(|| format!("unable to load identity {:?}", &identity_path))?;
     let peer_id = PeerId::from(signer.clone());
     let client = Client::new(
-        paths.clone(),
+        paths,
         signer,
         client::Config {
             listen: options.listen,
@@ -225,7 +225,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
     let event_task = rt.spawn(subscribe_events(options.rpc_url.clone(), addresses, update));
     tasks.push(event_task);
 
-    let update_refs_task = rt.spawn(update_refs(paths.git_dir().to_path_buf(), handle));
+    let update_refs_task = rt.spawn(update_refs(handle));
     tasks.push(update_refs_task);
 
     let query_task = rt.spawn(query_projects(
@@ -388,13 +388,8 @@ async fn subscribe_events(url: String, addresses: Vec<Address>, update: mpsc::Se
 }
 
 /// Stream Unix domain socket events and update refs for post-receive requests from the git-server.
-async fn update_refs(root_dir: PathBuf, mut handle: client::Handle) {
-    let mut path = root_dir;
-    // Pop the root git directory to the project root directory.
-    path.pop();
-
-    // Push the org-node.sock file to the project root directory.
-    path.push(ORG_SOCKET_FILE);
+async fn update_refs(mut handle: client::Handle) {
+    let path = PathBuf::from("/tmp").join(ORG_SOCKET_FILE);
 
     // Remove the `org-node.sock` file on startup before rebinding;
     std::fs::remove_file(&path).ok();
