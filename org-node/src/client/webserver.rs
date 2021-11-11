@@ -12,41 +12,45 @@ use warp::{
 use crate::client::MessageBus;
 use crate::Error;
 
+//
+//
+//
+//
+//                       +----------------------------+
+//                       |                            |
+//                       |                            |
+//                       |     WebSocket Service      |
+//  Peer Connection      |                            |
+//  Established          |    +-----------------+     |
+// +-----------------+   |    |                 |     |
+// |                 +---+---->   Peer          |     |
+// |  Peer Client    |   |    |   Connection    |     |
+// |                 <---+----+                 |     |
+// +-----------------+   |    |                 |     |
+// Subscribe to events   |    +-------^----+----+     |
+//                       |            |    |          |
+//                       |            |    |          |
+//                       +------------+----+----------+
+//                                    |    |
+//            Broadcast message bus   |    |  Send "WebSocketConnection"
+//            events to connected ws  |    |  to message bus channel
+//            clients                 |    |  with an UnboundedSender<String>
+//                                    |    |
+//                                    |    |
+//                      +-------------+----v----------+
+//                      |             |               |
+//                      |     +-------+---------+     |
+//   Msg Bus receives   |     | Connected Peers |     |
+//   protocol events    +-----> mapping to tx   |     |
+// +-----------------+  |     | peer handles    |     |
+// |                 +-->     +-----------------+     |
+// | Protocol Events |  |                             |
+// |                 |  |       Message Bus           |
+// +-----------------+  +-----------------------------+
+
 /// Websocket server endpoint, e.g. ws://0.0.0.0:8336/subscribe
 pub const WEBSOCKET_PATH: &str = "subscribe";
 
-///                       +----------------------------+
-///                       |                            |
-///                       |                            |
-///                       |     WebSocket Service      |
-///  Peer Connection      |                            |
-///  Established          |    +-----------------+     |
-/// +-----------------+   |    |                 |     |
-/// |                 +---+---->   Peer          |     |
-/// |  Peer Client    |   |    |   Connection    |     |
-/// |                 <---+----+                 |     |
-/// +-----------------+   |    |                 |     |
-/// Subscribe to events   |    +-------^----+----+     |
-///                       |            |    |          |
-///                       |            |    |          |
-///                       +------------+----+----------+
-///                                    |    |
-///            Broadcast message bus   |    |  Send "WebSocketConnection"
-///            events to connected ws  |    |  to message bus channel
-///            clients                 |    |  with an UnboundedSender<String>
-///                                    |    |
-///                                    |    |
-///                      +-------------+----v----------+
-///                      |             |               |
-///                      |     +-------+---------+     |
-///   Msg Bus receives   |     | Connected Peers |     |
-///   protocol events    +-----> mapping to tx   |     |
-/// +-----------------+  |     | peer handles    |     |
-/// |                 +-->     +-----------------+     |
-/// | Protocol Events |  |                             |
-/// |                 |  |       Message Bus           |
-/// +-----------------+  +-----------------------------+
-///
 /// Establishes a websocket connection and sends new connected client event to message bus
 /// to update connected websocket client mapping to broadcast events to connected clients.
 async fn establish_connection(websocket: WebSocket, mb_tx: mpsc::Sender<MessageBus>) {
@@ -94,7 +98,7 @@ async fn establish_connection(websocket: WebSocket, mb_tx: mpsc::Sender<MessageB
 }
 
 /// Serves a warp web server instance with a websocket endpoint for pub/sub events.
-/// Requires a peer transmitter sender to broadcast incoming peer updates.
+/// Requires a message bus transmitter sender to update connected websocket clients.
 pub async fn serve(
     mb_tx: mpsc::Sender<MessageBus>,
     listen: std::net::SocketAddr,
