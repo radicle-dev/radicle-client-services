@@ -578,17 +578,13 @@ impl Client {
                     .map_err(|e| Error::SetHead(Box::new(e)))?;
 
                 // Set symbolic reference;
-                repository
+                let reference = repository
                     .reference_symbolic(
                         head.to_str().unwrap_or_default(),
                         local_branch_ref.to_str().unwrap_or_default(),
                         true,
                         "set-head (org-node)",
                     )
-                    .map_err(|e| Error::SetHead(Box::new(e)))?;
-
-                let reference = repository
-                    .find_reference(local_branch_ref.to_str().unwrap_or_default())
                     .map_err(|e| Error::SetHead(Box::new(e)))?;
 
                 let oid = reference.target().expect("reference target must exist");
