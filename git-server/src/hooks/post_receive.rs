@@ -10,7 +10,6 @@
 //!
 use std::io::{stdin, Read, Write};
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
 
 use envconfig::Envconfig;
 use git2::Oid;
@@ -71,7 +70,7 @@ impl PostReceive {
     }
 
     pub fn notify_org_node(&self) -> Result<(), Error> {
-        let path = PathBuf::from(&self.env.git_project_root).join(ORG_SOCKET_FILE);
+        let path = std::env::temp_dir().join(ORG_SOCKET_FILE);
         match UnixStream::connect(path.clone()) {
             Ok(mut stream) => {
                 stream.write_all(format!("{}\n", self.env.git_namespace).as_bytes())?;
