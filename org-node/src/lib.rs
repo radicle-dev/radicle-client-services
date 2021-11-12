@@ -389,7 +389,7 @@ async fn subscribe_events(url: String, addresses: Vec<Address>, update: mpsc::Se
 
 /// Stream Unix domain socket events and update refs for post-receive requests from the git-server.
 async fn update_refs(mut handle: client::Handle) {
-    let path = PathBuf::from("/tmp").join(ORG_SOCKET_FILE);
+    let path = std::env::temp_dir().join(ORG_SOCKET_FILE);
 
     // Remove the `org-node.sock` file on startup before rebinding;
     std::fs::remove_file(&path).ok();
