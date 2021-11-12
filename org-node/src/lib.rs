@@ -22,7 +22,6 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use std::collections::VecDeque;
 use std::convert::TryInto;
-use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::net;
 use std::os::unix::net::UnixListener;
@@ -30,6 +29,7 @@ use std::path::PathBuf;
 
 mod client;
 mod error;
+mod identity;
 #[cfg(feature = "influxdb-metrics")]
 mod metrics;
 mod query;
@@ -49,6 +49,7 @@ pub type OrgId = String;
 pub struct Options {
     pub root: Option<PathBuf>,
     pub identity: PathBuf,
+    pub identity_passphrase: Option<String>,
     pub bootstrap: Vec<(PeerId, net::SocketAddr)>,
     pub rpc_url: String,
     pub listen: net::SocketAddr,
@@ -169,9 +170,16 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
         Profile::load()?.paths().clone()
     };
     let identity_path = options.identity.clone();
-    let identity = File::open(options.identity.clone())
-        .with_context(|| format!("unable to open {:?}", &identity_path))?;
-    let signer = client::Signer::new(identity)
+    let identity = if let Some(passphrase) = options.identity_passphrase.clone() {
+        identity::Identity::Encrypted {
+            path: identity_path.clone(),
+            passphrase: passphrase.into(),
+        }
+    } else {
+        identity::Identity::Plain(identity_path.clone())
+    };
+    let signer = identity
+        .signer()
         .with_context(|| format!("unable to load identity {:?}", &identity_path))?;
     let peer_id = PeerId::from(signer.clone());
     let client = Client::new(

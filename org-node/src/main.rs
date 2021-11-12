@@ -36,6 +36,10 @@ pub struct Options {
     #[argh(option)]
     pub identity: PathBuf,
 
+    /// passphrase to decrypt an encrypted identity file
+    #[argh(option)]
+    pub identity_passphrase: Option<String>,
+
     /// start syncing from a given unix timestamp (seconds)
     #[argh(option)]
     pub timestamp: Option<u64>,
@@ -91,6 +95,7 @@ impl From<Options> for node::Options {
             subgraph: other.subgraph,
             rpc_url: other.rpc_url,
             identity: other.identity,
+            identity_passphrase: other.identity_passphrase,
             timestamp: other.timestamp,
             bootstrap: other.bootstrap.unwrap_or_default(),
             orgs: other.orgs.unwrap_or_default(),
@@ -117,6 +122,7 @@ impl From<Options> for node::Options {
             subgraph: other.subgraph,
             rpc_url: other.rpc_url,
             identity: other.identity,
+            identity_passphrase: other.identity_passphrase,
             timestamp: other.timestamp,
             bootstrap: other.bootstrap.unwrap_or_default(),
             orgs: other.orgs.unwrap_or_default(),

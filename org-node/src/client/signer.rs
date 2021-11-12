@@ -8,6 +8,12 @@ pub struct Signer {
     pub(super) key: SecretKey,
 }
 
+impl From<SecretKey> for Signer {
+    fn from(key: SecretKey) -> Self {
+        Self { key }
+    }
+}
+
 impl From<Signer> for PeerId {
     fn from(signer: Signer) -> Self {
         signer.key.into()
