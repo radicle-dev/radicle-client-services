@@ -5,9 +5,6 @@ use either::Either;
 use futures::{future::FutureExt as _, select, stream::StreamExt as _};
 use thiserror::Error;
 
-use tokio::sync::{mpsc, oneshot};
-use tokio_stream::wrappers::ReceiverStream;
-
 use librad::{
     git::{identities, refs, replication, storage, storage::fetcher, tracking},
     net::{
@@ -24,8 +21,12 @@ use librad::{
     },
     paths::Paths,
 };
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{mpsc, oneshot};
+use tokio_stream::wrappers::ReceiverStream;
 
 use crate::client::handle::Request;
+use crate::webserver::WsEvent;
 
 pub use handle::{Handle, TrackProjectError};
 pub use librad::{git::Urn, PeerId};
@@ -194,7 +195,7 @@ impl Client {
     }
 
     /// Run the client. This function runs indefinitely until a fatal error occurs.
-    pub async fn run(self, rt: tokio::runtime::Handle) {
+    pub async fn run(self, rt: tokio::runtime::Handle, _ws_tx: UnboundedSender<WsEvent>) {
         let storage = peer::config::Storage {
             protocol: peer::config::ProtocolStorage {
                 fetch_slot_wait_timeout: Default::default(),

@@ -18,7 +18,7 @@ use thiserror::Error;
 
 use futures::StreamExt;
 use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
 
 use std::collections::VecDeque;
 use std::convert::TryInto;
@@ -33,6 +33,7 @@ mod identity;
 #[cfg(feature = "influxdb-metrics")]
 mod metrics;
 mod query;
+mod webserver;
 
 pub use client::PeerId;
 pub use client::Urn;
@@ -53,6 +54,7 @@ pub struct Options {
     pub bootstrap: Vec<(PeerId, net::SocketAddr)>,
     pub rpc_url: String,
     pub listen: net::SocketAddr,
+    pub web_server_listen: net::SocketAddr,
     pub subgraph: String,
     pub orgs: Vec<OrgId>,
     pub urns: Vec<Urn>,
@@ -213,10 +215,17 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
     // Queue of events on orgs.
     let (update, events) = mpsc::channel(256);
 
-    let mut tasks: Vec<tokio::task::JoinHandle<()>> = Default::default();
+    // Websocket events channel
+    let (ws_tx, ws_rx) = mpsc::unbounded_channel::<webserver::WsEvent>();
+    let ws_rx = UnboundedReceiverStream::new(ws_rx);
 
+    let mut tasks: Vec<tokio::task::JoinHandle<()>> = Default::default();
     let client_handle_for_metrics = client.handle();
-    let client_task = rt.spawn(client.run(rt.handle().clone()));
+
+    let web_server = rt.spawn(webserver::serve(options.web_server_listen, ws_rx));
+    tasks.push(web_server);
+
+    let client_task = rt.spawn(client.run(rt.handle().clone(), ws_tx.clone()));
     tasks.push(client_task);
 
     let track_task = rt.spawn(track_projects(handle.clone(), queue));
@@ -233,7 +242,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
     let event_task = rt.spawn(subscribe_events(options.rpc_url.clone(), addresses, update));
     tasks.push(event_task);
 
-    let update_refs_task = rt.spawn(update_refs(handle));
+    let update_refs_task = rt.spawn(update_refs(handle, ws_tx));
     tasks.push(update_refs_task);
 
     let query_task = rt.spawn(query_projects(
@@ -396,7 +405,7 @@ async fn subscribe_events(url: String, addresses: Vec<Address>, update: mpsc::Se
 }
 
 /// Stream Unix domain socket events and update refs for post-receive requests from the git-server.
-async fn update_refs(mut handle: client::Handle) {
+async fn update_refs(mut handle: client::Handle, ws_tx: mpsc::UnboundedSender<webserver::WsEvent>) {
     let path = std::env::temp_dir().join(ORG_SOCKET_FILE);
 
     // Remove the `org-node.sock` file on startup before rebinding;
@@ -410,13 +419,18 @@ async fn update_refs(mut handle: client::Handle) {
                         let stream = BufReader::new(s);
                         for urn in stream.lines().flatten() {
                             if let Ok(urn) = Urn::try_from_id(urn) {
-                                match handle.update_refs(urn).await {
+                                match handle.update_refs(urn.clone()).await {
                                     Ok(()) => {
                                         tracing::info!(target: "org-node", "Successfully updated refs");
+                                        // Notify connected websocket clients of updated refs.
+                                        if let Err(e) =
+                                            ws_tx.send(webserver::WsEvent::UpdatedRef(urn))
+                                        {
+                                            tracing::error!(target: "org-node", "Failed to send update refs notification to web socket clients: {}", e);
+                                        }
                                     }
                                     Err(e) => {
                                         tracing::error!(target: "org-node", "Failed to send update refs request to client: {}", e);
-                                        return;
                                     }
                                 }
                             }
@@ -424,7 +438,6 @@ async fn update_refs(mut handle: client::Handle) {
                     }
                     Err(e) => {
                         tracing::error!(target: "org-node", "Failed to open stream with error: {:?}", e);
-                        return;
                     }
                 }
             }
