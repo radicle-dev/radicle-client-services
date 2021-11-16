@@ -222,7 +222,7 @@ pub fn run(rt: tokio::runtime::Runtime, options: Options) -> anyhow::Result<()> 
     let mut tasks: Vec<tokio::task::JoinHandle<()>> = Default::default();
     let client_handle_for_metrics = client.handle();
 
-    let web_server = rt.spawn(webserver::serve(options.web_server_listen, ws_rx));
+    let web_server = rt.spawn(webserver::serve(peer_id, options.web_server_listen, ws_rx));
     tasks.push(web_server);
 
     let client_task = rt.spawn(client.run(rt.handle().clone(), ws_tx.clone()));
