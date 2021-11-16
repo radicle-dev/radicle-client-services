@@ -43,6 +43,10 @@ pub enum Error {
     /// An error occured with radicle source.
     #[error(transparent)]
     Source(#[from] radicle_source::error::Error),
+
+    /// Anyhow error.
+    #[error(transparent)]
+    Anyhow(#[from] anyhow::Error),
 }
 
 impl warp::reject::Reject for Error {}

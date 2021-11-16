@@ -1,11 +1,14 @@
 mod error;
+mod identity;
 mod project;
+mod signer;
 
 use std::convert::TryFrom as _;
 use std::convert::TryInto as _;
 use std::net;
 use std::path::PathBuf;
 
+use anyhow::Context as AnyhowContext;
 use serde_json::json;
 use warp::hyper::StatusCode;
 use warp::reply;
@@ -35,6 +38,8 @@ pub struct Options {
     pub tls_cert: Option<PathBuf>,
     pub tls_key: Option<PathBuf>,
     pub theme: String,
+    pub identity: PathBuf,
+    pub identity_passphrase: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -50,10 +55,18 @@ pub async fn run(options: Options) {
         paths,
         theme: options.theme,
     };
+    let peer_id = peer_id_from_identity(options.identity, options.identity_passphrase)
+        .expect("--identity path flag is missing");
+
+    let peer_id_route = warp::path("peer-id")
+        .and(warp::get())
+        .and_then(move || get_peer_id(peer_id));
+
     let api = path("v1")
         .and(path("projects"))
         .and(filters(ctx))
         .or(warp::get().and(path::end()).and_then(root_handler))
+        .or(peer_id_route)
         .recover(recover)
         .with(warp::cors().allow_any_origin())
         .with(warp::log("http::api"));
@@ -69,6 +82,31 @@ pub async fn run(options: Options) {
     } else {
         server.run(options.listen).await
     }
+}
+
+fn peer_id_from_identity(
+    identity_path: PathBuf,
+    identity_passphrase: Option<String>,
+) -> Result<PeerId, Error> {
+    let identity = if let Some(passphrase) = identity_passphrase {
+        identity::Identity::Encrypted {
+            path: identity_path.clone(),
+            passphrase: passphrase.into(),
+        }
+    } else {
+        identity::Identity::Plain(identity_path.clone())
+    };
+    let signer = identity
+        .signer()
+        .with_context(|| format!("unable to load identity {:?}", &identity_path))?;
+    let peer_id = PeerId::from(signer);
+    Ok(peer_id)
+}
+
+/// Return the peer id for the node identity.
+/// `GET /peer-id`
+async fn get_peer_id(peer_id: PeerId) -> Result<impl warp::Reply, warp::Rejection> {
+    Ok(peer_id.to_string())
 }
 
 async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible> {

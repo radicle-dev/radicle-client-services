@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use futures_util::{SinkExt, StreamExt, TryFutureExt};
-use librad::{git::Urn, PeerId};
+use librad::git::Urn;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tokio::{
@@ -112,17 +112,8 @@ async fn establish_connection(
     }
 }
 
-/// Return the peer id for the org-node.
-pub async fn get_peer_id(peer_id: PeerId) -> Result<impl warp::Reply, warp::Rejection> {
-    Ok(peer_id.to_string())
-}
-
 /// Serves a warp web server instance with a websocket endpoint for subscribing to events.
-pub async fn serve(
-    peer_id: PeerId,
-    listen: std::net::SocketAddr,
-    mut events: UnboundedReceiverStream<WsEvent>,
-) {
+pub async fn serve(listen: std::net::SocketAddr, mut events: UnboundedReceiverStream<WsEvent>) {
     // Spawn connected clients receiver
     let (conn_ws_tx, conn_ws_rx) = mpsc::unbounded_channel::<EstablishWebSocketSender>();
     let mut conn_ws_rx = UnboundedReceiverStream::new(conn_ws_rx);
@@ -155,10 +146,6 @@ pub async fn serve(
 
     let connected_peers_filter = warp::any().map(move || conn_ws_tx.clone());
 
-    let peer_id_route = warp::path("peer_id")
-        .and(warp::get())
-        .and_then(move || get_peer_id(peer_id));
-
     let routes = warp::path(WEBSOCKET_PATH)
         .and(warp::addr::remote())
         .and(warp::ws())
@@ -169,8 +156,7 @@ pub async fn serve(
                   tx: mpsc::UnboundedSender<EstablishWebSocketSender>| {
                 ws.on_upgrade(move |socket| establish_connection(socket, remote, tx))
             },
-        )
-        .or(peer_id_route);
+        );
 
     tracing::info!(target: "org-node", "Web Server Listening on http://{}", listen);
     tracing::info!(target: "org-node", "Web Socket Available at ws://{}/{}", listen, WEBSOCKET_PATH);

@@ -33,6 +33,14 @@ pub struct Options {
     /// either "plain" or "gcp" (gcp available only when compiled-in)
     #[argh(option, default = "LogFmt::Plain")]
     pub log_format: LogFmt,
+
+    /// node identity file path
+    #[argh(option)]
+    pub identity: PathBuf,
+
+    /// passphrase to decrypt an encrypted identity file
+    #[argh(option)]
+    pub identity_passphrase: Option<String>,
 }
 
 impl Options {
@@ -49,6 +57,8 @@ impl From<Options> for api::Options {
             tls_key: other.tls_key,
             listen: other.listen,
             theme: other.theme,
+            identity: other.identity,
+            identity_passphrase: other.identity_passphrase,
         }
     }
 }
