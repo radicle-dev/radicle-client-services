@@ -73,7 +73,7 @@ impl Handle {
         time::timeout(self.timeout, rx).await?.map_err(Error::from)
     }
 
-    pub async fn update_refs(&mut self, urn: Urn) -> Result<(), Error> {
+    pub async fn update_refs(&mut self, urn: Urn) -> Result<git2::Oid, Error> {
         let (tx, rx) = oneshot::channel();
         tracing::info!(target: "org-node", "Updating refs");
         self.channel
@@ -97,7 +97,7 @@ pub enum Request {
         std::time::Duration,
         oneshot::Sender<Result<Option<PeerId>, TrackProjectError>>,
     ),
-    UpdateRefs(Urn, oneshot::Sender<()>),
+    UpdateRefs(Urn, oneshot::Sender<git2::Oid>),
 }
 
 /// Error when using the [`Request::TrackProject`] request.

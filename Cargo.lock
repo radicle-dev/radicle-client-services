@@ -4111,6 +4111,7 @@ dependencies = [
  "either",
  "ethers",
  "futures 0.3.17",
+ "futures-util",
  "git2",
  "librad",
  "outflux",
@@ -4125,6 +4126,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ureq",
+ "warp",
 ]
 
 [[package]]
