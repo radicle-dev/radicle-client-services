@@ -20,6 +20,10 @@ pub struct Options {
     #[argh(option, default = "std::net::SocketAddr::from(([0, 0, 0, 0], 8776))")]
     pub listen: net::SocketAddr,
 
+    /// listen on the following address for web server events (default: 0.0.0.0:8336)
+    #[argh(option, default = "std::net::SocketAddr::from(([0, 0, 0, 0], 8336))")]
+    pub web_server_listen: net::SocketAddr,
+
     /// radicle root path, for key and git storage
     #[argh(option)]
     pub root: Option<PathBuf>,
@@ -92,6 +96,7 @@ impl From<Options> for node::Options {
         Self {
             root: other.root,
             listen: other.listen,
+            web_server_listen: other.web_server_listen,
             subgraph: other.subgraph,
             rpc_url: other.rpc_url,
             identity: other.identity,
@@ -119,6 +124,7 @@ impl From<Options> for node::Options {
         Self {
             root: other.root,
             listen: other.listen,
+            web_server_listen: other.web_server_listen,
             subgraph: other.subgraph,
             rpc_url: other.rpc_url,
             identity: other.identity,

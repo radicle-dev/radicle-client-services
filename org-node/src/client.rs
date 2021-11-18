@@ -5,9 +5,6 @@ use either::Either;
 use futures::{future::FutureExt as _, select, stream::StreamExt as _};
 use thiserror::Error;
 
-use tokio::sync::{mpsc, oneshot};
-use tokio_stream::wrappers::ReceiverStream;
-
 use librad::{
     git::{identities, refs, replication, storage, storage::fetcher, tracking},
     net::{
@@ -24,8 +21,12 @@ use librad::{
     },
     paths::Paths,
 };
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{mpsc, oneshot};
+use tokio_stream::wrappers::ReceiverStream;
 
 use crate::client::handle::Request;
+use crate::webserver::WsEvent;
 
 pub use handle::{Handle, TrackProjectError};
 pub use librad::{git::Urn, PeerId};
@@ -194,7 +195,7 @@ impl Client {
     }
 
     /// Run the client. This function runs indefinitely until a fatal error occurs.
-    pub async fn run(self, rt: tokio::runtime::Handle) {
+    pub async fn run(self, rt: tokio::runtime::Handle, ws_tx: UnboundedSender<WsEvent>) {
         let storage = peer::config::Storage {
             protocol: peer::config::ProtocolStorage {
                 fetch_slot_wait_timeout: Default::default(),
@@ -232,6 +233,7 @@ impl Client {
         let mut protocol_listener = rt
             .spawn(Client::protocol_listener(
                 peer_tx.clone(),
+                ws_tx.clone(),
                 peer.clone(),
                 self.paths.clone(),
                 self.config.peers.clone(),
@@ -406,6 +408,7 @@ impl Client {
     /// It is spawned within `Client::run` and is run indefinitely.
     async fn protocol_listener(
         peer_tx: mpsc::Sender<TrackPeerTransmitter>,
+        ws_tx: UnboundedSender<WsEvent>,
         api: Peer<Signer>,
         paths: Paths,
         known_peers: Vec<PeerId>,
@@ -421,30 +424,33 @@ impl Client {
                 // we want to set the head.
                 Ok(ProtocolEvent::Gossip(box Gossip::Put {
                     payload: Payload { urn, .. },
-                    result: Applied(Payload {rev, origin, .. }),
+                    result: Applied(Payload {rev: Some(Rev::Git(oid)), origin: Some(origin), .. }),
                     ..
                 })) => {
-                    if let Some(Rev::Git(oid)) = rev {
-                        tracing::info!(target: "org-node", "Applied revision update for urn {}, oid {}", urn, oid);
-                    }
-
-                    if let Some(incoming_remote) = origin {
-                        if let Ok(Some(Head { branch, remote })) =
+                    tracing::info!(target: "org-node", "Applied revision update for urn {}, oid {}", urn, oid);
+                    if let Ok(Some(Head { branch, remote })) =
                             Client::get_project_head(&urn, &api).await
                         {
                             // need to assert that the rev was signed by the maintainer of the project.
                             // TODO: Ideally, we need an ability to update the head when a specified peer publishes a new revision.
                             // This is needed in a `multi-maintainer` project, but currently all projects are singly maintained.
-                            if incoming_remote.default_encoding() == remote {
+                            if origin.default_encoding() == remote {
                                 if let Err(e) = Client::set_head(&urn, &remote, &branch, &paths) {
                                     tracing::error!(target: "org-node", "Error setting head: {}", e);
                                 }
+                                // Broadcast applied gossip event to websocket clients
+                                if let Err(e) = ws_tx.send(WsEvent::UpdatedRef {
+                                    oid,
+                                    urn,
+                                    peer: origin,
+                                }) {
+                                    tracing::error!(target: "org-node", "Failed to send update refs notification to web socket clients: {}", e);
+                                }
                             }
                         }
-                    }
                 }
                 Ok(ProtocolEvent::Gossip(box Gossip::Put {
-                    payload: Payload { urn, .. },
+                    payload: Payload { urn, rev: Some(Rev::Git(oid)), origin: Some(peer_id) },
                     provider: peer,
                     result: Uninteresting,
                 })) => {
@@ -459,7 +465,7 @@ impl Client {
                         peer_tx.clone(),
                         TrackPeer {
                             api: api.clone(),
-                            urn,
+                            urn: urn.clone(),
                             peer_info: peer,
                             paths: paths.clone(),
                         },
@@ -467,6 +473,14 @@ impl Client {
                     .await
                     {
                         tracing::error!(target: "org-node", "Error tracking project peer: {}", e);
+                    }
+
+                    if let Err(e) = ws_tx.send(WsEvent::UpdatedRef {
+                        oid,
+                        urn,
+                        peer: peer_id,
+                    }) {
+                        tracing::error!(target: "org-node", "Failed to send update refs notification to web socket clients: {}", e);
                     }
                 }
                 _ => {}
@@ -599,7 +613,7 @@ impl Client {
                 }
 
                 // return acknowledgement
-                rx.send(())
+                rx.send(oid)
                     .map_err(|_| Error::Reply("UpdateRefs".to_string()))
             }
         }
