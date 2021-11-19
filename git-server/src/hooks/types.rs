@@ -96,7 +96,7 @@ pub struct ReceivePackEnv {
 
     /// allow unauthorized keys, ignores gpg certificate verification.
     #[envconfig(from = "RADICLE_ALLOW_UNAUTHORIZED_KEYS")]
-    pub allow_unauthorized_keys: bool,
+    pub allow_unauthorized_keys: Option<bool>,
 
     /// root directory where `git` directory is found.
     #[envconfig(from = "GIT_PROJECT_ROOT")]

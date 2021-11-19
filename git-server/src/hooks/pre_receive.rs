@@ -83,7 +83,7 @@ impl PreReceive {
         pre_receive.check_project_exists()?;
 
         // if allowed authorized keys is enabled, bypass the certificate check.
-        if pre_receive.env.allow_unauthorized_keys {
+        if pre_receive.env.allow_unauthorized_keys.is_some() {
             println!("SECURITY ALERT! UNAUTHORIZED KEYS ARE ALLOWED!");
             println!("Remove git-server flag `--allow-authorized-keys` to enforce GPG certificate verification");
             Ok(())
