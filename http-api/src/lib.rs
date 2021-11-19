@@ -46,18 +46,33 @@ pub struct Context {
 /// Run the HTTP API.
 pub async fn run(options: Options) {
     let paths = Paths::from_root(options.root).unwrap();
+    let storage = ReadOnly::open(&paths).expect("failed to read storage paths");
+    let peer_id = storage.peer_id().to_owned();
+
     let ctx = Context {
         paths,
         theme: options.theme,
     };
-    let api = path("v1")
-        .and(path("projects"))
+
+    let v1 = warp::path("v1");
+
+    let peer = path("peer")
+        .and(warp::get())
+        .and(path::end())
+        .and_then(move || peer_handler(peer_id));
+
+    let projects = path("projects")
         .and(filters(ctx))
-        .or(warp::get().and(path::end()).and_then(root_handler))
+        .or(warp::get().and(path::end()).and_then(root_handler));
+
+    let routes = v1
+        .and(peer)
+        .or(projects)
         .recover(recover)
         .with(warp::cors().allow_any_origin())
         .with(warp::log("http::api"));
-    let server = warp::serve(api);
+
+    let server = warp::serve(routes);
 
     if let (Some(cert), Some(key)) = (options.tls_cert, options.tls_key) {
         server
@@ -69,6 +84,15 @@ pub async fn run(options: Options) {
     } else {
         server.run(options.listen).await
     }
+}
+
+/// Return the peer id for the node identity.
+/// `GET /v1/peer`
+async fn peer_handler(peer_id: PeerId) -> Result<impl warp::Reply, warp::Rejection> {
+    let response = json!({
+        "id": peer_id.to_string(),
+    });
+    Ok(warp::reply::json(&response))
 }
 
 async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible> {
@@ -162,6 +186,11 @@ async fn root_handler() -> Result<impl Reply, Rejection> {
             {
                 "href": "/v1/projects",
                 "rel": "projects",
+                "type": "GET"
+            },
+            {
+                "href": "/v1/peer",
+                "rel": "peer",
                 "type": "GET"
             }
         ]
