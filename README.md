@@ -190,7 +190,7 @@ To run the HTTP API, run:
         --tls-key /app/radicle/privkey.pem
 
 Make sure your TLS certificate files can be found under `$HOME/.radicle`. If you
-are using TLS termination, simply omit the `--tls-*` arguments.
+are not using TLS termination, simply omit the `--tls-*` arguments.
 
 Running `radicle-git-server` is more or less identical to running the HTTP API.
 
