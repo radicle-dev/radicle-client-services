@@ -1,6 +1,8 @@
 # Build
 FROM rustlang/rust:nightly-slim@sha256:54296ad56b743b198e020bff1777995f83746fb7cd938847c2d4fa62f8bf630f as build
 
+RUN apt-get update && apt-get install -y pkg-config libssl-dev git cmake
+
 WORKDIR /usr/src/radicle-client-services
 COPY . .
 
