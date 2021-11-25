@@ -57,8 +57,7 @@ pub async fn run(options: Options) {
     let v1 = warp::path("v1");
 
     let peer = path("peer")
-        .and(warp::get())
-        .and(path::end())
+        .and(warp::get().and(path::end()))
         .and_then(move || peer_handler(peer_id));
 
     let projects = path("projects")
@@ -67,7 +66,7 @@ pub async fn run(options: Options) {
 
     let routes = v1
         .and(peer)
-        .or(projects)
+        .or(v1.and(projects))
         .recover(recover)
         .with(warp::cors().allow_any_origin())
         .with(warp::log("http::api"));
