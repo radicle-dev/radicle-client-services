@@ -60,12 +60,11 @@ pub async fn run(options: Options) {
         .and(warp::get().and(path::end()))
         .and_then(move || peer_handler(peer_id));
 
-    let projects = path("projects")
-        .and(filters(ctx))
-        .or(warp::get().and(path::end()).and_then(root_handler));
+    let projects = path("projects").and(filters(ctx));
 
-    let routes = v1
-        .and(peer)
+    let routes = path::end()
+        .and_then(root_handler)
+        .or(v1.and(peer))
         .or(v1.and(projects))
         .recover(recover)
         .with(warp::cors().allow_any_origin())
@@ -119,7 +118,8 @@ async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible>
 
 /// Combination of all source filters.
 fn filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
-    project_filter(ctx.clone())
+    project_root_filter(ctx.clone())
+        .or(project_filter(ctx.clone()))
         .or(tree_filter(ctx.clone()))
         .or(blob_filter(ctx.clone()))
         .or(readme_filter(ctx))
@@ -152,6 +152,17 @@ fn readme_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Reje
         .and(path::param::<String>())
         .and(path::end())
         .and_then(readme_handler)
+}
+
+/// `GET /`
+fn project_root_filter(
+    ctx: Context,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::get()
+        .map(move || ctx.clone())
+        .and(path::end())
+        .and_then(project_root_handler)
+        .boxed()
 }
 
 /// `GET /:project`
@@ -249,6 +260,33 @@ async fn readme_handler(
     .map_err(error::Error::from)?;
 
     Ok(warp::reply::json(&blob))
+}
+
+/// List all projects
+async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
+    use radicle_daemon::git::identities::SomeIdentity;
+    #[derive(serde::Serialize)]
+    struct Project {
+        name: String,
+        urn: String,
+    }
+
+    let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
+    let projects = identities::any::list(&storage)
+        .map_err(Error::from)?
+        .filter_map(|res| {
+            res.map(|id| match id {
+                SomeIdentity::Project(project) => {
+                    let name = (&project.payload().subject.name).to_string();
+                    let urn = project.urn().to_string();
+                    Some(Project { name, urn })
+                }
+                _ => None,
+            })
+            .transpose()
+        })
+        .collect::<Result<Vec<_>, _>>();
+    Ok(warp::reply::json(&projects.unwrap()))
 }
 
 async fn project_handler(ctx: Context, urn: Urn) -> Result<Json, Rejection> {
