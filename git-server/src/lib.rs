@@ -10,9 +10,11 @@ use std::convert::TryFrom;
 use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, RwLock};
 use std::{io, net};
 
 use http::{HeaderMap, Method};
+use librad::git::Urn;
 use librad::profile::Profile;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use warp::hyper::StatusCode;
@@ -20,6 +22,8 @@ use warp::reply;
 use warp::{self, path, Buf, Filter, Rejection, Reply};
 
 use error::Error;
+
+use radicle_source::surf::vcs::git::namespace::Namespace;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -42,6 +46,7 @@ pub struct Context {
     authorized_keys: Vec<String>,
     cert_nonce_seed: Option<String>,
     allow_unauthorized_keys: bool,
+    aliases: Arc<RwLock<HashMap<String, Namespace>>>,
 }
 
 impl TryFrom<&Options> for Context {
@@ -65,6 +70,7 @@ impl TryFrom<&Options> for Context {
             authorized_keys: options.authorized_keys.clone(),
             cert_nonce_seed: options.cert_nonce_seed.clone(),
             allow_unauthorized_keys: options.allow_unauthorized_keys,
+            aliases: Default::default(),
         })
     }
 }
@@ -106,11 +112,39 @@ impl Context {
 
         Ok(())
     }
+
+    /// Populates alias map with unique projects' names and their urns
+    fn populate_aliases(&self) -> Result<(), Error> {
+        use librad::git::identities;
+        use librad::git::identities::SomeIdentity::Project;
+        use librad::git::storage::read::ReadOnly;
+        use librad::paths::Paths;
+
+        let mut map = self.aliases.write().unwrap();
+        let paths = Paths::from_root(&self.root)?;
+        let storage = ReadOnly::open(&paths)?;
+        let identities = identities::any::list(&storage)?;
+        for identity in identities.flatten() {
+            if let Project(project) = identity {
+                let urn = Namespace::try_from(project.urn().encode_id().as_str()).unwrap();
+                let name = (&project.payload().subject.name).to_string() + ".git";
+                tracing::info!("alias {:?} for {:?}", name, urn.to_string());
+                if let std::collections::hash_map::Entry::Vacant(e) = map.entry(name.clone()) {
+                    e.insert(urn);
+                } else {
+                    tracing::warn!("alias {:?} exists, skipping", name);
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Run the Git Server.
 pub async fn run(options: Options) {
     let ctx = Context::try_from(&options).expect("Failed to create context from service options");
+    ctx.populate_aliases().expect("Failed to populate aliases");
 
     let git_version = Command::new("git")
         .arg("version")
@@ -182,11 +216,30 @@ async fn git_handler(
     headers: HeaderMap,
     body: impl Buf,
     remote: Option<net::SocketAddr>,
-    namespace: String,
+    mut namespace: String,
     request: warp::filters::path::Tail,
     query: String,
 ) -> Result<Box<dyn Reply>, Rejection> {
     let remote = remote.expect("There is always a remote for HTTP connections");
+    if namespace.ends_with(".git") {
+        let ns_id = namespace.strip_suffix(".git").unwrap();
+        if Urn::try_from_id(ns_id).is_ok() {
+            namespace = ns_id.to_string();
+        } else {
+            // not a project-id, thus potentially an alias
+            // if the alias does not exist, rebuild the cache
+            if !ctx.aliases.read().unwrap().contains_key(&namespace) {
+                ctx.populate_aliases()?;
+            }
+            namespace = ctx
+                .aliases
+                .read()
+                .unwrap()
+                .get(&namespace)
+                .map(Namespace::to_string)
+                .unwrap_or(namespace);
+        }
+    }
     let (status, headers, body) = git(
         ctx, method, headers, body, remote, namespace, request, query,
     )?;

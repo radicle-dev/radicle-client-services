@@ -4037,6 +4037,7 @@ dependencies = [
  "http",
  "librad",
  "pgp",
+ "radicle-source",
  "rand 0.8.4",
  "shared",
  "thiserror",

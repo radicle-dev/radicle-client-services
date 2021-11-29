@@ -80,6 +80,14 @@ pub enum Error {
     /// Failed to connect to org-node unix socket.
     #[error("failed to connect to org-node unix socket")]
     UnixSocket,
+
+    /// An error occured with initializing read-only storage.
+    #[error(transparent)]
+    Init(#[from] librad::git::storage::read::error::Init),
+
+    /// An error occured with radicle identities.
+    #[error(transparent)]
+    Identities(#[from] librad::git::identities::Error),
 }
 
 impl Error {
