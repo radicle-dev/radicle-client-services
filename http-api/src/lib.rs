@@ -330,11 +330,21 @@ fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
     let meta: project::Metadata = project.try_into()?;
     let repo = git::Repository::new(paths.git_dir().to_owned())?;
     let namespace = git::namespace::Namespace::try_from(urn.encode_id().as_str())?;
-    let branch = git::Branch::remote(
-        &format!("heads/{}", meta.default_branch),
-        &remote.default_encoding(),
-    );
-    let browser = git::Browser::new_with_namespace(&repo, &namespace, branch)?;
+    let browser = git::Browser::new_with_namespace(
+        &repo,
+        &namespace,
+        git::Branch::local(&meta.default_branch),
+    )
+    .or_else(|_| {
+        git::Browser::new_with_namespace(
+            &repo,
+            &namespace,
+            git::Branch::remote(
+                &format!("heads/{}", meta.default_branch),
+                &remote.default_encoding(),
+            ),
+        )
+    })?;
     let history = browser.get();
     let head = history.first();
 
