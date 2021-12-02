@@ -92,6 +92,10 @@ pub enum Error {
     /// An error occured with a git storage pool.
     #[error(transparent)]
     Pool(#[from] librad::git::storage::pool::PoolError),
+
+    /// Stored refs error.
+    #[error(transparent)]
+    Stored(#[from] librad::git::refs::stored::Error),
 }
 
 impl Error {
