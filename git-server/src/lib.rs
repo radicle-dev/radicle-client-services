@@ -246,33 +246,38 @@ async fn git_handler(
     headers: HeaderMap,
     body: impl Buf,
     remote: Option<net::SocketAddr>,
-    mut namespace: String,
+    namespace: String,
     request: warp::filters::path::Tail,
     query: String,
 ) -> Result<Box<dyn Reply>, Rejection> {
     let remote = remote.expect("There is always a remote for HTTP connections");
-    if namespace.ends_with(".git") {
+    let urn = if namespace.ends_with(".git") {
         let ns_id = namespace.strip_suffix(".git").unwrap();
-        if Urn::try_from_id(ns_id).is_ok() {
-            namespace = ns_id.to_string();
+        if let Ok(urn) = Urn::try_from_id(ns_id) {
+            urn
         } else {
             // not a project-id, thus potentially an alias
             // if the alias does not exist, rebuild the cache
             if !ctx.aliases.read().unwrap().contains_key(&namespace) {
                 ctx.populate_aliases().await?;
             }
-            namespace = ctx
-                .aliases
-                .read()
-                .unwrap()
-                .get(&namespace)
-                .map(Namespace::to_string)
-                .unwrap_or(namespace);
+            Urn::try_from_id(
+                ctx.aliases
+                    .read()
+                    .unwrap()
+                    .get(&namespace)
+                    .map(Namespace::to_string)
+                    .unwrap_or(namespace),
+            )
+            .unwrap()
         }
-    }
-    let (status, headers, body) = git(
-        ctx, method, headers, body, remote, namespace, request, query,
-    )?;
+    } else {
+        Urn::try_from_id(namespace).unwrap()
+    };
+
+    let (status, headers, body) =
+        git(ctx, method, headers, body, remote, urn, request, query).await?;
+
     let mut builder = http::Response::builder().status(status);
 
     for (name, vec) in headers.iter() {
@@ -285,16 +290,17 @@ async fn git_handler(
     Ok(Box::new(response))
 }
 
-fn git(
+async fn git(
     ctx: Context,
     method: Method,
     headers: HeaderMap,
     mut body: impl Buf,
     remote: net::SocketAddr,
-    namespace: String,
+    urn: Urn,
     request: warp::filters::path::Tail,
     query: String,
 ) -> Result<(http::StatusCode, HashMap<String, Vec<String>>, Vec<u8>), Error> {
+    let namespace = urn.encode_id();
     let content_type =
         if let Some(Ok(content_type)) = headers.get("Content-Type").map(|h| h.to_str()) {
             content_type
@@ -339,7 +345,7 @@ fn git(
     }
 
     cmd.env("REQUEST_METHOD", method.as_str());
-    cmd.env("GIT_PROJECT_ROOT", ctx.root);
+    cmd.env("GIT_PROJECT_ROOT", &ctx.root);
     cmd.env("GIT_NAMESPACE", namespace);
     cmd.env("PATH_INFO", path);
     cmd.env("CONTENT_TYPE", content_type);
@@ -435,6 +441,18 @@ fn git(
 
     let mut body = Vec::new();
     reader.read_to_end(&mut body)?;
+
+    match child.wait() {
+        Ok(status) if status.success() => {
+            tracing::info!("git-http-backend exited successfully for {}", urn);
+        }
+        Ok(status) => {
+            tracing::error!("git-http-backend exited with code {}", status);
+        }
+        Err(err) => {
+            panic!("failed to wait for git-http-backend: {}", err);
+        }
+    }
 
     Ok((status, headers, body))
 }

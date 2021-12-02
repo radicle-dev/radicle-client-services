@@ -65,7 +65,7 @@ impl PostReceive {
     pub fn hook() -> Result<(), Error> {
         let post_receive = Self::from_stdin()?;
 
-        // notify the org-node to update the signed refs.
+        // notify the org-node about the ref update.
         post_receive.notify_org_node()
     }
 
