@@ -4856,6 +4856,8 @@ dependencies = [
 name = "shared"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "librad",
  "tracing",
  "tracing-stackdriver",
  "tracing-subscriber",

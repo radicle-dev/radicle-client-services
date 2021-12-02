@@ -29,7 +29,6 @@ use std::path::PathBuf;
 
 mod client;
 mod error;
-mod identity;
 #[cfg(feature = "influxdb-metrics")]
 mod metrics;
 mod query;
@@ -40,6 +39,7 @@ pub use client::Urn;
 pub use error::Error;
 
 use client::Client;
+use shared::identity;
 
 /// UNIX domain socket for communicating project updates.
 pub const ORG_SOCKET_FILE: &str = "org-node.sock";

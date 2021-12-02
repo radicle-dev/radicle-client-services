@@ -88,6 +88,10 @@ pub enum Error {
     /// An error occured with radicle identities.
     #[error(transparent)]
     Identities(#[from] librad::git::identities::Error),
+
+    /// An error occured with a git storage pool.
+    #[error(transparent)]
+    Pool(#[from] librad::git::storage::pool::PoolError),
 }
 
 impl Error {
