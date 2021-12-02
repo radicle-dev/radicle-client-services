@@ -30,10 +30,9 @@ use crate::webserver::WsEvent;
 
 pub use handle::{Handle, TrackProjectError};
 pub use librad::{git::Urn, PeerId};
-pub use signer::Signer;
+pub use shared::signer::Signer;
 
 pub mod handle;
-pub mod signer;
 
 #[derive(Error, Debug)]
 #[non_exhaustive]

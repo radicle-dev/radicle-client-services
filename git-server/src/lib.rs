@@ -14,7 +14,9 @@ use std::sync::{Arc, RwLock};
 use std::{io, net};
 
 use http::{HeaderMap, Method};
-use librad::git::Urn;
+use librad::git::storage::Pool;
+use librad::git::{self, Urn};
+use librad::paths::Paths;
 use librad::profile::Profile;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use warp::hyper::StatusCode;
@@ -26,10 +28,13 @@ use error::Error;
 use radicle_source::surf::vcs::git::namespace::Namespace;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const STORAGE_POOL_SIZE: usize = 3;
 
 #[derive(Debug, Clone)]
 pub struct Options {
     pub root: Option<PathBuf>,
+    pub identity: PathBuf,
+    pub identity_passphrase: Option<String>,
     pub listen: net::SocketAddr,
     pub tls_cert: Option<PathBuf>,
     pub tls_key: Option<PathBuf>,
@@ -39,7 +44,7 @@ pub struct Options {
     pub allow_unauthorized_keys: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Context {
     root: PathBuf,
     git_receive_pack: bool,
@@ -47,12 +52,11 @@ pub struct Context {
     cert_nonce_seed: Option<String>,
     allow_unauthorized_keys: bool,
     aliases: Arc<RwLock<HashMap<String, Namespace>>>,
+    pool: Pool<git::Storage>,
 }
 
-impl TryFrom<&Options> for Context {
-    type Error = Error;
-
-    fn try_from(options: &Options) -> Result<Self, Self::Error> {
+impl Context {
+    fn from(options: &Options, pool: Pool<git::Storage>) -> Result<Self, Error> {
         let root_path = if let Some(root) = &options.root {
             root.to_owned()
         } else {
@@ -71,11 +75,10 @@ impl TryFrom<&Options> for Context {
             cert_nonce_seed: options.cert_nonce_seed.clone(),
             allow_unauthorized_keys: options.allow_unauthorized_keys,
             aliases: Default::default(),
+            pool,
         })
     }
-}
 
-impl Context {
     /// Sets the config receive.advertisePushOptions, which lets the user known they can provide a push option `-o`,
     /// to specify unique attributes. This is currently not used, but may be used in the future.
     pub fn advertise_push_options(&self) -> Result<(), Error> {
@@ -114,21 +117,22 @@ impl Context {
     }
 
     /// Populates alias map with unique projects' names and their urns
-    fn populate_aliases(&self) -> Result<(), Error> {
+    async fn populate_aliases(&self) -> Result<(), Error> {
         use librad::git::identities;
         use librad::git::identities::SomeIdentity::Project;
-        use librad::git::storage::read::ReadOnly;
-        use librad::paths::Paths;
 
+        let storage = self.pool.get().await?;
+        let read_only = &storage.read_only();
+        let identities = identities::any::list(read_only)?;
         let mut map = self.aliases.write().unwrap();
-        let paths = Paths::from_root(&self.root)?;
-        let storage = ReadOnly::open(&paths)?;
-        let identities = identities::any::list(&storage)?;
+
         for identity in identities.flatten() {
             if let Project(project) = identity {
                 let urn = Namespace::try_from(project.urn().encode_id().as_str()).unwrap();
                 let name = (&project.payload().subject.name).to_string() + ".git";
+
                 tracing::info!("alias {:?} for {:?}", name, urn.to_string());
+
                 if let std::collections::hash_map::Entry::Vacant(e) = map.entry(name.clone()) {
                     e.insert(urn);
                 } else {
@@ -143,15 +147,41 @@ impl Context {
 
 /// Run the Git Server.
 pub async fn run(options: Options) {
-    let ctx = Context::try_from(&options).expect("Failed to create context from service options");
-    ctx.populate_aliases().expect("Failed to populate aliases");
-
     let git_version = Command::new("git")
         .arg("version")
         .output()
         .expect("'git' command must be available")
         .stdout;
     tracing::info!("{}", std::str::from_utf8(&git_version).unwrap().trim());
+
+    let paths = if let Some(ref root) = options.root {
+        Paths::from_root(root).unwrap()
+    } else {
+        Profile::load().unwrap().paths().clone()
+    };
+    let identity_path = options.identity.clone();
+    let identity = if let Some(passphrase) = options.identity_passphrase.clone() {
+        shared::identity::Identity::Encrypted {
+            path: identity_path.clone(),
+            passphrase: passphrase.into(),
+        }
+    } else {
+        shared::identity::Identity::Plain(identity_path.clone())
+    };
+    let signer = identity
+        .signer()
+        .unwrap_or_else(|e| panic!("unable to load identity {:?}: {}", &identity_path, e));
+    let storage_lock = git::storage::pool::Initialised::no();
+    let storage = git::storage::Pool::new(
+        git::storage::pool::ReadWriteConfig::new(paths, signer, storage_lock),
+        STORAGE_POOL_SIZE,
+    );
+
+    let ctx =
+        Context::from(&options, storage).expect("Failed to create context from service options");
+    ctx.populate_aliases()
+        .await
+        .expect("Failed to populate aliases");
 
     if let Err(e) = ctx.set_cert_nonce_seed() {
         tracing::error!(
@@ -229,7 +259,7 @@ async fn git_handler(
             // not a project-id, thus potentially an alias
             // if the alias does not exist, rebuild the cache
             if !ctx.aliases.read().unwrap().contains_key(&namespace) {
-                ctx.populate_aliases()?;
+                ctx.populate_aliases().await?;
             }
             namespace = ctx
                 .aliases

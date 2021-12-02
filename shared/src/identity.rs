@@ -13,7 +13,7 @@ use librad::{
     PublicKey, SecStr, SecretKey,
 };
 
-use crate::client::Signer;
+use crate::signer::Signer;
 
 pub enum Identity {
     Plain(PathBuf),

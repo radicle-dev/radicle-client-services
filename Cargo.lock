@@ -4049,7 +4049,7 @@ dependencies = [
 
 [[package]]
 name = "radicle-http-api"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "argh",
  "async-trait",
@@ -4856,6 +4856,8 @@ dependencies = [
 name = "shared"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "librad",
  "tracing",
  "tracing-stackdriver",
  "tracing-subscriber",
