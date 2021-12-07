@@ -20,7 +20,6 @@ use radicle_daemon::librad::git::types::{Reference, Single};
 use radicle_daemon::{git::types::Namespace, Paths, PeerId, Urn};
 use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
-use radicle_source::Revision;
 
 use crate::project::Info;
 
@@ -119,6 +118,7 @@ async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible>
 /// Combination of all source filters.
 fn filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
     project_root_filter(ctx.clone())
+        .or(commits_filter(ctx.clone()))
         .or(project_filter(ctx.clone()))
         .or(tree_filter(ctx.clone()))
         .or(blob_filter(ctx.clone()))
@@ -126,7 +126,7 @@ fn filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
         .boxed()
 }
 
-/// `GET /:project/blob/:revision/:path`
+/// `GET /:project/blob/:sha/:path`
 fn blob_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     #[derive(serde::Deserialize)]
     struct Query {
@@ -143,7 +143,18 @@ fn blob_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Reject
         .and_then(blob_handler)
 }
 
-/// `GET /:project/readme/:revision`
+/// `GET /:project/commits/:sha`
+fn commits_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::get()
+        .map(move || ctx.clone())
+        .and(path::param::<Urn>())
+        .and(path("commits"))
+        .and(path::param::<String>())
+        .and(path::end())
+        .and_then(commits_handler)
+}
+
+/// `GET /:project/readme/:sha`
 fn readme_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
         .map(move || ctx.clone())
@@ -175,7 +186,7 @@ fn project_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rej
         .boxed()
 }
 
-/// `GET /:project/tree/:revision/:prefix`
+/// `GET /:project/tree/:sha/:prefix`
 fn tree_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
         .map(move || ctx.clone())
@@ -211,7 +222,7 @@ async fn root_handler() -> Result<impl Reply, Rejection> {
 async fn blob_handler(
     ctx: Context,
     project: Urn,
-    revision: String,
+    sha: String,
     highlight: bool,
     path: warp::filters::path::Tail,
 ) -> Result<impl Reply, Rejection> {
@@ -220,7 +231,11 @@ async fn blob_handler(
     } else {
         None
     };
-    let reference = Reference::head(Namespace::from(project), None, revision.try_into().unwrap());
+    let reference = Reference::head(
+        Namespace::from(project),
+        None,
+        sha.try_into().map_err(|_| Error::NotFound)?,
+    );
     let blob = browse(reference, ctx.paths, |browser| {
         radicle_source::blob::highlighting::blob::<PeerId>(browser, None, path.as_str(), theme)
     })
@@ -230,12 +245,30 @@ async fn blob_handler(
     Ok(warp::reply::json(&blob))
 }
 
-async fn readme_handler(
-    ctx: Context,
-    project: Urn,
-    revision: String,
-) -> Result<impl Reply, Rejection> {
-    let reference = Reference::head(Namespace::from(project), None, revision.try_into().unwrap());
+async fn commits_handler(ctx: Context, project: Urn, sha: String) -> Result<impl Reply, Rejection> {
+    let reference = Reference::head(
+        Namespace::from(project),
+        None,
+        sha.try_into().map_err(|_| Error::NotFound)?,
+    );
+    let commits = browse(reference, ctx.paths, |mut browser| {
+        radicle_source::commits::<PeerId>(&mut browser, None)
+    })
+    .await?;
+
+    let response = json!({
+        "headers": &commits.headers,
+        "stats": &commits.stats,
+    });
+    Ok(warp::reply::json(&response))
+}
+
+async fn readme_handler(ctx: Context, project: Urn, sha: String) -> Result<impl Reply, Rejection> {
+    let reference = Reference::head(
+        Namespace::from(project),
+        None,
+        sha.try_into().map_err(|_| Error::NotFound)?,
+    );
     let paths = &[
         "README",
         "README.md",
@@ -299,22 +332,17 @@ async fn project_handler(ctx: Context, urn: Urn) -> Result<Json, Rejection> {
 async fn tree_handler(
     ctx: Context,
     project: Urn,
-    revision: String,
+    sha: String,
     path: warp::filters::path::Tail,
 ) -> Result<impl Reply, Rejection> {
     let reference = Reference::head(
         Namespace::from(project),
         None,
-        revision.clone().try_into().unwrap(),
+        sha.try_into().map_err(|_| Error::NotFound)?,
     );
-    // Nb. Creating a `Revision` and setting it in the `tree` call seems to be redundant.
-    // We can remove this when we figure out what's the best way.
-    let revision = Revision::<PeerId>::Sha {
-        sha: revision.as_str().try_into().unwrap(),
-    };
     let (tree, stats) = browse(reference, ctx.paths, |mut browser| {
         Ok((
-            radicle_source::tree(&mut browser, Some(revision), Some(path.as_str().to_owned()))?,
+            radicle_source::tree::<PeerId>(&mut browser, None, Some(path.as_str().to_owned()))?,
             browser.get_stats()?,
         ))
     })
