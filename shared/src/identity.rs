@@ -1,7 +1,8 @@
 use std::{
+    fs,
     fs::File,
     io::{self, Read as _},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use librad::{
@@ -48,4 +49,21 @@ impl Identity {
             }
         }
     }
+}
+
+pub fn generate(path: &Path) -> io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut file = File::create(path)?;
+    let metadata = file.metadata()?;
+    let mut permissions = metadata.permissions();
+
+    permissions.set_mode(0o600);
+    fs::set_permissions(path, permissions)?;
+
+    let secret_key = SecretKey::new();
+    file.write_all(secret_key.as_ref())?;
+
+    Ok(())
 }

@@ -1,17 +1,14 @@
-use std::io::Write;
 use std::net::{self, ToSocketAddrs};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
-use std::{fs, fs::File, os::unix::fs::PermissionsExt};
 
 use node::PeerId;
 
 use radicle_org_node as node;
 
 use argh::FromArgs;
-use librad::SecretKey;
 
-use shared::LogFmt;
+use shared::{identity, LogFmt};
 
 /// Radicle Org Node.
 #[derive(FromArgs)]
@@ -189,20 +186,6 @@ fn parse_bootstrap(value: &str) -> Result<Vec<(PeerId, net::SocketAddr)>, String
     Ok(peers)
 }
 
-fn generate_identity(path: &Path) -> anyhow::Result<()> {
-    let mut file = File::create(path)?;
-    let metadata = file.metadata()?;
-    let mut permissions = metadata.permissions();
-
-    permissions.set_mode(0o600);
-    fs::set_permissions(path, permissions)?;
-
-    let secret_key = SecretKey::new();
-    file.write_all(secret_key.as_ref())?;
-
-    Ok(())
-}
-
 fn main() {
     let options = Options::from_env();
 
@@ -215,8 +198,8 @@ fn main() {
         .unwrap();
 
     if !options.identity.exists() {
-        if let Err(e) = generate_identity(&options.identity) {
-            tracing::error!(target: "org-node", "Fatal: error creating identity: {:#}", e);
+        if let Err(e) = identity::generate(&options.identity) {
+            tracing::error!(target: "org-node", "Fatal: error creating identity: {}", e);
             std::process::exit(2);
         }
         tracing::info!(target: "org-node", "Identity file generated: {:?}", options.identity);
