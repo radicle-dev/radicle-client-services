@@ -48,6 +48,7 @@ pub struct Options {
 pub struct Context {
     root: PathBuf,
     git_receive_pack: bool,
+    basic_auth: bool,
     authorized_keys: Vec<String>,
     cert_nonce_seed: Option<String>,
     allow_unauthorized_keys: bool,
@@ -71,6 +72,7 @@ impl Context {
         Ok(Context {
             root: root_path.canonicalize()?,
             git_receive_pack: options.git_receive_pack,
+            basic_auth: false,
             authorized_keys: options.authorized_keys.clone(),
             cert_nonce_seed: options.cert_nonce_seed.clone(),
             allow_unauthorized_keys: options.allow_unauthorized_keys,
@@ -314,10 +316,14 @@ async fn git(
         // Eg. `git push`
         ("git-receive-pack", _) | (_, "service=git-receive-pack") => {
             if ctx.git_receive_pack {
-                if let Ok(username) = authenticate(&headers) {
-                    username
+                if ctx.basic_auth {
+                    if let Ok(username) = authenticate(&headers) {
+                        username
+                    } else {
+                        return Err(Error::Unauthorized);
+                    }
                 } else {
-                    return Err(Error::Unauthorized);
+                    remote.ip().to_string()
                 }
             } else {
                 return Err(Error::ServiceUnavailable("git-receive-pack"));
