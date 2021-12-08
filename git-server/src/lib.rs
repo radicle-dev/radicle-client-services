@@ -327,6 +327,7 @@ async fn git(
         _ => String::default(),
     };
 
+    tracing::debug!("headers: {:?}", headers);
     tracing::debug!("namespace: {}", namespace);
     tracing::debug!("path: {:?}", path);
     tracing::debug!("username: {:?}", username);
