@@ -93,6 +93,12 @@ impl Context {
     }
 
     /// Enables users to submit a signed push: `push --signed`
+    ///
+    /// "You should set the certNonceSeed setting to some randomly generated long string that should
+    /// be kept secret. It is combined with the timestamp to generate a one-time value (“nonce”)
+    /// that the git client is required to sign and provides both a mechanism to prevent replay
+    /// attacks and to offer proof that the certificate was generated for that specific server
+    /// (though for others to verify this, they would need to know the value of the nonce seed)."
     pub fn set_cert_nonce_seed(&self) -> Result<(), Error> {
         let field = "receive.certNonceSeed";
         let value = self
@@ -190,7 +196,13 @@ pub async fn run(options: Options) {
             "Failed to set certificate nonce seed! required to enable `push --signed`: {:?}",
             e
         );
-
+        std::process::exit(1);
+    }
+    if let Err(e) = ctx.advertise_push_options() {
+        tracing::error!(
+            "Failed to set push config! required to enable `push --signed`: {:?}",
+            e
+        );
         std::process::exit(1);
     }
 
