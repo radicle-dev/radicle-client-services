@@ -88,5 +88,13 @@ async fn main() {
     shared::init_logger(options.log_format);
     tracing::info!("version {}-{}", env!("CARGO_PKG_VERSION"), env!("GIT_HEAD"));
 
+    if !options.identity.exists() {
+        if let Err(e) = shared::identity::generate(&options.identity) {
+            tracing::error!("Fatal: error creating identity: {}", e);
+            std::process::exit(2);
+        }
+        tracing::info!("Identity file generated: {:?}", options.identity);
+    }
+
     server::run(options.into()).await;
 }
