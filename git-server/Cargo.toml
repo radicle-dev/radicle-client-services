@@ -20,10 +20,13 @@ required-features = ["hooks"]
 [dependencies]
 argh = { version = "0.1.4" }
 base64 = { version = "0.13" }
+byteorder = { version = "1.4" }
+either = { version = "1.6" }
 git2 = "0.13"
 http = { version = "0.2" }
 librad = { version = "0" }
 shared = { path = "../shared", default-features = false }
+sha2 = { version = "0.9" }
 thiserror = { version = "1.0" }
 tokio = { version = "1.2", features = ["macros", "rt", "rt-multi-thread", "sync"] }
 tracing = "0.1"

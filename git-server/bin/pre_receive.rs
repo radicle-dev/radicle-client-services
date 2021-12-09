@@ -8,12 +8,9 @@ fn main() -> Result<(), Error> {
 
     // run the `pre-receive` hook
     match PreReceive::hook() {
-        Ok(()) => {
-            println!("pre-receive hook success");
-            std::process::exit(0)
-        }
+        Ok(()) => std::process::exit(0),
         Err(e) => {
-            eprintln!("{:?}", e);
+            eprintln!("pre-receive hook failed: {}", e);
             // exit with error and decline the pre-receive;
             std::process::exit(1)
         }

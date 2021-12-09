@@ -13,11 +13,14 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, RwLock};
 use std::{io, net};
 
+use either::Either;
 use http::{HeaderMap, Method};
+use librad::git::identities;
 use librad::git::storage::Pool;
 use librad::git::{self, Urn};
 use librad::paths::Paths;
 use librad::profile::Profile;
+use librad::PeerId;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use warp::hyper::StatusCode;
 use warp::reply;
@@ -126,7 +129,6 @@ impl Context {
 
     /// Populates alias map with unique projects' names and their urns
     async fn populate_aliases(&self) -> Result<(), Error> {
-        use librad::git::identities;
         use librad::git::identities::SomeIdentity::Project;
 
         let storage = self.pool.get().await?;
@@ -150,6 +152,28 @@ impl Context {
         }
 
         Ok(())
+    }
+
+    async fn get_authorized_peers(&self, urn: &Urn) -> Result<Vec<PeerId>, Error> {
+        let storage = self.pool.get().await?;
+        let read_only = &storage.read_only();
+        let project = identities::project::get(read_only, urn)?;
+
+        if let Some(project) = project {
+            let mut keys = Vec::new();
+
+            for delegation in project.delegations().iter() {
+                match delegation {
+                    Either::Left(pk) => keys.push(PeerId::from(*pk)),
+                    Either::Right(indirect) => {
+                        keys.extend(indirect.delegations().iter().cloned().map(PeerId::from));
+                    }
+                }
+            }
+            Ok(keys)
+        } else {
+            Ok(vec![])
+        }
     }
 }
 
@@ -213,7 +237,7 @@ pub async fn run(options: Options) {
         .and(warp::filters::body::aggregate())
         .and(warp::filters::addr::remote())
         .and(path::param())
-        .and(path::tail())
+        .and(path::peek())
         .and(
             warp::filters::query::raw()
                 .or(warp::any().map(String::default))
@@ -261,7 +285,7 @@ async fn git_handler(
     body: impl Buf,
     remote: Option<net::SocketAddr>,
     namespace: String,
-    request: warp::filters::path::Tail,
+    request: warp::filters::path::Peek,
     query: String,
 ) -> Result<Box<dyn Reply>, Rejection> {
     let remote = remote.expect("There is always a remote for HTTP connections");
@@ -288,9 +312,20 @@ async fn git_handler(
     } else {
         Urn::try_from_id(namespace).unwrap()
     };
+    let mut peer_id = None;
+    let mut path = request.as_str().to_owned();
 
-    let (status, headers, body) =
-        git(ctx, method, headers, body, remote, urn, request, query).await?;
+    if let Some(s) = request.segments().next() {
+        if let Ok(id) = PeerId::from_default_encoding(s) {
+            peer_id = Some(id);
+            path = request.segments().skip(1).collect::<Vec<_>>().join("/");
+        }
+    }
+
+    let (status, headers, body) = git(
+        ctx, method, headers, body, remote, urn, peer_id, &path, query,
+    )
+    .await?;
 
     let mut builder = http::Response::builder().status(status);
 
@@ -311,7 +346,8 @@ async fn git(
     mut body: impl Buf,
     remote: net::SocketAddr,
     urn: Urn,
-    request: warp::filters::path::Tail,
+    peer_id: Option<PeerId>,
+    request: &str,
     query: String,
 ) -> Result<(http::StatusCode, HashMap<String, Vec<String>>, Vec<u8>), Error> {
     let namespace = urn.encode_id();
@@ -321,21 +357,21 @@ async fn git(
         } else {
             ""
         };
-    let request = request.as_str();
-    let path = Path::new("/git").join(request);
 
     let username = match (request, query.as_str()) {
         // Eg. `git push`
         ("git-receive-pack", _) | (_, "service=git-receive-pack") => {
             if ctx.git_receive_pack {
-                if ctx.basic_auth {
+                if let Some(peer_id) = peer_id {
+                    peer_id.default_encoding()
+                } else if ctx.basic_auth {
                     if let Ok(username) = authenticate(&headers) {
                         username
                     } else {
                         return Err(Error::Unauthorized);
                     }
                 } else {
-                    remote.ip().to_string()
+                    return Err(Error::Unauthorized);
                 }
             } else {
                 return Err(Error::ServiceUnavailable("git-receive-pack"));
@@ -345,19 +381,32 @@ async fn git(
         _ => String::default(),
     };
 
+    let path = Path::new("/git").join(request);
+    let authorized_peers = ctx.get_authorized_peers(&urn).await?;
+    let authorized_ssh_keys = authorized_peers
+        .iter()
+        .map(|p| base64::encode(p.as_public_key().as_ref()))
+        .collect::<Vec<_>>();
+
     tracing::debug!("headers: {:?}", headers);
     tracing::debug!("namespace: {}", namespace);
     tracing::debug!("path: {:?}", path);
     tracing::debug!("username: {:?}", username);
     tracing::debug!("method: {:?}", method.as_str());
     tracing::debug!("remote: {:?}", remote.to_string());
+    tracing::debug!("authorized peers: {:?}", authorized_peers);
 
     let mut cmd = Command::new("git");
 
     cmd.arg("http-backend");
 
     // Set Authorized Keys for verifying GPG signatures against key IDs.
-    cmd.env("RADICLE_AUTHORIZED_KEYS", ctx.authorized_keys.join(","));
+    if !ctx.authorized_keys.is_empty() {
+        cmd.env("RADICLE_AUTHORIZED_GPG_KEYS", ctx.authorized_keys.join(","));
+    }
+    if !authorized_ssh_keys.is_empty() {
+        cmd.env("RADICLE_AUTHORIZED_SSH_KEYS", authorized_ssh_keys.join(","));
+    }
 
     if ctx.allow_unauthorized_keys {
         cmd.env("RADICLE_ALLOW_UNAUTHORIZED_KEYS", "true");

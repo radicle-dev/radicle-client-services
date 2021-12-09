@@ -16,13 +16,17 @@
 //!
 //! The `pre-receive` git hook provides access to GPG certificates for a signed push, useful for authorizing an
 //! update the repository.
-use std::io::{stdin, Read};
+use std::io::prelude::*;
+use std::io::stdin;
+
 use std::path::Path;
 use std::str::FromStr;
 
 use envconfig::Envconfig;
 use git2::{Oid, Repository};
+use librad::PeerId;
 use pgp::{types::KeyTrait, Deserializable};
+use sha2::Digest;
 
 use super::{
     types::{CertNonceStatus, ReceivePackEnv},
@@ -38,14 +42,10 @@ pub const DEFAULT_RAD_KEYS_PATH: &str = ".rad/keys/openpgp/";
 /// git hook, as well as parses environmental variables that may be used to process the hook.
 #[derive(Debug, Clone)]
 pub struct PreReceive {
-    // Old SHA1
-    pub old: Oid,
-    // New SHA1
-    pub new: Oid,
-    // refname relative to $GIT_DIR
-    pub refname: String,
-    // Environmental Variables;
+    /// Environmental Variables.
     pub env: ReceivePackEnv,
+    /// Ref updates.
+    pub updates: Vec<(String, Oid, Oid)>,
 }
 
 // use cert signer details default utility implementations.
@@ -54,29 +54,29 @@ impl CertSignerDetails for PreReceive {}
 impl PreReceive {
     /// Instantiate from standard input.
     pub fn from_stdin() -> Result<Self, Error> {
-        let mut buffer = String::new();
-        stdin().read_to_string(&mut buffer)?;
-
-        let input = buffer.split(' ').collect::<Vec<&str>>();
-
-        // parse standard input variables;
-        let old = Oid::from_str(input[0])?;
-        let new = Oid::from_str(input[1])?;
-        let refname = input[2].replace("\n", "");
-
         // initialize environmental values.
         let env = ReceivePackEnv::init_from_env()?;
+        let mut updates = Vec::new();
 
-        Ok(Self {
-            old,
-            new,
-            refname,
-            env,
-        })
+        for line in stdin().lock().lines() {
+            let line = line?;
+            let input = line.split(' ').collect::<Vec<&str>>();
+
+            // parse standard input variables;
+            let old = Oid::from_str(input[0])?;
+            let new = Oid::from_str(input[1])?;
+            let refname = input[2].to_owned();
+
+            updates.push((refname, old, new));
+        }
+
+        Ok(Self { env, updates })
     }
 
     /// The main process used by `pre-receive` hook log
     pub fn hook() -> Result<(), Error> {
+        eprintln!("Running pre-receive hook...");
+
         let pre_receive = Self::from_stdin()?;
 
         // check if project exists.
@@ -86,6 +86,7 @@ impl PreReceive {
         if pre_receive.env.allow_unauthorized_keys.is_some() {
             println!("SECURITY ALERT! UNAUTHORIZED KEYS ARE ALLOWED!");
             println!("Remove git-server flag `--allow-authorized-keys` to enforce GPG certificate verification");
+
             Ok(())
         } else {
             // Authenticate the request.
@@ -96,16 +97,45 @@ impl PreReceive {
     /// Authenticate the request by verifying the push signed certificate is valid and the GPG
     /// signing key is included in an authorized keyring.
     pub fn authenticate(&self) -> Result<(), Error> {
-        // verify the certificate.
+        self.authorize_ref_updates()?;
         self.verify_certificate()?;
-
-        // ensure is authorized keys.
         self.check_authorized_key()?;
 
         Ok(())
     }
 
-    pub fn check_project_exists(&self) -> Result<(), Error> {
+    /// Authorizes each ref update, making sure the push certificate is signed by the same
+    /// key as the owner/parent of the ref.
+    pub fn authorize_ref_updates(&self) -> Result<(), Error> {
+        let remote_user = self.env.remote_user.as_ref().ok_or(Error::Unauthorized)?;
+
+        let key_fingerprint = self.env.cert_key.as_ref().ok_or(Error::Unauthorized)?;
+        let key_fingerprint = key_fingerprint
+            .strip_prefix("SHA256:")
+            .ok_or(Error::Unauthorized)?;
+        let key_fingerprint = base64::decode(key_fingerprint).map_err(|_| Error::Unauthorized)?;
+
+        for (refname, _, _) in self.updates.iter() {
+            let suffix = refname
+                .strip_prefix("refs/remotes/")
+                .ok_or(Error::Unauthorized)?;
+            let (remote, _) = suffix.split_once('/').ok_or(Error::Unauthorized)?;
+
+            if remote != remote_user {
+                return Err(Error::Unauthorized);
+            }
+
+            let peer_id = PeerId::from_default_encoding(remote).map_err(|_| Error::Unauthorized)?;
+            let peer_fingerprint = to_ssh_fingerprint(&peer_id)?;
+
+            if &key_fingerprint[..] != &peer_fingerprint[..] {
+                return Err(Error::Unauthorized);
+            }
+        }
+        return Ok(());
+    }
+
+    pub fn check_project_exists(&self) -> Result<bool, Error> {
         let repo = Repository::open(&self.env.git_dir)?;
 
         // set the namespace for the repo equal to the git namespace env.
@@ -115,14 +145,15 @@ impl PreReceive {
 
         // check if the project has a radicle identity.
         if repo.find_reference("refs/rad/id").is_err() {
-            return Err(Error::RadicleIdentityNotFound);
+            return Ok(true);
         }
-
-        Ok(())
+        Ok(false)
     }
 
     /// This method will succeed iff the cert status is "OK"
     pub fn verify_certificate(&self) -> Result<(), Error> {
+        eprintln!("Verifying certificate...");
+
         let status =
             CertNonceStatus::from_str(&self.env.cert_nonce_status.clone().unwrap_or_default())?;
         match status {
@@ -145,23 +176,44 @@ impl PreReceive {
 
     /// Check if the cert_key is found in an authorized keyring
     pub fn check_authorized_key(&self) -> Result<(), Error> {
+        eprintln!("Authorizing...");
+
         if let Some(key) = &self.env.cert_key {
-            if self.authorized_keys()?.contains(key) || self.is_cert_authorized()? {
-                // exit early, the key is included in the authorized keys list.
+            if self.env.authorized_gpg_keys.is_none() && self.env.authorized_ssh_keys.is_none() {
+                // If we didn't explicitly say that certain keys only should be allowed, all
+                // keys are allowed. This is how we allow project creation to pass verification.
                 return Ok(());
             }
+            eprintln!("Checking provided key {}...", key);
 
-            eprintln!("Unauthorized GPG Key: {:?}", key);
+            let ssh_keys = self.authorized_ssh_keys()?;
+            let gpg_keys = self.authorized_gpg_keys()?;
+
+            if ssh_keys.contains(key) || gpg_keys.contains(key) {
+                eprintln!("Key {} is authorized to push.", key);
+                return Ok(());
+            }
+            eprintln!("Unauthorized key {}", key);
         }
 
         Err(Error::Unauthorized)
     }
 
-    /// Return the parsed authorized keys from the provided environmental variable.
-    pub fn authorized_keys(&self) -> Result<KeyRing, Error> {
+    /// Return the parsed authorized GPG keys from the provided environmental variable.
+    pub fn authorized_gpg_keys(&self) -> Result<KeyRing, Error> {
         Ok(self
             .env
-            .radicle_authorized_keys
+            .authorized_gpg_keys
+            .clone()
+            .map(|k| k.split(',').map(|k| k.to_owned()).collect::<KeyRing>())
+            .unwrap_or_default())
+    }
+
+    /// Return the parsed authorized SSH keys from the provided environmental variable.
+    pub fn authorized_ssh_keys(&self) -> Result<KeyRing, Error> {
+        Ok(self
+            .env
+            .authorized_ssh_keys
             .clone()
             .map(|k| k.split(',').map(|k| k.to_owned()).collect::<KeyRing>())
             .unwrap_or_default())
@@ -180,7 +232,8 @@ impl PreReceive {
             // set the namespace for the repo equal to the git namespace env.
             repo.set_namespace(&self.env.git_namespace)?;
 
-            let rfc = repo.find_reference(&self.refname)?;
+            let (refname, _, _) = &self.updates[0];
+            let rfc = repo.find_reference(refname)?;
 
             if let Ok(tree) = rfc.peel_to_tree() {
                 if let Ok(entry) = tree.get_path(&key_path) {
@@ -202,4 +255,20 @@ impl PreReceive {
 
         Ok(false)
     }
+}
+
+/// Get the SSH key fingerprint from a peer id.
+fn to_ssh_fingerprint(peer_id: &PeerId) -> Result<Vec<u8>, std::io::Error> {
+    use byteorder::{BigEndian, WriteBytesExt};
+
+    let mut buf = Vec::new();
+    let name = b"ssh-ed25519";
+    let key = peer_id.as_public_key().as_ref();
+
+    buf.write_u32::<BigEndian>(name.len() as u32)?;
+    buf.extend_from_slice(name);
+    buf.write_u32::<BigEndian>(key.len() as u32)?;
+    buf.extend_from_slice(key);
+
+    Ok(sha2::Sha256::digest(&buf).to_vec())
 }
