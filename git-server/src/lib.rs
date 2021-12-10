@@ -260,24 +260,6 @@ pub async fn run(options: Options) {
     }
 }
 
-fn authenticate(headers: &HeaderMap) -> Result<String, Error> {
-    if let Some(Ok(auth)) = headers.get("Authorization").map(|h| h.to_str()) {
-        if let Some(encoded) = auth.strip_prefix("Basic ") {
-            let decoded = base64::decode(encoded).map_err(|_| Error::InvalidAuthorization)?;
-            let credentials =
-                String::from_utf8(decoded).map_err(|_| Error::InvalidAuthorization)?;
-            let mut parts = credentials.splitn(2, ':');
-            let username = parts.next().ok_or(Error::InvalidAuthorization)?;
-            let _password = parts.next().ok_or(Error::InvalidAuthorization)?;
-
-            return Ok(username.to_owned());
-        } else {
-            return Err(Error::InvalidAuthorization);
-        }
-    }
-    Err(Error::Unauthorized)
-}
-
 async fn git_handler(
     ctx: Context,
     method: Method,
@@ -312,18 +294,15 @@ async fn git_handler(
     } else {
         Urn::try_from_id(namespace).unwrap()
     };
-    let mut peer_id = None;
-    let mut path = request.as_str().to_owned();
-
-    if let Some(s) = request.segments().next() {
-        if let Ok(id) = PeerId::from_default_encoding(s) {
-            peer_id = Some(id);
-            path = request.segments().skip(1).collect::<Vec<_>>().join("/");
-        }
-    }
-
     let (status, headers, body) = git(
-        ctx, method, headers, body, remote, urn, peer_id, &path, query,
+        ctx,
+        method,
+        headers,
+        body,
+        remote,
+        urn,
+        request.as_str(),
+        query,
     )
     .await?;
 
@@ -346,7 +325,6 @@ async fn git(
     mut body: impl Buf,
     remote: net::SocketAddr,
     urn: Urn,
-    peer_id: Option<PeerId>,
     request: &str,
     query: String,
 ) -> Result<(http::StatusCode, HashMap<String, Vec<String>>, Vec<u8>), Error> {
@@ -358,40 +336,30 @@ async fn git(
             ""
         };
 
-    let username = match (request, query.as_str()) {
+    match (request, query.as_str()) {
         // Eg. `git push`
         ("git-receive-pack", _) | (_, "service=git-receive-pack") => {
-            if ctx.git_receive_pack {
-                if let Some(peer_id) = peer_id {
-                    peer_id.default_encoding()
-                } else if ctx.basic_auth {
-                    if let Ok(username) = authenticate(&headers) {
-                        username
-                    } else {
-                        return Err(Error::Unauthorized);
-                    }
-                } else {
-                    return Err(Error::Unauthorized);
-                }
-            } else {
+            if !ctx.git_receive_pack {
                 return Err(Error::ServiceUnavailable("git-receive-pack"));
             }
         }
-        // Other
-        _ => String::default(),
-    };
+        _ => {}
+    }
 
     let path = Path::new("/git").join(request);
     let authorized_peers = ctx.get_authorized_peers(&urn).await?;
     let authorized_ssh_keys = authorized_peers
         .iter()
-        .map(|p| base64::encode(p.as_public_key().as_ref()))
+        .filter_map(|p| match to_ssh_fingerprint(p) {
+            Ok(f) => Some(f),
+            Err(_) => None,
+        })
+        .map(base64::encode)
         .collect::<Vec<_>>();
 
     tracing::debug!("headers: {:?}", headers);
     tracing::debug!("namespace: {}", namespace);
     tracing::debug!("path: {:?}", path);
-    tracing::debug!("username: {:?}", username);
     tracing::debug!("method: {:?}", method.as_str());
     tracing::debug!("remote: {:?}", remote.to_string());
     tracing::debug!("authorized peers: {:?}", authorized_peers);
@@ -420,7 +388,7 @@ async fn git(
     // "The backend process sets GIT_COMMITTER_NAME to $REMOTE_USER and GIT_COMMITTER_EMAIL to
     // ${REMOTE_USER}@http.${REMOTE_ADDR}, ensuring that any reflogs created by git-receive-pack
     // contain some identifying information of the remote user who performed the push."
-    cmd.env("REMOTE_USER", username);
+    cmd.env("REMOTE_USER", remote.ip().to_string());
     cmd.env("REMOTE_ADDR", remote.to_string());
     cmd.env("QUERY_STRING", query);
     // "The GIT_HTTP_EXPORT_ALL environmental variable may be passed to git-http-backend to bypass
@@ -531,7 +499,7 @@ async fn recover(err: Rejection) -> Result<Box<dyn Reply>, std::convert::Infalli
     } else if let Some(error) = err.find::<Error>() {
         tracing::error!("{}", error);
 
-        if let Error::Unauthorized = error {
+        if let Error::Unauthorized(_) = error {
             return Ok(Box::new(reply::with_header(
                 reply::with_status(String::default(), http::StatusCode::UNAUTHORIZED),
                 http::header::WWW_AUTHENTICATE,
@@ -553,4 +521,21 @@ fn gen_random_string() -> String {
         .take(12)
         .map(char::from)
         .collect()
+}
+
+/// Get the SSH key fingerprint from a peer id.
+fn to_ssh_fingerprint(peer_id: &PeerId) -> Result<Vec<u8>, std::io::Error> {
+    use byteorder::{BigEndian, WriteBytesExt};
+    use sha2::Digest;
+
+    let mut buf = Vec::new();
+    let name = b"ssh-ed25519";
+    let key = peer_id.as_public_key().as_ref();
+
+    buf.write_u32::<BigEndian>(name.len() as u32)?;
+    buf.extend_from_slice(name);
+    buf.write_u32::<BigEndian>(key.len() as u32)?;
+    buf.extend_from_slice(key);
+
+    Ok(sha2::Sha256::digest(&buf).to_vec())
 }

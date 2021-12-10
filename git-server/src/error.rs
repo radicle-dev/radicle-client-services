@@ -32,11 +32,11 @@ pub enum Error {
     FailedCertificateVerification,
 
     /// Unauthorized.
-    #[error("unauthorized")]
-    Unauthorized,
+    #[error("unauthorized: {0}")]
+    Unauthorized(&'static str),
 
     /// Namespace not found.
-    #[error("namespace does not exist;")]
+    #[error("namespace does not exist")]
     NamespaceNotFound,
 
     /// Reference not found.

@@ -26,7 +26,6 @@ use envconfig::Envconfig;
 use git2::{Oid, Repository};
 use librad::PeerId;
 use pgp::{types::KeyTrait, Deserializable};
-use sha2::Digest;
 
 use super::{
     types::{CertNonceStatus, ReceivePackEnv},
@@ -107,32 +106,39 @@ impl PreReceive {
     /// Authorizes each ref update, making sure the push certificate is signed by the same
     /// key as the owner/parent of the ref.
     pub fn authorize_ref_updates(&self) -> Result<(), Error> {
-        let remote_user = self.env.remote_user.as_ref().ok_or(Error::Unauthorized)?;
-
-        let key_fingerprint = self.env.cert_key.as_ref().ok_or(Error::Unauthorized)?;
+        // This is the fingerprint of the key used to sign the push certificate.
+        let key_fingerprint = self
+            .env
+            .cert_key
+            .as_ref()
+            .ok_or(Error::Unauthorized("push certificate is not available"))?;
         let key_fingerprint = key_fingerprint
             .strip_prefix("SHA256:")
-            .ok_or(Error::Unauthorized)?;
-        let key_fingerprint = base64::decode(key_fingerprint).map_err(|_| Error::Unauthorized)?;
+            .ok_or(Error::Unauthorized("key fingerprint is not a SHA-256 hash"))?;
+        let key_fingerprint = base64::decode(key_fingerprint)
+            .map_err(|_| Error::Unauthorized("key fingerprint is not valid"))?;
 
+        // We iterate over each ref update and make sure they are all authorized. We need
+        // to check that updates are only done to refs under `<project>/refs/remotes/<peer>`
+        // for any give `<project>`, where `<peer>` is the identity of the signer.
         for (refname, _, _) in self.updates.iter() {
+            // Get the peer/remote we are attempting to push to, and convert it to an SSH
+            // key fingerpint.
             let suffix = refname
                 .strip_prefix("refs/remotes/")
-                .ok_or(Error::Unauthorized)?;
-            let (remote, _) = suffix.split_once('/').ok_or(Error::Unauthorized)?;
+                .ok_or(Error::Unauthorized("ref name is not valid"))?;
+            let (remote, _) = suffix
+                .split_once('/')
+                .ok_or(Error::Unauthorized("ref name is not valid"))?;
+            let peer_id = PeerId::from_default_encoding(remote)
+                .map_err(|_| Error::Unauthorized("ref must include a valid peer-id"))?;
+            let peer_fingerprint = crate::to_ssh_fingerprint(&peer_id)?;
 
-            if remote != remote_user {
-                return Err(Error::Unauthorized);
-            }
-
-            let peer_id = PeerId::from_default_encoding(remote).map_err(|_| Error::Unauthorized)?;
-            let peer_fingerprint = to_ssh_fingerprint(&peer_id)?;
-
-            if &key_fingerprint[..] != &peer_fingerprint[..] {
-                return Err(Error::Unauthorized);
+            if key_fingerprint[..] != peer_fingerprint[..] {
+                return Err(Error::Unauthorized("signer does not match remote ref"));
             }
         }
-        return Ok(());
+        Ok(())
     }
 
     pub fn check_project_exists(&self) -> Result<bool, Error> {
@@ -193,10 +199,9 @@ impl PreReceive {
                 eprintln!("Key {} is authorized to push.", key);
                 return Ok(());
             }
-            eprintln!("Unauthorized key {}", key);
         }
 
-        Err(Error::Unauthorized)
+        Err(Error::Unauthorized("key is not in keyring"))
     }
 
     /// Return the parsed authorized GPG keys from the provided environmental variable.
@@ -255,20 +260,4 @@ impl PreReceive {
 
         Ok(false)
     }
-}
-
-/// Get the SSH key fingerprint from a peer id.
-fn to_ssh_fingerprint(peer_id: &PeerId) -> Result<Vec<u8>, std::io::Error> {
-    use byteorder::{BigEndian, WriteBytesExt};
-
-    let mut buf = Vec::new();
-    let name = b"ssh-ed25519";
-    let key = peer_id.as_public_key().as_ref();
-
-    buf.write_u32::<BigEndian>(name.len() as u32)?;
-    buf.extend_from_slice(name);
-    buf.write_u32::<BigEndian>(key.len() as u32)?;
-    buf.extend_from_slice(key);
-
-    Ok(sha2::Sha256::digest(&buf).to_vec())
 }
