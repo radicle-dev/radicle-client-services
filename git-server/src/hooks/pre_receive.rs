@@ -45,6 +45,8 @@ pub struct PreReceive {
     pub env: ReceivePackEnv,
     /// Ref updates.
     pub updates: Vec<(String, Oid, Oid)>,
+    /// Authorized keys as SSH key fingerprints.
+    pub authorized_keys: Vec<String>,
 }
 
 // use cert signer details default utility implementations.
@@ -69,7 +71,17 @@ impl PreReceive {
             updates.push((refname, old, new));
         }
 
-        Ok(Self { env, updates })
+        let authorized_keys = env
+            .authorized_keys
+            .clone()
+            .map(|k| k.split(',').map(|k| k.to_owned()).collect::<KeyRing>())
+            .unwrap_or_default();
+
+        Ok(Self {
+            env,
+            updates,
+            authorized_keys,
+        })
     }
 
     /// The main process used by `pre-receive` hook log
@@ -185,31 +197,20 @@ impl PreReceive {
         eprintln!("Authorizing...");
 
         if let Some(key) = &self.env.cert_key {
-            if self.env.authorized_keys.is_none() {
+            if self.authorized_keys.is_empty() {
                 // If we didn't explicitly say that certain keys only should be allowed, all
                 // keys are allowed. This is how we allow project creation to pass verification.
                 return Ok(());
             }
             eprintln!("Checking provided key {}...", key);
 
-            let authorized = self.authorized_keys()?;
-            if authorized.contains(key) {
+            if self.authorized_keys.contains(key) {
                 eprintln!("Key {} is authorized to push.", key);
                 return Ok(());
             }
         }
 
         Err(Error::Unauthorized("key is not in keyring"))
-    }
-
-    /// Return the parsed authorized SSH keys from the provided environmental variable.
-    pub fn authorized_keys(&self) -> Result<KeyRing, Error> {
-        Ok(self
-            .env
-            .authorized_keys
-            .clone()
-            .map(|k| k.split(',').map(|k| k.to_owned()).collect::<KeyRing>())
-            .unwrap_or_default())
     }
 
     /// Check the local repo .rad/keys/ directory for the GPG key matching the cert key
