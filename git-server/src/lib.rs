@@ -154,7 +154,7 @@ impl Context {
         Ok(())
     }
 
-    async fn get_authorized_peers(&self, urn: &Urn) -> Result<Vec<PeerId>, Error> {
+    async fn get_project_delegates(&self, urn: &Urn) -> Result<Vec<PeerId>, Error> {
         let storage = self.pool.get().await?;
         let read_only = &storage.read_only();
         let project = identities::project::get(read_only, urn)?;
@@ -347,14 +347,17 @@ async fn git(
     }
 
     let path = Path::new("/git").join(request);
-    let authorized_peers = ctx.get_authorized_peers(&urn).await?;
-    let authorized_ssh_keys = authorized_peers
+    let project_delegates = ctx.get_project_delegates(&urn).await?;
+    let project_delegates_encoded = project_delegates
         .iter()
         .filter_map(|p| match to_ssh_fingerprint(p) {
             Ok(f) => Some(f),
             Err(_) => None,
         })
-        .map(base64::encode)
+        .map(base64::encode);
+
+    let authorized_keys = project_delegates_encoded
+        .chain(ctx.authorized_keys.iter().cloned())
         .collect::<Vec<_>>();
 
     tracing::debug!("headers: {:?}", headers);
@@ -362,18 +365,15 @@ async fn git(
     tracing::debug!("path: {:?}", path);
     tracing::debug!("method: {:?}", method.as_str());
     tracing::debug!("remote: {:?}", remote.to_string());
-    tracing::debug!("authorized peers: {:?}", authorized_peers);
+    tracing::debug!("delegates: {:?}", project_delegates);
+    tracing::debug!("authorized keys: {:?}", authorized_keys);
 
     let mut cmd = Command::new("git");
 
     cmd.arg("http-backend");
 
-    // Set Authorized Keys for verifying GPG signatures against key IDs.
-    if !ctx.authorized_keys.is_empty() {
-        cmd.env("RADICLE_AUTHORIZED_GPG_KEYS", ctx.authorized_keys.join(","));
-    }
-    if !authorized_ssh_keys.is_empty() {
-        cmd.env("RADICLE_AUTHORIZED_SSH_KEYS", authorized_ssh_keys.join(","));
+    if !project_delegates.is_empty() {
+        cmd.env("RADICLE_AUTHORIZED_KEYS", authorized_keys.join(","));
     }
 
     if ctx.allow_unauthorized_keys {

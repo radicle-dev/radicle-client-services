@@ -185,17 +185,15 @@ impl PreReceive {
         eprintln!("Authorizing...");
 
         if let Some(key) = &self.env.cert_key {
-            if self.env.authorized_gpg_keys.is_none() && self.env.authorized_ssh_keys.is_none() {
+            if self.env.authorized_keys.is_none() {
                 // If we didn't explicitly say that certain keys only should be allowed, all
                 // keys are allowed. This is how we allow project creation to pass verification.
                 return Ok(());
             }
             eprintln!("Checking provided key {}...", key);
 
-            let ssh_keys = self.authorized_ssh_keys()?;
-            let gpg_keys = self.authorized_gpg_keys()?;
-
-            if ssh_keys.contains(key) || gpg_keys.contains(key) {
+            let authorized = self.authorized_keys()?;
+            if authorized.contains(key) {
                 eprintln!("Key {} is authorized to push.", key);
                 return Ok(());
             }
@@ -204,21 +202,11 @@ impl PreReceive {
         Err(Error::Unauthorized("key is not in keyring"))
     }
 
-    /// Return the parsed authorized GPG keys from the provided environmental variable.
-    pub fn authorized_gpg_keys(&self) -> Result<KeyRing, Error> {
-        Ok(self
-            .env
-            .authorized_gpg_keys
-            .clone()
-            .map(|k| k.split(',').map(|k| k.to_owned()).collect::<KeyRing>())
-            .unwrap_or_default())
-    }
-
     /// Return the parsed authorized SSH keys from the provided environmental variable.
-    pub fn authorized_ssh_keys(&self) -> Result<KeyRing, Error> {
+    pub fn authorized_keys(&self) -> Result<KeyRing, Error> {
         Ok(self
             .env
-            .authorized_ssh_keys
+            .authorized_keys
             .clone()
             .map(|k| k.split(',').map(|k| k.to_owned()).collect::<KeyRing>())
             .unwrap_or_default())

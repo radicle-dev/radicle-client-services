@@ -90,15 +90,11 @@ pub struct ReceivePackEnv {
     #[envconfig(from = "GIT_PUSH_CERT_NONCE_SLOP")]
     pub cert_nonce_slop: Option<String>,
 
-    /// comma delimited list of gpg key strings used for authorizing gpg identity
-    #[envconfig(from = "RADICLE_AUTHORIZED_GPG_KEYS")]
-    pub authorized_gpg_keys: Option<String>,
+    /// comma delimited list of SSH key fingerprints authorized for the push.
+    #[envconfig(from = "RADICLE_AUTHORIZED_KEYS")]
+    pub authorized_keys: Option<String>,
 
-    /// comma delimited list of ssh key strings used for authorizing ssh identity
-    #[envconfig(from = "RADICLE_AUTHORIZED_SSH_KEYS")]
-    pub authorized_ssh_keys: Option<String>,
-
-    /// allow unauthorized keys, ignores gpg certificate verification.
+    /// allow unauthorized keys, ignores push certificate verification.
     #[envconfig(from = "RADICLE_ALLOW_UNAUTHORIZED_KEYS")]
     pub allow_unauthorized_keys: Option<bool>,
 
