@@ -23,10 +23,6 @@ pub enum Error {
     #[error("backend error")]
     Backend,
 
-    /// Invalid authorization.
-    #[error("invalid authorization")]
-    InvalidAuthorization,
-
     /// Failed certificate verification.
     #[error("failed certification verification")]
     FailedCertificateVerification,
@@ -103,7 +99,7 @@ impl Error {
         match self {
             Error::UnsupportedContentEncoding(_) => http::StatusCode::NOT_IMPLEMENTED,
             Error::ServiceUnavailable(_) => http::StatusCode::SERVICE_UNAVAILABLE,
-            Error::InvalidAuthorization => http::StatusCode::BAD_REQUEST,
+            Error::Unauthorized(_) => http::StatusCode::UNAUTHORIZED,
             _ => http::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

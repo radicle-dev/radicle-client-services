@@ -51,6 +51,7 @@ impl Identity {
     }
 }
 
+/// Generate an identity file at the given path.
 pub fn generate(path: &Path) -> io::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;

@@ -51,7 +51,6 @@ pub struct Options {
 pub struct Context {
     root: PathBuf,
     git_receive_pack: bool,
-    basic_auth: bool,
     authorized_keys: Vec<String>,
     cert_nonce_seed: Option<String>,
     allow_unauthorized_keys: bool,
@@ -75,7 +74,6 @@ impl Context {
         Ok(Context {
             root: root_path.canonicalize()?,
             git_receive_pack: options.git_receive_pack,
-            basic_auth: false,
             authorized_keys: options.authorized_keys.clone(),
             cert_nonce_seed: options.cert_nonce_seed.clone(),
             allow_unauthorized_keys: options.allow_unauthorized_keys,
@@ -499,13 +497,6 @@ async fn recover(err: Rejection) -> Result<Box<dyn Reply>, std::convert::Infalli
     } else if let Some(error) = err.find::<Error>() {
         tracing::error!("{}", error);
 
-        if let Error::Unauthorized(_) = error {
-            return Ok(Box::new(reply::with_header(
-                reply::with_status(String::default(), http::StatusCode::UNAUTHORIZED),
-                http::header::WWW_AUTHENTICATE,
-                r#"Basic realm="radicle", charset="UTF-8""#,
-            )));
-        }
         error.status()
     } else {
         StatusCode::BAD_REQUEST
