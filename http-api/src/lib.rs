@@ -16,7 +16,7 @@ use either::Either;
 
 use radicle_daemon::librad::git::identities;
 use radicle_daemon::librad::git::storage::read::ReadOnly;
-use radicle_daemon::librad::git::types::{Reference, Single};
+use radicle_daemon::librad::git::types::{One, Reference, Single};
 use radicle_daemon::{git::types::Namespace, Paths, PeerId, Urn};
 use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
@@ -126,7 +126,7 @@ fn filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
         .boxed()
 }
 
-/// `GET /:project/blob/:sha/:path`
+/// `GET /:project/blob/:peerid/:sha/:path`
 fn blob_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     #[derive(serde::Deserialize)]
     struct Query {
@@ -137,30 +137,33 @@ fn blob_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Reject
         .map(move || ctx.clone())
         .and(path::param::<Urn>())
         .and(path("blob"))
-        .and(path::param::<String>())
+        .and(path::param::<PeerId>())
+        .and(path::param::<One>())
         .and(warp::query().map(|q: Query| q.highlight))
         .and(path::tail())
         .and_then(blob_handler)
 }
 
-/// `GET /:project/commits/:sha`
+/// `GET /:project/commits/:peerid/:sha`
 fn commits_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
         .map(move || ctx.clone())
         .and(path::param::<Urn>())
         .and(path("commits"))
-        .and(path::param::<String>())
+        .and(path::param::<PeerId>())
+        .and(path::param::<One>())
         .and(path::end())
         .and_then(commits_handler)
 }
 
-/// `GET /:project/readme/:sha`
+/// `GET /:project/readme/:peerid/:sha`
 fn readme_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
         .map(move || ctx.clone())
         .and(path::param::<Urn>())
         .and(path("readme"))
-        .and(path::param::<String>())
+        .and(path::param::<PeerId>())
+        .and(path::param::<One>())
         .and(path::end())
         .and_then(readme_handler)
 }
@@ -186,13 +189,14 @@ fn project_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rej
         .boxed()
 }
 
-/// `GET /:project/tree/:sha/:prefix`
+/// `GET /:project/tree/:peerid/:prefix`
 fn tree_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
         .map(move || ctx.clone())
         .and(path::param::<Urn>())
         .and(path("tree"))
-        .and(path::param::<String>())
+        .and(path::param::<PeerId>())
+        .and(path::param::<One>())
         .and(path::tail())
         .and_then(tree_handler)
 }
@@ -222,7 +226,8 @@ async fn root_handler() -> Result<impl Reply, Rejection> {
 async fn blob_handler(
     ctx: Context,
     project: Urn,
-    sha: String,
+    peer_id: PeerId,
+    sha: One,
     highlight: bool,
     path: warp::filters::path::Tail,
 ) -> Result<impl Reply, Rejection> {
@@ -231,11 +236,7 @@ async fn blob_handler(
     } else {
         None
     };
-    let reference = Reference::head(
-        Namespace::from(project),
-        None,
-        sha.try_into().map_err(|_| Error::NotFound)?,
-    );
+    let reference = Reference::head(Namespace::from(project), peer_id, sha);
     let blob = browse(reference, ctx.paths, |browser| {
         radicle_source::blob::highlighting::blob::<PeerId>(browser, None, path.as_str(), theme)
     })
@@ -245,12 +246,13 @@ async fn blob_handler(
     Ok(warp::reply::json(&blob))
 }
 
-async fn commits_handler(ctx: Context, project: Urn, sha: String) -> Result<impl Reply, Rejection> {
-    let reference = Reference::head(
-        Namespace::from(project),
-        None,
-        sha.try_into().map_err(|_| Error::NotFound)?,
-    );
+async fn commits_handler(
+    ctx: Context,
+    project: Urn,
+    peer_id: PeerId,
+    sha: One,
+) -> Result<impl Reply, Rejection> {
+    let reference = Reference::head(Namespace::from(project), peer_id, sha);
     let commits = browse(reference, ctx.paths, |mut browser| {
         radicle_source::commits::<PeerId>(&mut browser, None)
     })
@@ -263,12 +265,13 @@ async fn commits_handler(ctx: Context, project: Urn, sha: String) -> Result<impl
     Ok(warp::reply::json(&response))
 }
 
-async fn readme_handler(ctx: Context, project: Urn, sha: String) -> Result<impl Reply, Rejection> {
-    let reference = Reference::head(
-        Namespace::from(project),
-        None,
-        sha.try_into().map_err(|_| Error::NotFound)?,
-    );
+async fn readme_handler(
+    ctx: Context,
+    project: Urn,
+    peer_id: PeerId,
+    sha: One,
+) -> Result<impl Reply, Rejection> {
+    let reference = Reference::head(Namespace::from(project), peer_id, sha);
     let paths = &[
         "README",
         "README.md",
@@ -332,14 +335,11 @@ async fn project_handler(ctx: Context, urn: Urn) -> Result<Json, Rejection> {
 async fn tree_handler(
     ctx: Context,
     project: Urn,
-    sha: String,
+    peer_id: PeerId,
+    sha: One,
     path: warp::filters::path::Tail,
 ) -> Result<impl Reply, Rejection> {
-    let reference = Reference::head(
-        Namespace::from(project),
-        None,
-        sha.try_into().map_err(|_| Error::NotFound)?,
-    );
+    let reference = Reference::head(Namespace::from(project), peer_id, sha);
     let (tree, stats) = browse(reference, ctx.paths, |mut browser| {
         Ok((
             radicle_source::tree::<PeerId>(&mut browser, None, Some(path.as_str().to_owned()))?,
