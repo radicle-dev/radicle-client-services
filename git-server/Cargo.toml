@@ -41,6 +41,7 @@ hex = { version = "0.4.3", optional = true }
 rand = "0.8.4"
 
 [features]
+default = ["hooks"]
 gcp = ["shared/gcp"]
 hooks = ["envconfig", "pgp", "hex"]
 
