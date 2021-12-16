@@ -2,6 +2,7 @@
 mod error;
 mod project;
 
+use std::collections::HashMap;
 use std::convert::TryFrom as _;
 use std::convert::TryInto as _;
 use std::net;
@@ -13,10 +14,9 @@ use warp::reply;
 use warp::reply::Json;
 use warp::{self, filters::BoxedFilter, path, Filter, Rejection, Reply};
 
-use either::Either;
-
 use radicle_daemon::librad::git::identities;
 use radicle_daemon::librad::git::storage::read::ReadOnly;
+use radicle_daemon::librad::git::tracking;
 use radicle_daemon::librad::git::types::{One, Reference, Single};
 use radicle_daemon::{git::types::Namespace, Paths, PeerId, Urn};
 use radicle_source::surf::file_system::Path;
@@ -122,12 +122,14 @@ fn filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
         .or(commits_filter(ctx.clone()))
         .or(project_filter(ctx.clone()))
         .or(tree_filter(ctx.clone()))
+        .or(remotes_filter(ctx.clone()))
+        .or(remote_filter(ctx.clone()))
         .or(blob_filter(ctx.clone()))
         .or(readme_filter(ctx))
         .boxed()
 }
 
-/// `GET /:project/blob/:peerid/:sha/:path`
+/// `GET /:project/blob/:sha/:path`
 fn blob_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     #[derive(serde::Deserialize)]
     struct Query {
@@ -138,32 +140,50 @@ fn blob_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Reject
         .map(move || ctx.clone())
         .and(path::param::<Urn>())
         .and(path("blob"))
-        .and(path::param::<PeerId>())
         .and(path::param::<One>())
         .and(warp::query().map(|q: Query| q.highlight))
         .and(path::tail())
         .and_then(blob_handler)
 }
 
-/// `GET /:project/commits/:peerid/:sha`
+/// `GET /:project/remotes`
+fn remotes_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::get()
+        .map(move || ctx.clone())
+        .and(path::param::<Urn>())
+        .and(path("remotes"))
+        .and(path::end())
+        .and_then(remotes_handler)
+}
+
+/// `GET /:project/remotes/:peer`
+fn remote_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::get()
+        .map(move || ctx.clone())
+        .and(path::param::<Urn>())
+        .and(path("remotes"))
+        .and(path::param::<PeerId>())
+        .and(path::end())
+        .and_then(remote_handler)
+}
+
+/// `GET /:project/commits/:sha`
 fn commits_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
         .map(move || ctx.clone())
         .and(path::param::<Urn>())
         .and(path("commits"))
-        .and(path::param::<PeerId>())
         .and(path::param::<One>())
         .and(path::end())
         .and_then(commits_handler)
 }
 
-/// `GET /:project/readme/:peerid/:sha`
+/// `GET /:project/readme/:sha`
 fn readme_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
         .map(move || ctx.clone())
         .and(path::param::<Urn>())
         .and(path("readme"))
-        .and(path::param::<PeerId>())
         .and(path::param::<One>())
         .and(path::end())
         .and_then(readme_handler)
@@ -190,13 +210,12 @@ fn project_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rej
         .boxed()
 }
 
-/// `GET /:project/tree/:peerid/:prefix`
+/// `GET /:project/tree/:prefix`
 fn tree_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
         .map(move || ctx.clone())
         .and(path::param::<Urn>())
         .and(path("tree"))
-        .and(path::param::<PeerId>())
         .and(path::param::<One>())
         .and(path::tail())
         .and_then(tree_handler)
@@ -227,7 +246,6 @@ async fn root_handler() -> Result<impl Reply, Rejection> {
 async fn blob_handler(
     ctx: Context,
     project: Urn,
-    peer_id: PeerId,
     sha: One,
     highlight: bool,
     path: warp::filters::path::Tail,
@@ -237,42 +255,77 @@ async fn blob_handler(
     } else {
         None
     };
-    let reference = Reference::head(Namespace::from(project), peer_id, sha);
+    let reference = Reference::head(Namespace::from(project), None, sha);
     let blob = browse(reference, ctx.paths, |browser| {
         radicle_source::blob::highlighting::blob::<PeerId>(browser, None, path.as_str(), theme)
     })
-    .await
-    .map_err(error::Error::from)?;
+    .await?;
 
     Ok(warp::reply::json(&blob))
 }
 
-async fn commits_handler(
+async fn remotes_handler(ctx: Context, project: Urn) -> Result<impl Reply, Rejection> {
+    let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
+    let tracked_peers = tracking::tracked(&storage, &project).map_err(|_| Error::NotFound)?;
+    let response = tracked_peers.collect::<Vec<_>>();
+
+    Ok(warp::reply::json(&response))
+}
+
+async fn remote_handler(
     ctx: Context,
     project: Urn,
     peer_id: PeerId,
-    sha: One,
 ) -> Result<impl Reply, Rejection> {
-    let reference = Reference::head(Namespace::from(project), peer_id, sha);
+    let meta = get_project_metadata(&project, &ctx.paths)?;
+
+    let repo = git::Repository::new(ctx.paths.git_dir().to_owned()).map_err(Error::from)?;
+    let mut browser = git::Browser::new_with_namespace(
+        &repo,
+        &git::Namespace::try_from(project.encode_id().as_str()).map_err(Error::from)?,
+        git::Branch::local(&meta.default_branch),
+    )
+    .map_err(Error::from)?;
+
+    let branches = browser
+        .list_branches(git::RefScope::Remote {
+            name: Some(peer_id.default_encoding()),
+        })
+        .map_err(Error::from)?
+        .iter()
+        .filter_map(|branch| {
+            if branch.name.to_string().starts_with("rad/") {
+                return None;
+            }
+            browser
+                .branch(remote_branch(&branch.name.to_string(), &peer_id))
+                .ok()?;
+            let history = browser.get();
+            Some((branch.name.to_string(), history.first().id.to_string()))
+        })
+        .collect::<HashMap<_, _>>();
+
+    let response = json!({ "heads": &branches });
+
+    Ok(warp::reply::json(&response))
+}
+
+async fn commits_handler(ctx: Context, project: Urn, sha: One) -> Result<impl Reply, Rejection> {
+    let reference = Reference::head(Namespace::from(project), None, sha);
     let commits = browse(reference, ctx.paths, |browser| {
         radicle_source::commits::<PeerId>(browser, None)
     })
     .await?;
-
     let response = json!({
         "headers": &commits.headers,
         "stats": &commits.stats,
     });
+
     Ok(warp::reply::json(&response))
 }
 
-async fn readme_handler(
-    ctx: Context,
-    project: Urn,
-    peer_id: PeerId,
-    sha: One,
-) -> Result<impl Reply, Rejection> {
-    let reference = Reference::head(Namespace::from(project), peer_id, sha);
+async fn readme_handler(ctx: Context, project: Urn, sha: One) -> Result<impl Reply, Rejection> {
+    let reference = Reference::head(Namespace::from(project), None, sha);
     let paths = &[
         "README",
         "README.md",
@@ -293,8 +346,7 @@ async fn readme_handler(
             Path::try_from("README").unwrap(),
         ))
     })
-    .await
-    .map_err(error::Error::from)?;
+    .await?;
 
     Ok(warp::reply::json(&blob))
 }
@@ -322,8 +374,10 @@ async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
             })
             .transpose()
         })
-        .collect::<Result<Vec<_>, _>>();
-    Ok(warp::reply::json(&projects.unwrap()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(Error::from)?;
+
+    Ok(warp::reply::json(&projects))
 }
 
 async fn project_handler(ctx: Context, urn: Urn) -> Result<Json, Rejection> {
@@ -336,11 +390,10 @@ async fn project_handler(ctx: Context, urn: Urn) -> Result<Json, Rejection> {
 async fn tree_handler(
     ctx: Context,
     project: Urn,
-    peer_id: PeerId,
     sha: One,
     path: warp::filters::path::Tail,
 ) -> Result<impl Reply, Rejection> {
-    let reference = Reference::head(Namespace::from(project), peer_id, sha);
+    let reference = Reference::head(Namespace::from(project), None, sha);
     let (tree, stats) = browse(reference, ctx.paths, |browser| {
         Ok((
             radicle_source::tree::<PeerId>(browser, None, Some(path.as_str().to_owned()))?,
@@ -348,13 +401,13 @@ async fn tree_handler(
         ))
     })
     .await?;
-
     let response = json!({
         "path": &tree.path,
         "entries": &tree.entries,
         "info": &tree.info,
         "stats": &stats,
     });
+
     Ok(warp::reply::json(&response))
 }
 
@@ -371,32 +424,26 @@ where
     )
     .map_err(Error::from)?;
 
-    let commit = git::Oid::from_str(reference.name.as_str())?;
+    let revision: git::Rev = match git::Oid::from_str(reference.name.as_str()) {
+        Ok(oid) => oid.try_into().map_err(|_| Error::NotFound)?,
+        Err(_) => remote_branch(
+            &reference.name.to_string(),
+            &reference.remote.ok_or(Error::NotFound)?,
+        )
+        .try_into()
+        .map_err(|_| Error::NotFound)?,
+    };
     let repo = git::Repository::new(paths.git_dir().to_owned())?;
-    let mut browser = git::Browser::new_with_namespace(&repo, &namespace, commit)?;
+    let mut browser = git::Browser::new_with_namespace(&repo, &namespace, revision)?;
 
     Ok(callback(&mut browser)?)
 }
 
 fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
-    let storage = ReadOnly::open(&paths)?;
-    let project = identities::project::get(&storage, &urn)?.ok_or(Error::NotFound)?;
-
-    let remote = project
-        .delegations()
-        .iter()
-        .flat_map(|either| match either {
-            Either::Left(pk) => Either::Left(std::iter::once(PeerId::from(*pk))),
-            Either::Right(indirect) => {
-                Either::Right(indirect.delegations().iter().map(|pk| PeerId::from(*pk)))
-            }
-        })
-        .next()
-        .ok_or(Error::MissingDelegations)?;
-
-    let meta: project::Metadata = project.try_into()?;
+    let meta = get_project_metadata(&urn, &paths)?;
     let repo = git::Repository::new(paths.git_dir().to_owned())?;
     let namespace = git::namespace::Namespace::try_from(urn.encode_id().as_str())?;
+    let delegate = meta.delegates.first().ok_or(Error::MissingDelegations)?;
     let browser = git::Browser::new_with_namespace(
         &repo,
         &namespace,
@@ -406,10 +453,7 @@ fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
         git::Browser::new_with_namespace(
             &repo,
             &namespace,
-            git::Branch::remote(
-                &format!("heads/{}", meta.default_branch),
-                &remote.default_encoding(),
-            ),
+            remote_branch(&meta.default_branch, delegate),
         )
     })?;
     let history = browser.get();
@@ -419,4 +463,21 @@ fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
         meta,
         head: head.id.to_string(),
     })
+}
+
+fn get_project_metadata(urn: &Urn, paths: &Paths) -> Result<project::Metadata, Error> {
+    let storage = ReadOnly::open(paths)?;
+    let project = identities::project::get(&storage, urn)?.ok_or(Error::NotFound)?;
+    let meta: project::Metadata = project.try_into()?;
+
+    Ok(meta)
+}
+
+fn remote_branch(branch_name: &str, peer_id: &PeerId) -> git::Branch {
+    // NOTE<sebastinez>: We should be able to pass simply a branch name without heads/ and be able to query that later.
+    // Needs work on radicle_surf I assume.
+    git::Branch::remote(
+        &format!("heads/{}", branch_name),
+        &peer_id.default_encoding(),
+    )
 }

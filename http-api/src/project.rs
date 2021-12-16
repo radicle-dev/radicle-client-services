@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 use std::convert::TryFrom;
 
-use radicle_daemon::Urn;
+use either::Either;
+use radicle_daemon::{PeerId, Urn};
 use serde::{Deserialize, Serialize};
 
 use crate::error;
@@ -28,6 +29,8 @@ pub struct Metadata {
     pub default_branch: String,
     /// List of maintainers.
     pub maintainers: HashSet<Urn>,
+    /// List of delegates.
+    pub delegates: Vec<PeerId>,
 }
 
 impl TryFrom<radicle_daemon::Project> for Metadata {
@@ -47,6 +50,16 @@ impl TryFrom<radicle_daemon::Project> for Metadata {
             .clone()
             .ok_or(error::Error::MissingDefaultBranch)?
             .to_string();
+        let delegates = project
+            .delegations()
+            .iter()
+            .flat_map(|either| match either {
+                Either::Left(pk) => Either::Left(std::iter::once(PeerId::from(*pk))),
+                Either::Right(indirect) => {
+                    Either::Right(indirect.delegations().iter().map(|pk| PeerId::from(*pk)))
+                }
+            })
+            .collect::<Vec<PeerId>>();
 
         Ok(Self {
             name: subject.name.to_string(),
@@ -56,6 +69,7 @@ impl TryFrom<radicle_daemon::Project> for Metadata {
                 .map_or_else(|| "".into(), |desc| desc.to_string()),
             default_branch,
             maintainers,
+            delegates,
         })
     }
 }
