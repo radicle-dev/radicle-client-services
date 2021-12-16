@@ -1,5 +1,5 @@
 # Build
-FROM rustlang/rust:nightly-slim@sha256:54296ad56b743b198e020bff1777995f83746fb7cd938847c2d4fa62f8bf630f as build
+FROM rust:1.57.0-slim@sha256:43d8c9a7e8f0784372a4c0009b064b9f40051f4f950c7c96b9650ad8b445add4 as build
 
 RUN apt-get update && apt-get install -y pkg-config libssl-dev cmake
 
