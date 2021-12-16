@@ -6,8 +6,6 @@
 //! The org node can be configured to listen to any number of orgs, or *all*
 //! orgs.
 
-#![feature(box_patterns)]
-
 use anyhow::Context;
 use ethers::abi::Address;
 use ethers::prelude::*;
@@ -69,8 +67,10 @@ pub struct Options {
 #[derive(serde::Deserialize, Debug)]
 struct Project {
     #[serde(deserialize_with = "self::deserialize_timestamp")]
+    #[allow(dead_code)]
     timestamp: u64,
     anchor: Anchor,
+    #[allow(dead_code)]
     org: Org,
 }
 
@@ -116,11 +116,13 @@ impl Project {
 struct Anchor {
     #[serde(rename(deserialize = "objectId"))]
     object_id: String,
+    #[allow(dead_code)]
     multihash: String,
 }
 
 #[derive(serde::Deserialize, Debug)]
 struct Org {
+    #[allow(dead_code)]
     id: OrgId,
 }
 

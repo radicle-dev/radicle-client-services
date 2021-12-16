@@ -1,3 +1,4 @@
+#![allow(clippy::if_same_then_else)]
 mod error;
 mod project;
 
@@ -253,8 +254,8 @@ async fn commits_handler(
     sha: One,
 ) -> Result<impl Reply, Rejection> {
     let reference = Reference::head(Namespace::from(project), peer_id, sha);
-    let commits = browse(reference, ctx.paths, |mut browser| {
-        radicle_source::commits::<PeerId>(&mut browser, None)
+    let commits = browse(reference, ctx.paths, |browser| {
+        radicle_source::commits::<PeerId>(browser, None)
     })
     .await?;
 
@@ -340,9 +341,9 @@ async fn tree_handler(
     path: warp::filters::path::Tail,
 ) -> Result<impl Reply, Rejection> {
     let reference = Reference::head(Namespace::from(project), peer_id, sha);
-    let (tree, stats) = browse(reference, ctx.paths, |mut browser| {
+    let (tree, stats) = browse(reference, ctx.paths, |browser| {
         Ok((
-            radicle_source::tree::<PeerId>(&mut browser, None, Some(path.as_str().to_owned()))?,
+            radicle_source::tree::<PeerId>(browser, None, Some(path.as_str().to_owned()))?,
             browser.get_stats()?,
         ))
     })

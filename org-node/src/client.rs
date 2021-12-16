@@ -6,7 +6,8 @@ use futures::{future::FutureExt as _, select, stream::StreamExt as _};
 use thiserror::Error;
 
 use librad::{
-    git::{identities, refs, replication, storage, storage::fetcher, tracking},
+    git,
+    git::{identities, refs, storage, storage::fetcher, tracking},
     net::{
         discovery::{self, Discovery as _},
         peer::{self, event::upstream::Gossip, Peer, PeerInfo, ProtocolEvent},
@@ -17,7 +18,7 @@ use librad::{
             gossip::{Payload, Rev},
             membership,
         },
-        Network,
+        replication, Network,
     },
     paths::Paths,
 };
@@ -56,7 +57,7 @@ pub enum Error {
     Identities(#[from] Box<identities::Error>),
 
     #[error(transparent)]
-    Replication(#[from] replication::Error),
+    Replication(#[from] git::replication::Error),
 
     #[error("failed to set project head: {0}")]
     SetHead(Box<dyn std::error::Error + Send + Sync + 'static>),
@@ -196,10 +197,7 @@ impl Client {
     /// Run the client. This function runs indefinitely until a fatal error occurs.
     pub async fn run(self, rt: tokio::runtime::Handle, ws_tx: UnboundedSender<WsEvent>) {
         let storage = peer::config::Storage {
-            protocol: peer::config::ProtocolStorage {
-                fetch_slot_wait_timeout: Default::default(),
-                pool_size: 4,
-            },
+            protocol: peer::config::ProtocolStorage { pool_size: 4 },
             user: peer::config::UserStorage { pool_size: 4 },
         };
         let membership = membership::Params::default();
@@ -213,7 +211,6 @@ impl Client {
                 membership,
                 network: Network::Main,
                 replication: replication::Config::default(),
-                fetch: Default::default(),
                 rate_limits: Default::default(),
             },
             storage,
@@ -328,7 +325,8 @@ impl Client {
 
                     let peer_id = peer_info.peer_id;
                     let seen_addrs = peer_info.seen_addrs.to_vec();
-                    let cfg = api.protocol_config().replication;
+                    let cfg = git::replication::Config::default();
+
                     tracing::info!(target: "org-node", "Fetching tracked project {} for peer {}", urn, peer_id);
 
                     match api
@@ -339,9 +337,10 @@ impl Client {
                         })
                         .await
                     {
+                        // Check if the response is an error and return early if so.
                         Ok(Err(err)) => {
-                            // Check if the response is an error and return early if so.
                             tracing::error!(target: "org-node", "Failed to replicate {} from {}: {}", urn, peer_id, err);
+
                             ack.send(Err(err)).ok();
                             continue;
                         }
@@ -414,77 +413,123 @@ impl Client {
         allow_unknown_peers: bool,
     ) {
         tracing::info!(target: "org-node", "Spawning Protocol Event Listener");
-        api.subscribe().for_each(|incoming| async {
-            match incoming {
-                Err(e) => {
-                    panic!("Protocol event stream is unavailable, received error: {}", e);
+
+        api.subscribe()
+            .for_each(|incoming| async {
+                match incoming {
+                    Err(e) => {
+                        panic!(
+                            "Protocol event stream is unavailable, received error: {}",
+                            e
+                        );
+                    }
+                    Ok(ProtocolEvent::Gossip(gossip)) => {
+                        Self::handle_gossip(
+                            *gossip,
+                            &known_peers,
+                            allow_unknown_peers,
+                            &peer_tx,
+                            &ws_tx,
+                            &api,
+                            &paths,
+                        )
+                        .await;
+                    }
+                    Ok(_) => {
+                        // Non-gossip messages are ignored.
+                    }
                 }
-                // Check if the event payload rev matches the current project head, if not
-                // we want to set the head.
-                Ok(ProtocolEvent::Gossip(box Gossip::Put {
-                    payload: Payload { urn, .. },
-                    result: Applied(Payload {rev: Some(Rev::Git(oid)), origin: Some(origin), .. }),
-                    ..
-                })) => {
-                    tracing::info!(target: "org-node", "Applied revision update for urn {}, oid {}", urn, oid);
-                    if let Ok(Some(Head { branch, remote })) =
-                            Client::get_project_head(&urn, &api).await
-                        {
-                            // need to assert that the rev was signed by the maintainer of the project.
-                            // TODO: Ideally, we need an ability to update the head when a specified peer publishes a new revision.
-                            // This is needed in a `multi-maintainer` project, but currently all projects are singly maintained.
-                            if origin.default_encoding() == remote {
-                                if let Err(e) = Client::set_head(&urn, &remote, &branch, &paths) {
-                                    tracing::error!(target: "org-node", "Error setting head: {}", e);
-                                }
-                                // Broadcast applied gossip event to websocket clients
-                                if let Err(e) = ws_tx.send(WsEvent::UpdatedRef {
-                                    oid,
-                                    urn,
-                                    peer: origin,
-                                }) {
-                                    tracing::error!(target: "org-node", "Failed to send update refs notification to web socket clients: {}", e);
-                                }
-                            }
+            })
+            .await;
+    }
+
+    async fn handle_gossip(
+        gossip: librad::net::peer::event::upstream::Gossip<
+            std::net::SocketAddr,
+            librad::net::protocol::gossip::Payload,
+        >,
+        known_peers: &[PeerId],
+        allow_unknown_peers: bool,
+        peer_tx: &mpsc::Sender<TrackPeerTransmitter>,
+        ws_tx: &UnboundedSender<WsEvent>,
+        api: &Peer<Signer>,
+        paths: &Paths,
+    ) {
+        match gossip {
+            // Check if the event payload rev matches the current project head, if not
+            // we want to set the head.
+            Gossip::Put {
+                payload: Payload { urn, .. },
+                result:
+                    Applied(Payload {
+                        rev: Some(Rev::Git(oid)),
+                        origin: Some(origin),
+                        ..
+                    }),
+                ..
+            } => {
+                tracing::info!(target: "org-node", "Applied revision update for urn {}, oid {}", urn, oid);
+                if let Ok(Some(Head { branch, remote })) = Client::get_project_head(&urn, api).await
+                {
+                    // need to assert that the rev was signed by the maintainer of the project.
+                    // TODO: Ideally, we need an ability to update the head when a specified peer publishes a new revision.
+                    // This is needed in a `multi-maintainer` project, but currently all projects are singly maintained.
+                    if origin.default_encoding() == remote {
+                        if let Err(e) = Client::set_head(&urn, &remote, &branch, paths) {
+                            tracing::error!(target: "org-node", "Error setting head: {}", e);
                         }
-                }
-                Ok(ProtocolEvent::Gossip(box Gossip::Put {
-                    payload: Payload { urn, rev: Some(Rev::Git(oid)), origin: Some(peer_id) },
-                    provider: peer,
-                    result: Uninteresting,
-                })) => {
-                    // Exit early if the peer ID is unknown and `allow_unknown_peers` is false
-                    if !known_peers.contains(&peer.peer_id) && !allow_unknown_peers {
-                        tracing::debug!(target: "org-node", "Ignoring tracking peer: {}", peer.peer_id);
-                        return;
-                    }
-
-                    // Send notification to track peers process;
-                    if let Err(e) = Client::track_peer_handler(
-                        peer_tx.clone(),
-                        TrackPeer {
-                            api: api.clone(),
-                            urn: urn.clone(),
-                            peer_info: peer,
-                            paths: paths.clone(),
-                        },
-                    )
-                    .await
-                    {
-                        tracing::error!(target: "org-node", "Error tracking project peer: {}", e);
-                    }
-
-                    if let Err(e) = ws_tx.send(WsEvent::UpdatedRef {
-                        oid,
-                        urn,
-                        peer: peer_id,
-                    }) {
-                        tracing::error!(target: "org-node", "Failed to send update refs notification to web socket clients: {}", e);
+                        // Broadcast applied gossip event to websocket clients
+                        if let Err(e) = ws_tx.send(WsEvent::UpdatedRef {
+                            oid,
+                            urn,
+                            peer: origin,
+                        }) {
+                            tracing::error!(target: "org-node", "Failed to send update refs notification to web socket clients: {}", e);
+                        }
                     }
                 }
-                _ => {}
             }
-        }).await;
+            Gossip::Put {
+                payload:
+                    Payload {
+                        urn,
+                        rev: Some(Rev::Git(oid)),
+                        origin: Some(peer_id),
+                    },
+                provider: peer,
+                result: Uninteresting,
+            } => {
+                // Exit early if the peer ID is unknown and `allow_unknown_peers` is false
+                if !known_peers.contains(&peer.peer_id) && !allow_unknown_peers {
+                    tracing::debug!(target: "org-node", "Ignoring tracking peer: {}", peer.peer_id);
+                    return;
+                }
+
+                // Send notification to track peers process;
+                if let Err(e) = Client::track_peer_handler(
+                    peer_tx.clone(),
+                    TrackPeer {
+                        api: api.clone(),
+                        urn: urn.clone(),
+                        peer_info: peer,
+                        paths: paths.clone(),
+                    },
+                )
+                .await
+                {
+                    tracing::error!(target: "org-node", "Error tracking project peer: {}", e);
+                }
+
+                if let Err(e) = ws_tx.send(WsEvent::UpdatedRef {
+                    oid,
+                    urn,
+                    peer: peer_id,
+                }) {
+                    tracing::error!(target: "org-node", "Failed to send update refs notification to web socket clients: {}", e);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Handle user requests.
@@ -666,10 +711,10 @@ impl Client {
 
         match &updated {
             refs::Updated::Updated { refs, at } => {
-                tracing::debug!(target: "org-node", "Signed refs for {} updated: heads={:?} at={}", urn, refs.heads, at);
+                tracing::debug!(target: "org-node", "Signed refs for {} updated: heads={:?} at={}", urn, refs.heads().collect::<Vec<_>>(), at);
             }
             refs::Updated::Unchanged { refs, at } => {
-                tracing::debug!(target: "org-node", "Signed refs for {} unchanged: heads={:?} at={}", urn, refs.heads, at);
+                tracing::debug!(target: "org-node", "Signed refs for {} unchanged: heads={:?} at={}", urn, refs.heads().collect::<Vec<_>>(), at);
             }
             refs::Updated::ConcurrentlyModified => {
                 tracing::warn!(target: "org-node", "Signed refs for {} concurrently modified", urn);
@@ -742,13 +787,14 @@ impl Client {
         peer_id: PeerId,
         seen_addrs: Vec<SocketAddr>,
         storage: &storage::Storage,
-        cfg: replication::Config,
+        cfg: git::replication::Config,
     ) -> Result<(), Error> {
+        let fetchers = git::storage::fetcher::Fetchers::default();
         let fetcher = fetcher::PeerToPeer::new(urn.clone(), peer_id, seen_addrs)
-            .build(storage)
+            .build(storage, &fetchers)
             .map_err(|e| Error::Fetcher(e.into()))??;
 
-        let result = replication::replicate(storage, fetcher, cfg, None)?;
+        let result = git::replication::replicate(storage, fetcher, cfg, None)?;
         tracing::debug!(target: "org-node", "Replication of {} succeeded: {:?}", urn, result);
 
         Ok(())
