@@ -23,7 +23,7 @@ jobs:
             await github.rest.actions.createWorkflowDispatch({
                 owner: 'radicle-dev',
                 repo: 'radicle-client-services-e2e-tests',
-                workflow_id: 'workflows/e2e-tests.yaml',
+                workflow_id: 'e2e-tests.yml',
                 ref: 'main',
                 inputs: { client_services_commit_sha: GITHUB_SHA }
             });
