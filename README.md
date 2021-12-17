@@ -85,11 +85,8 @@ be specified by separating them with a `,`.
 Nodes on the Radicle peer-to-peer network are identified with a *Peer ID*,
 which is essentially an encoding of a public key. This identity needs to
 be specified on the CLI via the `--identity` flag, similar to SSH's `-i`
-flag. Specifically, the path to the private key file should be used.
-
-To generate a new private key, the `radicle-keyutil` utility may be used. The
-key may then be copied via `scp` to the remote host where the org seed service
-is running.
+flag. Specifically, the path to the private key file should be used. If
+no private key is found at that path, a new key will be generated.
 
 #### JSON-RPC URL
 
