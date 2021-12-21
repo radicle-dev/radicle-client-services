@@ -20,6 +20,10 @@ pub enum Error {
     #[error("missing delegations in project")]
     MissingDelegations,
 
+    /// Invalid branch name.
+    #[error("invalid branch name")]
+    BranchName,
+
     /// The entity was not found.
     #[error("entity not found")]
     NotFound,

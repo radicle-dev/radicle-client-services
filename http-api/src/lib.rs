@@ -21,6 +21,7 @@ use radicle_daemon::librad::git::types::{One, Reference, Single};
 use radicle_daemon::{git::types::Namespace, Paths, PeerId, Urn};
 use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
+use radicle_source::surf::vcs::git::RepositoryRef;
 
 use crate::project::Info;
 
@@ -277,33 +278,32 @@ async fn remote_handler(
     project: Urn,
     peer_id: PeerId,
 ) -> Result<impl Reply, Rejection> {
-    let meta = get_project_metadata(&project, &ctx.paths)?;
+    let repo = git2::Repository::open_bare(ctx.paths.git_dir()).map_err(Error::from)?;
+    // This is necessary to get any references to show up in the later calls. Go figure.
+    let _ = repo.references().map_err(Error::from)?;
 
-    let repo = git::Repository::new(ctx.paths.git_dir().to_owned()).map_err(Error::from)?;
-    let mut browser = git::Browser::new_with_namespace(
-        &repo,
-        &git::Namespace::try_from(project.encode_id().as_str()).map_err(Error::from)?,
-        git::Branch::local(&meta.default_branch),
-    )
-    .map_err(Error::from)?;
+    let namespace = project.encode_id();
+    let remote = peer_id.default_encoding();
 
-    let branches = browser
-        .list_branches(git::RefScope::Remote {
-            name: Some(peer_id.default_encoding()),
-        })
+    repo.set_namespace(&namespace).map_err(Error::from)?;
+
+    let branches = RepositoryRef::from(&repo)
+        .list_branches(git::RefScope::Remote { name: Some(remote) })
         .map_err(Error::from)?
         .iter()
-        .filter_map(|branch| {
-            if branch.name.to_string().starts_with("rad/") {
-                return None;
-            }
-            browser
-                .branch(remote_branch(&branch.name.to_string(), &peer_id))
-                .ok()?;
-            let history = browser.get();
-            Some((branch.name.to_string(), history.first().id.to_string()))
+        .filter(|branch| !branch.name.to_string().starts_with("rad/"))
+        .map(|branch| {
+            let reflike = branch
+                .name
+                .name()
+                .try_into()
+                .map_err(|_| Error::BranchName)?;
+            let reference = Reference::head(Namespace::from(project.clone()), peer_id, reflike);
+            let oid = reference.oid(&repo)?;
+
+            Ok::<_, Error>((branch.name.to_string(), oid.to_string()))
         })
-        .collect::<HashMap<_, _>>();
+        .collect::<Result<HashMap<_, _>, _>>()?;
 
     let response = json!({ "heads": &branches });
 
