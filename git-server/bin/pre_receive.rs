@@ -6,13 +6,14 @@ use radicle_git_server::error::Error;
 fn main() -> Result<(), Error> {
     use radicle_git_server::hooks::pre_receive::PreReceive;
 
-    // run the `pre-receive` hook
     match PreReceive::hook() {
-        Ok(()) => std::process::exit(0),
+        Ok(()) => {
+            eprintln!("Okay.");
+            std::process::exit(0);
+        }
         Err(e) => {
-            eprintln!("pre-receive hook failed: {}", e);
-            // exit with error and decline the pre-receive;
-            std::process::exit(1)
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
         }
     }
 }

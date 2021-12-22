@@ -55,7 +55,6 @@ impl CertSignerDetails for PreReceive {}
 impl PreReceive {
     /// Instantiate from standard input.
     pub fn from_stdin() -> Result<Self, Error> {
-        // initialize environmental values.
         let env = ReceivePackEnv::init_from_env()?;
         let mut updates = Vec::new();
 
@@ -63,7 +62,6 @@ impl PreReceive {
             let line = line?;
             let input = line.split(' ').collect::<Vec<&str>>();
 
-            // parse standard input variables;
             let old = Oid::from_str(input[0])?;
             let new = Oid::from_str(input[1])?;
             let refname = input[2].to_owned();
@@ -90,19 +88,10 @@ impl PreReceive {
 
         let pre_receive = Self::from_stdin()?;
 
-        // check if project exists.
         pre_receive.check_project_exists()?;
+        pre_receive.authenticate()?;
 
-        // if allowed authorized keys is enabled, bypass the certificate check.
-        if pre_receive.env.allow_unauthorized_keys.is_some() {
-            println!("SECURITY ALERT! UNAUTHORIZED KEYS ARE ALLOWED!");
-            println!("Remove git-server flag `--allow-authorized-keys` to enforce GPG certificate verification");
-
-            Ok(())
-        } else {
-            // Authenticate the request.
-            pre_receive.authenticate()
-        }
+        Ok(())
     }
 
     /// Authenticate the request by verifying the push signed certificate is valid and the GPG
@@ -206,9 +195,7 @@ impl PreReceive {
         eprintln!("Authorizing...");
 
         if let Some(key) = &self.env.cert_key {
-            if self.authorized_keys.is_empty() {
-                // If we didn't explicitly say that certain keys only should be allowed, all
-                // keys are allowed. This is how we allow project creation to pass verification.
+            if self.env.allow_unauthorized_keys.unwrap_or_default() {
                 return Ok(());
             }
             eprintln!("Checking provided key {}...", key);
