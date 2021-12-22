@@ -28,7 +28,7 @@ use librad::PeerId;
 use pgp::{types::KeyTrait, Deserializable};
 
 use super::{
-    types::{CertNonceStatus, ReceivePackEnv},
+    types::{CertNonceStatus, CertStatus, ReceivePackEnv},
     CertSignerDetails,
 };
 use crate::error::Error;
@@ -172,9 +172,15 @@ impl PreReceive {
     pub fn verify_certificate(&self) -> Result<(), Error> {
         eprintln!("Verifying certificate...");
 
-        let status =
-            CertNonceStatus::from_str(&self.env.cert_nonce_status.clone().unwrap_or_default())?;
-        match status {
+        let status = CertStatus::from_str(self.env.cert_status.as_deref().unwrap_or_default())?;
+        if !status.is_ok() {
+            eprintln!("Bad signature for push certificate: {:?}", status);
+            return Err(Error::FailedCertificateVerification);
+        }
+
+        let nonce_status =
+            CertNonceStatus::from_str(self.env.cert_nonce_status.as_deref().unwrap_or_default())?;
+        match nonce_status {
             // If we receive "OK", the certificate is verified using GPG.
             CertNonceStatus::OK => return Ok(()),
             // Received an invalid certificate status
@@ -185,7 +191,10 @@ impl PreReceive {
                 eprintln!("Received `SLOP` certificate status, please re-submit signed push to request new certificate");
             }
             _ => {
-                eprintln!("Received invalid certificate nonce status: {:?}", status);
+                eprintln!(
+                    "Received invalid certificate nonce status: {:?}",
+                    nonce_status
+                );
             }
         }
 

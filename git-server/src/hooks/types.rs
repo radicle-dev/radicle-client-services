@@ -45,6 +45,52 @@ impl FromStr for CertNonceStatus {
     }
 }
 
+/// `CertStatus` describes the status of verifying the GPG signature.
+#[derive(Debug, Clone)]
+pub enum CertStatus {
+    GoodValid,
+    GoodUnknown,
+    GoodExpiredSignature,
+    GoodExpiredKey,
+    GoodRevokedKey,
+    Bad,
+    Error,
+    NoSignature,
+    Unknown,
+}
+
+impl CertStatus {
+    /// Check whether we should authorize this cert signature.
+    pub fn is_ok(&self) -> bool {
+        matches!(self, Self::GoodValid | Self::GoodUnknown)
+    }
+}
+
+impl FromStr for CertStatus {
+    type Err = Error;
+
+    // From the git docs:
+    //
+    //   Show "G" for a good (valid) signature, "B" for a bad signature, "U" for a good
+    //   signature with unknown validity, "X" for a good signature that has expired, "Y" for a
+    //   good signature made by an expired key, "R" for a good signature made by a revoked key,
+    //   "E" if the signature cannot be checked (e.g. missing key) and "N" for no signature
+    //
+    fn from_str(s: &str) -> Result<CertStatus, Self::Err> {
+        Ok(match s {
+            "G" => Self::GoodValid,
+            "U" => Self::GoodUnknown,
+            "X" => Self::GoodExpiredSignature,
+            "Y" => Self::GoodExpiredKey,
+            "R" => Self::GoodRevokedKey,
+            "B" => Self::Bad,
+            "E" => Self::Error,
+            "N" => Self::NoSignature,
+            _ => Self::Unknown,
+        })
+    }
+}
+
 /// `ReceivePackEnv` provides access to environmental variables set and used by git-http-backend
 /// when a `receive-pack` event is triggered. The values are used by both the `pre-receive` and `post-receive`
 /// hooks within the `receive-pack` hook lifecycle.
