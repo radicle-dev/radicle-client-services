@@ -35,7 +35,9 @@ use crate::error::Error;
 
 pub type KeyRing = Vec<String>;
 
+#[allow(dead_code)]
 pub const DEFAULT_RAD_KEYS_PATH: &str = ".rad/keys/openpgp/";
+pub const RAD_ID_REF: &str = "rad/id";
 
 /// `PreReceive` provides access to the standard input values passed into the `pre-receive`
 /// git hook, as well as parses environmental variables that may be used to process the hook.
@@ -47,6 +49,8 @@ pub struct PreReceive {
     pub updates: Vec<(String, Oid, Oid)>,
     /// Authorized keys as SSH key fingerprints.
     pub authorized_keys: Vec<String>,
+    /// SSH key fingerprint of pusher.
+    pub key_fingerprint: String,
 }
 
 // use cert signer details default utility implementations.
@@ -75,10 +79,17 @@ impl PreReceive {
             .map(|k| k.split(',').map(|k| k.to_owned()).collect::<KeyRing>())
             .unwrap_or_default();
 
+        let key_fingerprint = env
+            .cert_key
+            .as_ref()
+            .ok_or(Error::Unauthorized("push certificate is not available"))?
+            .to_owned();
+
         Ok(Self {
             env,
             updates,
             authorized_keys,
+            key_fingerprint,
         })
     }
 
@@ -86,34 +97,60 @@ impl PreReceive {
     pub fn hook() -> Result<(), Error> {
         eprintln!("Running pre-receive hook...");
 
-        let pre_receive = Self::from_stdin()?;
+        let mut pre_receive = Self::from_stdin()?;
+        let repo = Repository::open_bare(&pre_receive.env.git_dir)?;
 
-        pre_receive.check_project_exists()?;
-        pre_receive.authenticate()?;
+        // Set the namespace we're going to be working from.
+        repo.set_namespace(&pre_receive.env.git_namespace)
+            .map_err(Error::from)?;
+
+        pre_receive.verify_certificate()?;
+        pre_receive.check_authorized_key()?;
+        pre_receive.authorize_ref_updates()?;
+
+        let project_exists = repo.find_reference(&format!("refs/{}", RAD_ID_REF)).is_ok();
+        if !project_exists {
+            pre_receive.initialize_project(&repo)?;
+        }
 
         Ok(())
     }
 
-    /// Authenticate the request by verifying the push signed certificate is valid and the GPG
-    /// signing key is included in an authorized keyring.
-    pub fn authenticate(&self) -> Result<(), Error> {
-        self.authorize_ref_updates()?;
-        self.verify_certificate()?;
-        self.check_authorized_key()?;
+    /// Initialize a new project.
+    fn initialize_project(&mut self, repo: &Repository) -> Result<(), Error> {
+        if let Some((refname, from, to)) = self.updates.pop() {
+            // When initializing a new project, we only expect a single ref update.
+            if !self.updates.is_empty() {
+                return Err(Error::Unauthorized(
+                    "unexpected ref updates for new project",
+                ));
+            }
+            // We shouldn't be updating anything, we should be creating a new ref.
+            if !from.is_zero() {
+                return Err(Error::Unauthorized("project old ref should be zero"));
+            }
+            // We only authorize updates that first write to the key-specific staging area.
+            if !refname.ends_with(RAD_ID_REF) {
+                return Err(Error::Unauthorized("project must be initialized first"));
+            }
 
+            // TODO: Verify project identity doc.
+            repo.reference(
+                &format!("refs/{}", RAD_ID_REF),
+                to,
+                false,
+                &format!("set-project-id ({})", self.key_fingerprint),
+            )?;
+        }
         Ok(())
     }
 
     /// Authorizes each ref update, making sure the push certificate is signed by the same
     /// key as the owner/parent of the ref.
-    pub fn authorize_ref_updates(&self) -> Result<(), Error> {
+    fn authorize_ref_updates(&self) -> Result<(), Error> {
         // This is the fingerprint of the key used to sign the push certificate.
         let key_fingerprint = self
-            .env
-            .cert_key
-            .as_ref()
-            .ok_or(Error::Unauthorized("push certificate is not available"))?;
-        let key_fingerprint = key_fingerprint
+            .key_fingerprint
             .strip_prefix("SHA256:")
             .ok_or(Error::Unauthorized("key fingerprint is not a SHA-256 hash"))?;
         let key_fingerprint = base64::decode(key_fingerprint)
@@ -142,22 +179,8 @@ impl PreReceive {
         Ok(())
     }
 
-    pub fn check_project_exists(&self) -> Result<(), Error> {
-        let repo = Repository::open(&self.env.git_dir)?;
-
-        // Set the namespace for the repo equal to the git namespace env.
-        if repo.set_namespace(&self.env.git_namespace).is_err() {
-            return Err(Error::NamespaceNotFound);
-        }
-        // Check if the project exists.
-        if repo.find_reference("refs/rad/id").is_err() {
-            return Err(Error::NamespaceNotFound);
-        }
-        Ok(())
-    }
-
     /// This method will succeed iff the cert status is "OK"
-    pub fn verify_certificate(&self) -> Result<(), Error> {
+    fn verify_certificate(&self) -> Result<(), Error> {
         eprintln!("Verifying certificate...");
 
         let status = CertStatus::from_str(self.env.cert_status.as_deref().unwrap_or_default())?;
@@ -190,7 +213,7 @@ impl PreReceive {
     }
 
     /// Check if the cert_key is found in an authorized keyring
-    pub fn check_authorized_key(&self) -> Result<(), Error> {
+    fn check_authorized_key(&self) -> Result<(), Error> {
         eprintln!("Authorizing...");
 
         if let Some(key) = &self.env.cert_key {
@@ -210,7 +233,8 @@ impl PreReceive {
 
     /// Check the local repo .rad/keys/ directory for the GPG key matching the cert key
     /// used to sign the push certificate.
-    pub fn is_cert_authorized(&self) -> Result<bool, Error> {
+    #[allow(dead_code)]
+    fn is_cert_authorized(&self) -> Result<bool, Error> {
         if let Some(key) = self.env.cert_key.clone() {
             // search for the public key in the rad keys directory.
             let repo = Repository::open(&self.env.git_dir)?;
