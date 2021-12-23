@@ -142,19 +142,18 @@ impl PreReceive {
         Ok(())
     }
 
-    pub fn check_project_exists(&self) -> Result<bool, Error> {
+    pub fn check_project_exists(&self) -> Result<(), Error> {
         let repo = Repository::open(&self.env.git_dir)?;
 
-        // set the namespace for the repo equal to the git namespace env.
+        // Set the namespace for the repo equal to the git namespace env.
         if repo.set_namespace(&self.env.git_namespace).is_err() {
             return Err(Error::NamespaceNotFound);
         }
-
-        // check if the project has a radicle identity.
+        // Check if the project exists.
         if repo.find_reference("refs/rad/id").is_err() {
-            return Ok(true);
+            return Err(Error::NamespaceNotFound);
         }
-        Ok(false)
+        Ok(())
     }
 
     /// This method will succeed iff the cert status is "OK"
