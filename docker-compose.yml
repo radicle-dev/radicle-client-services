@@ -6,7 +6,7 @@ services:
       dockerfile: ./http-api/Dockerfile
       context: .
     volumes:
-      - $HOME/.radicle:/app/radicle:ro
+      - /var/opt/radicle:/app/radicle:ro
     environment:
       RUST_LOG: info
     init: true
@@ -20,7 +20,7 @@ services:
       dockerfile: ./git-server/Dockerfile
       context: .
     volumes:
-      - $HOME/.radicle:/app/radicle
+      - /var/opt/radicle:/app/radicle
     environment:
       - RUST_LOG=hyper=warn,debug
     init: true
