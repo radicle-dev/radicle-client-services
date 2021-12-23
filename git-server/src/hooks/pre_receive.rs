@@ -157,7 +157,6 @@ impl PreReceive {
                 };
 
                 let identity = storage
-                    .as_ref()
                     .identities::<identities::SomeIdentity>()
                     .some_identity(to)
                     .map_err(|_| Error::NamespaceNotFound)?;
@@ -173,14 +172,12 @@ impl PreReceive {
                 match identity {
                     identities::SomeIdentity::Person(_) => {
                         storage
-                            .as_ref()
                             .identities::<git::identities::Person>()
                             .verify(to)
                             .map_err(|e| Error::VerifyIdentity(e.to_string()))?;
                     }
                     identities::SomeIdentity::Project(_) => {
                         storage
-                            .as_ref()
                             .identities::<git::identities::Project>()
                             .verify(to, lookup)
                             .map_err(|e| Error::VerifyIdentity(e.to_string()))?;
