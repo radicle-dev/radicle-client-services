@@ -162,6 +162,14 @@ impl PreReceive {
                     .some_identity(to)
                     .map_err(|_| Error::NamespaceNotFound)?;
 
+                // Make sure that the identity we're pushing matches the namespace
+                // we're pushing to.
+                if identity.urn() != self.urn {
+                    return Err(Error::Unauthorized(
+                        "identity document doesn't match project id",
+                    ));
+                }
+
                 match identity {
                     identities::SomeIdentity::Person(_) => {
                         storage
