@@ -18,6 +18,7 @@ use http::{HeaderMap, Method};
 use librad::git::identities;
 use librad::git::storage::Pool;
 use librad::git::{self, Urn};
+use librad::identities::SomeIdentity;
 use librad::paths::Paths;
 use librad::profile::Profile;
 use librad::PeerId;
@@ -153,23 +154,33 @@ impl Context {
         Ok(())
     }
 
-    async fn get_project_delegates(&self, urn: &Urn) -> Result<Vec<PeerId>, Error> {
+    async fn get_delegates(&self, urn: &Urn) -> Result<Vec<PeerId>, Error> {
         let storage = self.pool.get().await?;
         let read_only = &storage.read_only();
-        let project = identities::project::get(read_only, urn)?;
+        let doc = identities::any::get(read_only, urn)?;
 
-        if let Some(project) = project {
-            let mut keys = Vec::new();
+        if let Some(doc) = doc {
+            let mut peer_ids = Vec::new();
 
-            for delegation in project.delegations().iter() {
-                match delegation {
-                    Either::Left(pk) => keys.push(PeerId::from(*pk)),
-                    Either::Right(indirect) => {
-                        keys.extend(indirect.delegations().iter().cloned().map(PeerId::from));
+            match doc {
+                SomeIdentity::Person(doc) => {
+                    peer_ids.extend(doc.delegations().iter().cloned().map(PeerId::from))
+                }
+                SomeIdentity::Project(doc) => {
+                    for delegation in doc.delegations() {
+                        match delegation {
+                            Either::Left(pk) => peer_ids.push(PeerId::from(*pk)),
+                            Either::Right(indirect) => {
+                                peer_ids.extend(
+                                    indirect.delegations().iter().cloned().map(PeerId::from),
+                                );
+                            }
+                        }
                     }
                 }
+                _ => {}
             }
-            Ok(keys)
+            Ok(peer_ids)
         } else {
             Ok(vec![])
         }
@@ -346,8 +357,8 @@ async fn git(
     }
 
     let path = Path::new("/git").join(request);
-    let project_delegates = ctx.get_project_delegates(&urn).await?;
-    let project_delegates_encoded = project_delegates
+    let delegates = ctx.get_delegates(&urn).await?;
+    let delegates_encoded = delegates
         .iter()
         .filter_map(|p| match to_ssh_fingerprint(p) {
             Ok(f) => Some(f),
@@ -355,7 +366,7 @@ async fn git(
         })
         .map(base64::encode);
 
-    let authorized_keys = project_delegates_encoded
+    let authorized_keys = delegates_encoded
         .chain(ctx.authorized_keys.iter().cloned())
         .collect::<Vec<_>>();
 
@@ -364,14 +375,14 @@ async fn git(
     tracing::debug!("path: {:?}", path);
     tracing::debug!("method: {:?}", method.as_str());
     tracing::debug!("remote: {:?}", remote.to_string());
-    tracing::debug!("delegates: {:?}", project_delegates);
+    tracing::debug!("delegates: {:?}", delegates);
     tracing::debug!("authorized keys: {:?}", authorized_keys);
 
     let mut cmd = Command::new("git");
 
     cmd.arg("http-backend");
 
-    if !project_delegates.is_empty() {
+    if !delegates.is_empty() {
         cmd.env("RADICLE_AUTHORIZED_KEYS", authorized_keys.join(","));
     }
     if ctx.allow_unauthorized_keys {

@@ -26,6 +26,7 @@ use envconfig::Envconfig;
 use git2::{Oid, Repository};
 use librad::git;
 use librad::git::storage::read::ReadOnlyStorage as _;
+use librad::identities;
 use librad::{paths::Paths, PeerId};
 use pgp::{types::KeyTrait, Deserializable};
 
@@ -120,45 +121,66 @@ impl PreReceive {
         pre_receive.check_authorized_key()?;
         pre_receive.authorize_ref_updates()?;
 
-        let project_exists = repo.find_reference(&format!("refs/{}", RAD_ID_REF)).is_ok();
-        if !project_exists {
-            pre_receive.initialize_project(&repo)?;
+        let identity_exists = repo.find_reference(&format!("refs/{}", RAD_ID_REF)).is_ok();
+        if !identity_exists {
+            pre_receive.initialize_identity(&repo)?;
         }
 
         Ok(())
     }
 
-    /// Initialize a new project.
-    fn initialize_project(&mut self, repo: &Repository) -> Result<(), Error> {
+    /// Initialize a new identity.
+    fn initialize_identity(&mut self, repo: &Repository) -> Result<(), Error> {
         if let Some((refname, from, to)) = self.updates.pop() {
-            // When initializing a new project, we only expect a single ref update.
+            // When initializing a new identity, we only expect a single ref update.
             if !self.updates.is_empty() {
                 return Err(Error::Unauthorized(
-                    "unexpected ref updates for new project",
+                    "unexpected ref updates for new identity",
                 ));
             }
             // We shouldn't be updating anything, we should be creating a new ref.
             if !from.is_zero() {
-                return Err(Error::Unauthorized("project old ref should be zero"));
+                return Err(Error::Unauthorized("identity old ref should be zero"));
             }
             // We only authorize updates that first write to the key-specific staging area.
             if !refname.ends_with(RAD_ID_REF) {
-                return Err(Error::Unauthorized("project must be initialized first"));
+                return Err(Error::Unauthorized("identity must be initialized first"));
             }
 
             {
-                // Verify project identity.
+                eprintln!("Verifying identity...");
+
                 let storage = git::storage::ReadOnly::open(&self.paths)?;
                 let lookup = |urn| {
                     let refname = git::types::Reference::rad_id(git::types::Namespace::from(urn));
                     storage.reference_oid(&refname).map(|oid| oid.into())
                 };
 
-                storage
+                let identity = storage
                     .as_ref()
-                    .identities::<git::identities::Project>()
-                    .verify(to, lookup)
-                    .map_err(|e| Error::VerifyIdentity(e.to_string()))?;
+                    .identities::<identities::SomeIdentity>()
+                    .some_identity(to)
+                    .map_err(|_| Error::NamespaceNotFound)?;
+
+                match identity {
+                    identities::SomeIdentity::Person(_) => {
+                        storage
+                            .as_ref()
+                            .identities::<git::identities::Person>()
+                            .verify(to)
+                            .map_err(|e| Error::VerifyIdentity(e.to_string()))?;
+                    }
+                    identities::SomeIdentity::Project(_) => {
+                        storage
+                            .as_ref()
+                            .identities::<git::identities::Project>()
+                            .verify(to, lookup)
+                            .map_err(|e| Error::VerifyIdentity(e.to_string()))?;
+                    }
+                    _ => {
+                        return Err(Error::Unauthorized("unknown identity type"));
+                    }
+                }
             }
 
             // Set local project identity to point to the verified commit pushed by the user.
