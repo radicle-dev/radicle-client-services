@@ -4,6 +4,7 @@ use std::str::FromStr;
 use crate::error::Error;
 
 use envconfig::Envconfig;
+use librad::PeerId;
 
 /// `CertNonceStatus` describes the status of verifying the signed nonce from
 /// the user. If it does not match "OK", the `pre-receive` hook should fail unsuccessfully
@@ -143,6 +144,10 @@ pub struct ReceivePackEnv {
     /// allow unauthorized keys, ignores push certificate verification.
     #[envconfig(from = "RADICLE_ALLOW_UNAUTHORIZED_KEYS")]
     pub allow_unauthorized_keys: Option<bool>,
+
+    /// peer-id specified for push.
+    #[envconfig(from = "RADICLE_PEER_ID")]
+    pub peer_id: Option<PeerId>,
 
     /// root directory where `git` directory is found.
     #[envconfig(from = "GIT_PROJECT_ROOT")]

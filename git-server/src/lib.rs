@@ -6,7 +6,7 @@ pub mod error;
 pub mod hooks;
 
 use std::collections::HashMap;
-use std::convert::TryFrom;
+use std::convert::{Infallible, TryFrom};
 use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -229,6 +229,10 @@ pub async fn run(options: Options) {
         std::process::exit(1);
     }
 
+    let peer_id = path::param::<PeerId>()
+        .map(Some)
+        .or_else(|_| async { Ok::<(Option<PeerId>,), Infallible>((None,)) });
+
     let server = warp::filters::any::any()
         .map(move || ctx.clone())
         .and(warp::method())
@@ -236,6 +240,7 @@ pub async fn run(options: Options) {
         .and(warp::filters::body::aggregate())
         .and(warp::filters::addr::remote())
         .and(path::param())
+        .and(peer_id)
         .and(path::peek())
         .and(
             warp::filters::query::raw()
@@ -266,6 +271,7 @@ async fn git_handler(
     body: impl Buf,
     remote: Option<net::SocketAddr>,
     namespace: String,
+    peer_id: Option<PeerId>,
     request: warp::filters::path::Peek,
     query: String,
 ) -> Result<Box<dyn Reply>, Rejection> {
@@ -292,6 +298,7 @@ async fn git_handler(
         body,
         remote,
         urn,
+        peer_id,
         request.as_str(),
         query,
     )
@@ -316,6 +323,7 @@ async fn git(
     mut body: impl Buf,
     remote: net::SocketAddr,
     urn: Urn,
+    peer_id: Option<PeerId>,
     request: &str,
     query: String,
 ) -> Result<(http::StatusCode, HashMap<String, Vec<String>>, Vec<u8>), Error> {
@@ -366,9 +374,11 @@ async fn git(
     if !project_delegates.is_empty() {
         cmd.env("RADICLE_AUTHORIZED_KEYS", authorized_keys.join(","));
     }
-
     if ctx.allow_unauthorized_keys {
         cmd.env("RADICLE_ALLOW_UNAUTHORIZED_KEYS", "true");
+    }
+    if let Some(peer_id) = peer_id {
+        cmd.env("RADICLE_PEER_ID", peer_id.default_encoding());
     }
 
     cmd.env("REQUEST_METHOD", method.as_str());
@@ -484,7 +494,7 @@ async fn git(
     Ok((status, headers, body))
 }
 
-async fn recover(err: Rejection) -> Result<Box<dyn Reply>, std::convert::Infallible> {
+async fn recover(err: Rejection) -> Result<Box<dyn Reply>, Infallible> {
     let status = if err.is_not_found() {
         StatusCode::NOT_FOUND
     } else if let Some(error) = err.find::<Error>() {
