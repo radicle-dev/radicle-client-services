@@ -10,7 +10,7 @@ use std::convert::TryFrom;
 use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::{io, net};
 
 use either::Either;
@@ -22,6 +22,7 @@ use librad::paths::Paths;
 use librad::profile::Profile;
 use librad::PeerId;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use tokio::sync::RwLock;
 use warp::hyper::StatusCode;
 use warp::reply;
 use warp::{self, path, Buf, Filter, Rejection, Reply};
@@ -129,15 +130,15 @@ impl Context {
     async fn populate_aliases(&self) -> Result<(), Error> {
         use librad::git::identities::SomeIdentity::Project;
 
+        let mut map = self.aliases.write().await;
         let storage = self.pool.get().await?;
         let read_only = &storage.read_only();
         let identities = identities::any::list(read_only)?;
-        let mut map = self.aliases.write().unwrap();
 
         for identity in identities.flatten() {
             if let Project(project) = identity {
                 let urn = Namespace::try_from(project.urn().encode_id().as_str()).unwrap();
-                let name = (&project.payload().subject.name).to_string() + ".git";
+                let name = (&project.payload().subject.name).to_string();
 
                 tracing::info!("alias {:?} for {:?}", name, urn.to_string());
 
@@ -269,29 +270,21 @@ async fn git_handler(
     query: String,
 ) -> Result<Box<dyn Reply>, Rejection> {
     let remote = remote.expect("There is always a remote for HTTP connections");
-    let urn = if namespace.ends_with(".git") {
-        let ns_id = namespace.strip_suffix(".git").unwrap();
-        if let Ok(urn) = Urn::try_from_id(ns_id) {
-            urn
-        } else {
-            // not a project-id, thus potentially an alias
-            // if the alias does not exist, rebuild the cache
-            if !ctx.aliases.read().unwrap().contains_key(&namespace) {
-                ctx.populate_aliases().await?;
-            }
-            Urn::try_from_id(
-                ctx.aliases
-                    .read()
-                    .unwrap()
-                    .get(&namespace)
-                    .map(Namespace::to_string)
-                    .unwrap_or(namespace),
-            )
-            .unwrap()
+    let id = if let Some(name) = namespace.strip_suffix(".git") {
+        let aliases = ctx.aliases.read().await;
+        if !aliases.contains_key(name) {
+            // If the alias does not exist, rebuild the cache.
+            ctx.populate_aliases().await?;
         }
+        aliases
+            .get(name)
+            .map(Namespace::to_string)
+            .ok_or(Error::AliasNotFound)?
     } else {
-        Urn::try_from_id(namespace).unwrap()
+        namespace
     };
+    let urn = Urn::try_from_id(id).map_err(|_| Error::InvalidId)?;
+
     let (status, headers, body) = git(
         ctx,
         method,

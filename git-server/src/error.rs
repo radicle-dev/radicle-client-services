@@ -31,6 +31,14 @@ pub enum Error {
     #[error("unauthorized: {0}")]
     Unauthorized(&'static str),
 
+    /// Project alias not found.
+    #[error("alias does not exist")]
+    AliasNotFound,
+
+    /// Identity is not valid.
+    #[error("id is not valid")]
+    InvalidId,
+
     /// Namespace not found.
     #[error("namespace does not exist")]
     NamespaceNotFound,
@@ -100,6 +108,7 @@ impl Error {
             Error::UnsupportedContentEncoding(_) => http::StatusCode::NOT_IMPLEMENTED,
             Error::ServiceUnavailable(_) => http::StatusCode::SERVICE_UNAVAILABLE,
             Error::Unauthorized(_) => http::StatusCode::UNAUTHORIZED,
+            Error::AliasNotFound => http::StatusCode::NOT_FOUND,
             _ => http::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
