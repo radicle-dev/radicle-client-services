@@ -35,7 +35,7 @@ pub enum Error {
     #[error("alias does not exist")]
     AliasNotFound,
 
-    /// Identity is not valid.
+    /// Id is not valid.
     #[error("id is not valid")]
     InvalidId,
 
@@ -92,6 +92,10 @@ pub enum Error {
     /// An error occured with radicle identities.
     #[error(transparent)]
     Identities(#[from] librad::git::identities::Error),
+
+    /// An error occured while verifying an identity.
+    #[error("error verifying identity: {0}")]
+    VerifyIdentity(String),
 
     /// An error occured with a git storage pool.
     #[error(transparent)]

@@ -24,7 +24,9 @@ use std::str::FromStr;
 
 use envconfig::Envconfig;
 use git2::{Oid, Repository};
-use librad::PeerId;
+use librad::git;
+use librad::git::storage::read::ReadOnlyStorage as _;
+use librad::{paths::Paths, PeerId};
 use pgp::{types::KeyTrait, Deserializable};
 
 use super::{
@@ -51,6 +53,10 @@ pub struct PreReceive {
     pub authorized_keys: Vec<String>,
     /// SSH key fingerprint of pusher.
     pub key_fingerprint: String,
+    /// Project URN being pushed.
+    pub urn: git::identities::Urn,
+    /// Radicle paths.
+    pub paths: Paths,
 }
 
 // use cert signer details default utility implementations.
@@ -85,8 +91,14 @@ impl PreReceive {
             .ok_or(Error::Unauthorized("push certificate is not available"))?
             .to_owned();
 
+        let paths = Paths::from_root(env.git_project_root.clone())?;
+        let urn =
+            git::identities::Urn::try_from_id(&env.git_namespace).map_err(|_| Error::InvalidId)?;
+
         Ok(Self {
             env,
+            urn,
+            paths,
             updates,
             authorized_keys,
             key_fingerprint,
@@ -134,7 +146,22 @@ impl PreReceive {
                 return Err(Error::Unauthorized("project must be initialized first"));
             }
 
-            // TODO: Verify project identity doc.
+            {
+                // Verify project identity.
+                let storage = git::storage::ReadOnly::open(&self.paths)?;
+                let lookup = |urn| {
+                    let refname = git::types::Reference::rad_id(git::types::Namespace::from(urn));
+                    storage.reference_oid(&refname).map(|oid| oid.into())
+                };
+
+                storage
+                    .as_ref()
+                    .identities::<git::identities::Project>()
+                    .verify(to, lookup)
+                    .map_err(|e| Error::VerifyIdentity(e.to_string()))?;
+            }
+
+            // Set local project identity to point to the verified commit pushed by the user.
             repo.reference(
                 &format!("refs/{}", RAD_ID_REF),
                 to,
