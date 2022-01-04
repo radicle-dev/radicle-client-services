@@ -8,12 +8,11 @@ fn main() -> Result<(), Error> {
 
     match PostReceive::hook() {
         Ok(()) => {
-            println!("post-receive hook success");
+            eprintln!("Post-receive hook success.");
             std::process::exit(0)
         }
         Err(e) => {
-            eprintln!("{:?}", e);
-            // exit with error and decline the post-receive;
+            eprintln!("Error: {}", e);
             std::process::exit(1)
         }
     }

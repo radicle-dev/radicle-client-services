@@ -8,11 +8,15 @@
 //! `pre-receive` certification verification and authorization.
 //!
 //!
-use std::io::{stdin, Read, Write};
+use std::io::prelude::*;
+use std::io::{stdin, Write};
 use std::os::unix::net::UnixStream;
+use std::path::Path;
 
 use envconfig::Envconfig;
 use git2::Oid;
+use librad::git::Urn;
+use librad::paths::Paths;
 
 use super::{types::ReceivePackEnv, CertSignerDetails};
 use crate::error::Error;
@@ -24,12 +28,12 @@ pub const ORG_SOCKET_FILE: &str = "org-node.sock";
 /// git hook, as well as parses environmental variables that may be used to process the hook.
 #[derive(Debug, Clone)]
 pub struct PostReceive {
-    // Old SHA1
-    pub old: Oid,
-    // New SHA1
-    pub new: Oid,
-    // refname relative to $GIT_DIR
-    pub refname: String,
+    /// Project URN being pushed.
+    pub urn: Urn,
+    /// Radicle paths.
+    pub paths: Paths,
+    /// Ref updates.
+    pub updates: Vec<(String, Oid, Oid)>,
     // Environmental variables.
     pub env: ReceivePackEnv,
 }
@@ -40,23 +44,28 @@ impl CertSignerDetails for PostReceive {}
 impl PostReceive {
     /// Instantiate from standard input.
     pub fn from_stdin() -> Result<Self, Error> {
-        let mut buffer = String::new();
-        stdin().read_to_string(&mut buffer)?;
+        let mut updates = Vec::new();
 
-        let input = buffer.split(' ').collect::<Vec<&str>>();
+        for line in stdin().lock().lines() {
+            let line = line?;
+            let input = line.split(' ').collect::<Vec<&str>>();
 
-        // parse standard input variables.
-        let old = Oid::from_str(input[0])?;
-        let new = Oid::from_str(input[1])?;
-        let refname = input[2].replace("\n", "");
+            let old = Oid::from_str(input[0])?;
+            let new = Oid::from_str(input[1])?;
+            let refname = input[2].to_owned();
+
+            updates.push((refname, old, new));
+        }
 
         // initialize environmental values.
         let env = ReceivePackEnv::init_from_env()?;
+        let urn = Urn::try_from_id(&env.git_namespace).map_err(|_| Error::InvalidId)?;
+        let paths = Paths::from_root(env.git_project_root.clone())?;
 
         Ok(Self {
-            old,
-            new,
-            refname,
+            urn,
+            paths,
+            updates,
             env,
         })
     }
@@ -65,8 +74,63 @@ impl PostReceive {
     pub fn hook() -> Result<(), Error> {
         let post_receive = Self::from_stdin()?;
 
-        // notify the org-node about the ref update.
-        post_receive.notify_org_node()
+        post_receive.update_refs()?;
+
+        Ok(())
+    }
+
+    pub fn update_refs(&self) -> Result<(), Error> {
+        // If there is no default branch, it means we're pushing a personal identity.
+        // In that case there is nothing to do.
+        if let Some(default_branch) = &self.env.default_branch {
+            let suffix = format!("heads/{}", default_branch);
+
+            for (refname, _, _) in self.updates.iter() {
+                // For now, we only create a ref for the default branch.
+                if refname.ends_with(&suffix) {
+                    self.set_head(refname.as_str(), default_branch)?;
+                    break;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Set the 'HEAD' of a project.
+    ///
+    /// Creates the necessary refs so that a `git clone` may succeed and checkout the correct
+    /// branch.
+    fn set_head(&self, branch_ref: &str, branch: &str) -> Result<git2::Oid, git2::Error> {
+        let urn = &self.urn;
+        let paths = &self.paths;
+
+        let namespace = urn.encode_id();
+        let repository = git2::Repository::open_bare(paths.git_dir())?;
+
+        println!("Setting repository head for {} to {}", urn, branch_ref);
+
+        // eg. refs/namespaces/<namespace>/refs/remotes/<peer>/heads/master
+        let namespace_path = Path::new("refs").join("namespaces").join(&namespace);
+        let branch_ref = namespace_path.join(branch_ref);
+
+        let branch_ref = branch_ref.to_string_lossy();
+        let reference = repository.find_reference(&branch_ref)?;
+
+        let oid = reference.target().expect("reference target must exist");
+        let head = namespace_path.join("HEAD");
+        let head = head.to_str().unwrap();
+
+        let local_branch_ref = namespace_path.join("refs").join("heads").join(&branch);
+        let local_branch_ref = local_branch_ref.to_str().expect("ref is valid unicode");
+
+        println!("Setting ref {:?} -> {:?}", &local_branch_ref, oid);
+        repository.reference(local_branch_ref, oid, true, "set-local-branch (radicle)")?;
+
+        println!("Setting ref {:?} -> {:?}", &head, local_branch_ref);
+        repository.reference_symbolic(head, local_branch_ref, true, "set-head (radicle)")?;
+
+        Ok(oid)
     }
 
     pub fn notify_org_node(&self) -> Result<(), Error> {

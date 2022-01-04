@@ -149,6 +149,10 @@ pub struct ReceivePackEnv {
     #[envconfig(from = "RADICLE_PEER_ID")]
     pub peer_id: Option<PeerId>,
 
+    /// project default branch.
+    #[envconfig(from = "RADICLE_DEFAULT_BRANCH")]
+    pub default_branch: Option<String>,
+
     /// root directory where `git` directory is found.
     #[envconfig(from = "GIT_PROJECT_ROOT")]
     pub git_project_root: String,

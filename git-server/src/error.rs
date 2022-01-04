@@ -23,6 +23,10 @@ pub enum Error {
     #[error("backend error")]
     Backend,
 
+    /// Project has no default branch.
+    #[error("project has no default branch")]
+    NoDefaultBranch,
+
     /// Failed certificate verification.
     #[error("failed certification verification")]
     FailedCertificateVerification,

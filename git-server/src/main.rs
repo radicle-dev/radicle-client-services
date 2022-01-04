@@ -18,14 +18,6 @@ pub struct Options {
     #[argh(option)]
     pub root: Option<PathBuf>,
 
-    /// radicle identity file path
-    #[argh(option)]
-    pub identity: PathBuf,
-
-    /// passphrase to decrypt an encrypted identity file
-    #[argh(option)]
-    pub identity_passphrase: Option<String>,
-
     /// TLS certificate path
     #[argh(option)]
     pub tls_cert: Option<PathBuf>,
@@ -65,8 +57,6 @@ impl From<Options> for server::Options {
     fn from(other: Options) -> Self {
         Self {
             root: other.root,
-            identity: other.identity,
-            identity_passphrase: other.identity_passphrase,
             tls_cert: other.tls_cert,
             tls_key: other.tls_key,
             listen: other.listen,
@@ -87,14 +77,6 @@ async fn main() {
 
     shared::init_logger(options.log_format);
     tracing::info!("version {}-{}", env!("CARGO_PKG_VERSION"), env!("GIT_HEAD"));
-
-    if !options.identity.exists() {
-        if let Err(e) = shared::identity::generate(&options.identity) {
-            tracing::error!("Fatal: error creating identity: {}", e);
-            std::process::exit(2);
-        }
-        tracing::info!("Identity file generated: {:?}", options.identity);
-    }
 
     server::run(options.into()).await;
 }

@@ -38,8 +38,6 @@ pub const STORAGE_POOL_SIZE: usize = 3;
 #[derive(Debug, Clone)]
 pub struct Options {
     pub root: Option<PathBuf>,
-    pub identity: PathBuf,
-    pub identity_passphrase: Option<String>,
     pub listen: net::SocketAddr,
     pub tls_cert: Option<PathBuf>,
     pub tls_key: Option<PathBuf>,
@@ -57,11 +55,11 @@ pub struct Context {
     cert_nonce_seed: Option<String>,
     allow_unauthorized_keys: bool,
     aliases: Arc<RwLock<HashMap<String, Namespace>>>,
-    pool: Pool<git::Storage>,
+    pool: Pool<git::storage::ReadOnly>,
 }
 
 impl Context {
-    fn from(options: &Options, pool: Pool<git::Storage>) -> Result<Self, Error> {
+    fn from(options: &Options, pool: Pool<git::storage::ReadOnly>) -> Result<Self, Error> {
         let root_path = if let Some(root) = &options.root {
             root.to_owned()
         } else {
@@ -128,13 +126,11 @@ impl Context {
     }
 
     /// Populates alias map with unique projects' names and their urns
-    async fn populate_aliases(&self) -> Result<(), Error> {
+    async fn populate_aliases(&self, map: &mut HashMap<String, Namespace>) -> Result<(), Error> {
         use librad::git::identities::SomeIdentity::Project;
 
-        let mut map = self.aliases.write().await;
         let storage = self.pool.get().await?;
-        let read_only = &storage.read_only();
-        let identities = identities::any::list(read_only)?;
+        let identities = identities::any::list(&storage)?;
 
         for identity in identities.flatten() {
             if let Project(project) = identity {
@@ -154,19 +150,27 @@ impl Context {
         Ok(())
     }
 
-    async fn get_delegates(&self, urn: &Urn) -> Result<Vec<PeerId>, Error> {
+    async fn get_meta(&self, urn: &Urn) -> Result<(Vec<PeerId>, Option<String>), Error> {
         let storage = self.pool.get().await?;
-        let read_only = &storage.read_only();
-        let doc = identities::any::get(read_only, urn)?;
+        let doc = identities::any::get(&storage, urn)?;
 
         if let Some(doc) = doc {
             let mut peer_ids = Vec::new();
+            let mut default_branch = None;
 
             match doc {
                 SomeIdentity::Person(doc) => {
                     peer_ids.extend(doc.delegations().iter().cloned().map(PeerId::from))
                 }
                 SomeIdentity::Project(doc) => {
+                    default_branch = Some(
+                        doc.subject()
+                            .default_branch
+                            .clone()
+                            .ok_or(Error::NoDefaultBranch)?
+                            .to_string(),
+                    );
+
                     for delegation in doc.delegations() {
                         match delegation {
                             Either::Left(pk) => peer_ids.push(PeerId::from(*pk)),
@@ -180,9 +184,9 @@ impl Context {
                 }
                 _ => {}
             }
-            Ok(peer_ids)
+            Ok((peer_ids, default_branch))
         } else {
-            Ok(vec![])
+            Ok((vec![], None))
         }
     }
 }
@@ -201,29 +205,20 @@ pub async fn run(options: Options) {
     } else {
         Profile::load().unwrap().paths().clone()
     };
-    let identity_path = options.identity.clone();
-    let identity = if let Some(passphrase) = options.identity_passphrase.clone() {
-        shared::identity::Identity::Encrypted {
-            path: identity_path.clone(),
-            passphrase: passphrase.into(),
-        }
-    } else {
-        shared::identity::Identity::Plain(identity_path.clone())
-    };
-    let signer = identity
-        .signer()
-        .unwrap_or_else(|e| panic!("unable to load identity {:?}: {}", &identity_path, e));
-    let storage_lock = git::storage::pool::Initialised::no();
     let storage = git::storage::Pool::new(
-        git::storage::pool::ReadWriteConfig::new(paths, signer, storage_lock),
+        git::storage::pool::ReadConfig::new(paths),
         STORAGE_POOL_SIZE,
     );
 
     let ctx =
         Context::from(&options, storage).expect("Failed to create context from service options");
-    ctx.populate_aliases()
-        .await
-        .expect("Failed to populate aliases");
+    {
+        let mut aliases = ctx.aliases.write().await;
+
+        ctx.populate_aliases(&mut aliases)
+            .await
+            .expect("Failed to populate aliases");
+    }
 
     if let Err(e) = ctx.set_cert_nonce_seed() {
         tracing::error!(
@@ -288,10 +283,12 @@ async fn git_handler(
 ) -> Result<Box<dyn Reply>, Rejection> {
     let remote = remote.expect("There is always a remote for HTTP connections");
     let id = if let Some(name) = namespace.strip_suffix(".git") {
-        let aliases = ctx.aliases.read().await;
+        tracing::debug!("looking for project alias {:?}", name);
+
+        let mut aliases = ctx.aliases.write().await;
         if !aliases.contains_key(name) {
             // If the alias does not exist, rebuild the cache.
-            ctx.populate_aliases().await?;
+            ctx.populate_aliases(&mut aliases).await?;
         }
         aliases
             .get(name)
@@ -301,6 +298,8 @@ async fn git_handler(
         namespace
     };
     let urn = Urn::try_from_id(id).map_err(|_| Error::InvalidId)?;
+
+    tracing::debug!("project alias resolved to {}", urn);
 
     let (status, headers, body) = git(
         ctx,
@@ -357,7 +356,7 @@ async fn git(
     }
 
     let path = Path::new("/git").join(request);
-    let delegates = ctx.get_delegates(&urn).await?;
+    let (delegates, default_branch) = ctx.get_meta(&urn).await?;
     let delegates_encoded = delegates
         .iter()
         .filter_map(|p| match to_ssh_fingerprint(p) {
@@ -390,6 +389,9 @@ async fn git(
     }
     if let Some(peer_id) = peer_id {
         cmd.env("RADICLE_PEER_ID", peer_id.default_encoding());
+    }
+    if let Some(default_branch) = default_branch {
+        cmd.env("RADICLE_DEFAULT_BRANCH", default_branch);
     }
 
     cmd.env("REQUEST_METHOD", method.as_str());

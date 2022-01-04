@@ -8,7 +8,7 @@ fn main() -> Result<(), Error> {
 
     match PreReceive::hook() {
         Ok(()) => {
-            eprintln!("Okay.");
+            eprintln!("Pre-receive hook success.");
             std::process::exit(0);
         }
         Err(e) => {
