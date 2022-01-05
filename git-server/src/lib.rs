@@ -381,8 +381,18 @@ async fn git(
 
     cmd.arg("http-backend");
 
-    if !delegates.is_empty() {
+    if !authorized_keys.is_empty() {
         cmd.env("RADICLE_AUTHORIZED_KEYS", authorized_keys.join(","));
+    }
+    if !delegates.is_empty() {
+        cmd.env(
+            "RADICLE_DELEGATES",
+            delegates
+                .iter()
+                .map(|d| d.default_encoding())
+                .collect::<Vec<_>>()
+                .join(","),
+        );
     }
     if ctx.allow_unauthorized_keys {
         cmd.env("RADICLE_ALLOW_UNAUTHORIZED_KEYS", "true");
@@ -521,7 +531,7 @@ async fn recover(err: Rejection) -> Result<Box<dyn Reply>, Infallible> {
     Ok(Box::new(reply::with_status(String::default(), status)))
 }
 
-// Helper method to generate random string for cert nonce;
+/// Helper method to generate random string for cert nonce;
 fn gen_random_string() -> String {
     thread_rng()
         .sample_iter(&Alphanumeric)
@@ -531,7 +541,7 @@ fn gen_random_string() -> String {
 }
 
 /// Get the SSH key fingerprint from a peer id.
-fn to_ssh_fingerprint(peer_id: &PeerId) -> Result<Vec<u8>, std::io::Error> {
+fn to_ssh_fingerprint(peer_id: &PeerId) -> Result<Vec<u8>, io::Error> {
     use byteorder::{BigEndian, WriteBytesExt};
     use sha2::Digest;
 
@@ -545,4 +555,21 @@ fn to_ssh_fingerprint(peer_id: &PeerId) -> Result<Vec<u8>, std::io::Error> {
     buf.extend_from_slice(key);
 
     Ok(sha2::Sha256::digest(&buf).to_vec())
+}
+
+/// Parse a remote git ref into a peer id and return the remaining input.
+///
+/// Eg. `refs/remotes/<peer>/heads/master`
+///
+fn parse_ref(input: &str) -> Result<(PeerId, String), io::Error> {
+    let suffix = input
+        .strip_prefix("refs/remotes/")
+        .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+    let (remote, rest) = suffix
+        .split_once('/')
+        .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+    let peer_id = PeerId::from_default_encoding(remote)
+        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+
+    Ok((peer_id, rest.to_owned()))
 }

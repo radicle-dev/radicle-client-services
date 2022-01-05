@@ -27,7 +27,7 @@ use git2::{Oid, Repository};
 use librad::git;
 use librad::git::storage::read::ReadOnlyStorage as _;
 use librad::identities;
-use librad::{paths::Paths, PeerId};
+use librad::paths::Paths;
 use pgp::{types::KeyTrait, Deserializable};
 
 use super::{
@@ -216,14 +216,7 @@ impl PreReceive {
         for (refname, _, _) in self.updates.iter() {
             // Get the peer/remote we are attempting to push to, and convert it to an SSH
             // key fingerpint.
-            let suffix = refname
-                .strip_prefix("refs/remotes/")
-                .ok_or(Error::Unauthorized("ref name is not valid"))?;
-            let (remote, _) = suffix
-                .split_once('/')
-                .ok_or(Error::Unauthorized("ref name is not valid"))?;
-            let peer_id = PeerId::from_default_encoding(remote)
-                .map_err(|_| Error::Unauthorized("ref must include a valid peer-id"))?;
+            let (peer_id, _) = crate::parse_ref(refname)?;
             let peer_fingerprint = crate::to_ssh_fingerprint(&peer_id)?;
 
             if key_fingerprint[..] != peer_fingerprint[..] {

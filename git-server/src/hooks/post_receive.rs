@@ -7,16 +7,17 @@
 //! The `post-receive` git hook sends a request to the org-node for signing references once a `git push` has successfully passed
 //! `pre-receive` certification verification and authorization.
 //!
-//!
 use std::io::prelude::*;
 use std::io::{stdin, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
+use std::str::FromStr;
 
 use envconfig::Envconfig;
 use git2::Oid;
 use librad::git::Urn;
 use librad::paths::Paths;
+use librad::PeerId;
 
 use super::{types::ReceivePackEnv, CertSignerDetails};
 use crate::error::Error;
@@ -30,6 +31,8 @@ pub const ORG_SOCKET_FILE: &str = "org-node.sock";
 pub struct PostReceive {
     /// Project URN being pushed.
     pub urn: Urn,
+    /// Project delegates.
+    pub delegates: Vec<PeerId>,
     /// Radicle paths.
     pub paths: Paths,
     /// Ref updates.
@@ -57,13 +60,21 @@ impl PostReceive {
             updates.push((refname, old, new));
         }
 
-        // initialize environmental values.
         let env = ReceivePackEnv::init_from_env()?;
         let urn = Urn::try_from_id(&env.git_namespace).map_err(|_| Error::InvalidId)?;
         let paths = Paths::from_root(env.git_project_root.clone())?;
+        let delegates = if let Some(keys) = &env.delegates {
+            keys.split(',')
+                .map(PeerId::from_str)
+                .collect::<Result<_, _>>()
+                .map_err(|_| Error::InvalidPeerId)?
+        } else {
+            Vec::new()
+        };
 
         Ok(Self {
             urn,
+            delegates,
             paths,
             updates,
             env,
@@ -72,6 +83,8 @@ impl PostReceive {
 
     /// The main process used by `post-receive` hook.
     pub fn hook() -> Result<(), Error> {
+        println!("Running post-receive hook...");
+
         let post_receive = Self::from_stdin()?;
 
         post_receive.update_refs()?;
@@ -86,11 +99,28 @@ impl PostReceive {
             let suffix = format!("heads/{}", default_branch);
 
             for (refname, _, _) in self.updates.iter() {
-                // For now, we only create a ref for the default branch.
-                if refname.ends_with(&suffix) {
-                    self.set_head(refname.as_str(), default_branch)?;
-                    break;
+                let (peer_id, rest) = crate::parse_ref(refname)?;
+
+                // Only delegates can update refs.
+                if !self.delegates.contains(&peer_id) {
+                    continue;
                 }
+                // For now, we only create a ref for the default branch.
+                if rest != suffix {
+                    continue;
+                }
+                // TODO: This should only update when a quorum is reached between delegates.
+                // For a single delegate, we can just always allow it.
+                if self.delegates.len() == 1 {
+                    self.set_head(refname.as_str(), default_branch)?;
+                } else {
+                    println!("Cannot set head for multi-delegate project: not supported.");
+                }
+                // TODO
+                //
+                // For non-default-branch refs, we can add them as:
+                //
+                // `refs/remotes/cloudhead@<peer-id>/<branch>`
             }
         }
 
@@ -108,7 +138,7 @@ impl PostReceive {
         let namespace = urn.encode_id();
         let repository = git2::Repository::open_bare(paths.git_dir())?;
 
-        println!("Setting repository head for {} to {}", urn, branch_ref);
+        println!("Setting repository head for {} to {}.", urn, branch_ref);
 
         // eg. refs/namespaces/<namespace>/refs/remotes/<peer>/heads/master
         let namespace_path = Path::new("refs").join("namespaces").join(&namespace);

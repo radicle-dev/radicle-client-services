@@ -43,6 +43,10 @@ pub enum Error {
     #[error("id is not valid")]
     InvalidId,
 
+    /// Peer ID is invalid.
+    #[error("peer-id is invalid")]
+    InvalidPeerId,
+
     /// Namespace not found.
     #[error("namespace does not exist")]
     NamespaceNotFound,

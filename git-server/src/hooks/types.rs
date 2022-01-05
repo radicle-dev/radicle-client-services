@@ -141,6 +141,10 @@ pub struct ReceivePackEnv {
     #[envconfig(from = "RADICLE_AUTHORIZED_KEYS")]
     pub authorized_keys: Option<String>,
 
+    /// comma delimited list of project delegates in default `PeerId` encoding.
+    #[envconfig(from = "RADICLE_DELEGATES")]
+    pub delegates: Option<String>,
+
     /// allow unauthorized keys, ignores push certificate verification.
     #[envconfig(from = "RADICLE_ALLOW_UNAUTHORIZED_KEYS")]
     pub allow_unauthorized_keys: Option<bool>,
