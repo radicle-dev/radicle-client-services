@@ -4510,6 +4510,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "radicle-service-init"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "argh",
+ "librad",
+ "shared",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "radicle-source"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

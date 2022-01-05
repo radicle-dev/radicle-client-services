@@ -1,0 +1,12 @@
+[package]
+name = "radicle-service-init"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+shared = { path = "../shared" }
+librad = { version = "0" }
+argh = { version = "0.1.4" }
+anyhow = { version = "1.0" }
+tracing = { version = "0.1" }
+tracing-subscriber = { version = "0.2" }
