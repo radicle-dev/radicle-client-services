@@ -24,8 +24,6 @@ use std::str::FromStr;
 
 use envconfig::Envconfig;
 use git2::{Oid, Repository};
-use librad::git;
-use librad::paths::Paths;
 use pgp::{types::KeyTrait, Deserializable};
 
 use super::{
@@ -38,24 +36,19 @@ pub type KeyRing = Vec<String>;
 
 #[allow(dead_code)]
 pub const DEFAULT_RAD_KEYS_PATH: &str = ".rad/keys/openpgp/";
-pub const RAD_ID_REF: &str = "rad/id";
 
 /// `PreReceive` provides access to the standard input values passed into the `pre-receive`
 /// git hook, as well as parses environmental variables that may be used to process the hook.
 #[derive(Debug, Clone)]
 pub struct PreReceive {
     /// Environmental Variables.
-    pub env: ReceivePackEnv,
+    env: ReceivePackEnv,
     /// Ref updates.
-    pub updates: Vec<(String, Oid, Oid)>,
+    updates: Vec<(String, Oid, Oid)>,
     /// Authorized keys as SSH key fingerprints.
-    pub authorized_keys: Vec<String>,
+    authorized_keys: Vec<String>,
     /// SSH key fingerprint of pusher.
-    pub key_fingerprint: String,
-    /// Project URN being pushed.
-    pub urn: git::identities::Urn,
-    /// Radicle paths.
-    pub paths: Paths,
+    key_fingerprint: String,
 }
 
 // use cert signer details default utility implementations.
@@ -90,14 +83,8 @@ impl PreReceive {
             .ok_or(Error::Unauthorized("push certificate is not available"))?
             .to_owned();
 
-        let paths = Paths::from_root(env.git_project_root.clone())?;
-        let urn =
-            git::identities::Urn::try_from_id(&env.git_namespace).map_err(|_| Error::InvalidId)?;
-
         Ok(Self {
             env,
-            urn,
-            paths,
             updates,
             authorized_keys,
             key_fingerprint,
@@ -108,7 +95,7 @@ impl PreReceive {
     pub fn hook() -> Result<(), Error> {
         eprintln!("Running pre-receive hook...");
 
-        let mut pre_receive = Self::from_stdin()?;
+        let pre_receive = Self::from_stdin()?;
         let repo = Repository::open_bare(&pre_receive.env.git_dir)?;
 
         // Set the namespace we're going to be working from.
@@ -119,32 +106,6 @@ impl PreReceive {
         pre_receive.check_authorized_key()?;
         pre_receive.authorize_ref_updates()?;
 
-        let identity_exists = repo.find_reference(&format!("refs/{}", RAD_ID_REF)).is_ok();
-        if !identity_exists {
-            pre_receive.initialize_identity()?;
-        }
-
-        Ok(())
-    }
-
-    /// Initialize a new identity.
-    fn initialize_identity(&mut self) -> Result<(), Error> {
-        if let Some((refname, from, _)) = self.updates.pop() {
-            // When initializing a new identity, we only expect a single ref update.
-            if !self.updates.is_empty() {
-                return Err(Error::Unauthorized(
-                    "unexpected ref updates for new identity",
-                ));
-            }
-            // We shouldn't be updating anything, we should be creating a new ref.
-            if !from.is_zero() {
-                return Err(Error::Unauthorized("identity old ref should be zero"));
-            }
-            // We only authorize updates that first write to the key-specific staging area.
-            if !refname.ends_with(RAD_ID_REF) {
-                return Err(Error::Unauthorized("identity must be initialized first"));
-            }
-        }
         Ok(())
     }
 

@@ -34,17 +34,17 @@ pub const RAD_ID_REF: &str = "rad/id";
 #[derive(Debug, Clone)]
 pub struct PostReceive {
     /// Project URN being pushed.
-    pub urn: Urn,
+    urn: Urn,
     /// Project delegates.
-    pub delegates: Vec<PeerId>,
+    delegates: Vec<PeerId>,
     /// Radicle paths.
-    pub paths: Paths,
+    paths: Paths,
     /// SSH key fingerprint of pusher.
-    pub key_fingerprint: String,
+    key_fingerprint: String,
     /// Ref updates.
-    pub updates: Vec<(String, Oid, Oid)>,
+    updates: Vec<(String, Oid, Oid)>,
     // Environmental variables.
-    pub env: ReceivePackEnv,
+    env: ReceivePackEnv,
 }
 
 // use cert signer details default utility implementations.
@@ -104,7 +104,7 @@ impl PostReceive {
         if identity_exists {
             post_receive.update_refs()?;
         } else {
-            post_receive.verify_identity(&repo)?;
+            post_receive.initialize_identity(&repo)?;
         }
 
         Ok(())
@@ -181,7 +181,7 @@ impl PostReceive {
         Ok(oid)
     }
 
-    fn verify_identity(&mut self, repo: &Repository) -> Result<(), Error> {
+    fn initialize_identity(&mut self, repo: &Repository) -> Result<(), Error> {
         eprintln!("Verifying identity...");
 
         if let Some((refname, from, to)) = self.updates.pop() {
