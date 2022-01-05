@@ -16,7 +16,7 @@ EXPOSE 8778/tcp
 RUN apt-get update && apt-get install -y libssl1.1 git && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/cargo/bin/radicle-git-server /usr/local/bin/radicle-git-server
 COPY --from=build /usr/local/cargo/bin/pre-receive /usr/local/bin/pre-receive
-COPY --from=build /usr/src/radicle-client-services/git-server/start-up.sh /usr/local/bin/start-up-radicle-git-server.sh
+COPY --from=build /usr/src/radicle-client-services/git-server/docker/start-up.sh /usr/local/bin/start-up-radicle-git-server.sh
 
 WORKDIR /app/radicle
 
