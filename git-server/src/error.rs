@@ -64,16 +64,16 @@ pub enum Error {
     VarError(#[from] std::env::VarError),
 
     /// Git config parser error.
-    #[error("git2 error: {0:?}")]
+    #[error("git2 error: {0}")]
     Git2Error(#[from] git2::Error),
 
     /// Missing certification signer credentials.
-    #[error("missing certificate signer credentials: {0:?}")]
+    #[error("missing certificate signer credentials: {0}")]
     MissingCertificateSignerCredentials(String),
 
     /// Missing environmental variable.
     #[cfg(feature = "hooks")]
-    #[error("missing environmental config variable: {0:?}")]
+    #[error("missing environmental config variable: {0}")]
     EnvConfigError(#[from] envconfig::Error),
 
     /// Failed to parse byte data into string.
