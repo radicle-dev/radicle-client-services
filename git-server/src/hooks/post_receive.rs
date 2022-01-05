@@ -14,8 +14,11 @@ use std::path::Path;
 use std::str::FromStr;
 
 use envconfig::Envconfig;
-use git2::Oid;
+use git2::{Oid, Repository};
+use librad::git;
+use librad::git::storage::read::ReadOnlyStorage as _;
 use librad::git::Urn;
+use librad::identities;
 use librad::paths::Paths;
 use librad::PeerId;
 
@@ -24,6 +27,7 @@ use crate::error::Error;
 
 /// Filename for named pipe / FIFO file.
 pub const ORG_SOCKET_FILE: &str = "org-node.sock";
+pub const RAD_ID_REF: &str = "rad/id";
 
 /// `PostReceive` provides access to the standard input values passed into the `post-receive`
 /// git hook, as well as parses environmental variables that may be used to process the hook.
@@ -35,6 +39,8 @@ pub struct PostReceive {
     pub delegates: Vec<PeerId>,
     /// Radicle paths.
     pub paths: Paths,
+    /// SSH key fingerprint of pusher.
+    pub key_fingerprint: String,
     /// Ref updates.
     pub updates: Vec<(String, Oid, Oid)>,
     // Environmental variables.
@@ -71,10 +77,16 @@ impl PostReceive {
         } else {
             Vec::new()
         };
+        let key_fingerprint = env
+            .cert_key
+            .as_ref()
+            .ok_or(Error::Unauthorized("push certificate is not available"))?
+            .to_owned();
 
         Ok(Self {
             urn,
             delegates,
+            key_fingerprint,
             paths,
             updates,
             env,
@@ -85,9 +97,15 @@ impl PostReceive {
     pub fn hook() -> Result<(), Error> {
         println!("Running post-receive hook...");
 
-        let post_receive = Self::from_stdin()?;
+        let mut post_receive = Self::from_stdin()?;
+        let repo = Repository::open_bare(&post_receive.env.git_dir)?;
 
-        post_receive.update_refs()?;
+        let identity_exists = repo.find_reference(&format!("refs/{}", RAD_ID_REF)).is_ok();
+        if identity_exists {
+            post_receive.update_refs()?;
+        } else {
+            post_receive.verify_identity(&repo)?;
+        }
 
         Ok(())
     }
@@ -161,6 +179,73 @@ impl PostReceive {
         repository.reference_symbolic(head, local_branch_ref, true, "set-head (radicle)")?;
 
         Ok(oid)
+    }
+
+    fn verify_identity(&mut self, repo: &Repository) -> Result<(), Error> {
+        eprintln!("Verifying identity...");
+
+        if let Some((refname, from, to)) = self.updates.pop() {
+            // When initializing a new identity, we only expect a single ref update.
+            if !self.updates.is_empty() {
+                return Err(Error::Unauthorized(
+                    "unexpected ref updates for new identity",
+                ));
+            }
+            // We shouldn't be updating anything, we should be creating a new ref.
+            if !from.is_zero() {
+                return Err(Error::Unauthorized("identity old ref should be zero"));
+            }
+            // We only authorize updates that first write to the key-specific staging area.
+            if !refname.ends_with(RAD_ID_REF) {
+                return Err(Error::Unauthorized("identity must be initialized first"));
+            }
+
+            let storage = git::storage::ReadOnly::open(&self.paths)?;
+            let lookup = |urn| {
+                let refname = git::types::Reference::rad_id(git::types::Namespace::from(urn));
+                storage.reference_oid(&refname).map(|oid| oid.into())
+            };
+
+            let identity = storage
+                .identities::<identities::SomeIdentity>()
+                .some_identity(to)
+                .map_err(|_| Error::NamespaceNotFound)?;
+
+            // Make sure that the identity we're pushing matches the namespace
+            // we're pushing to.
+            if identity.urn() != self.urn {
+                return Err(Error::Unauthorized(
+                    "identity document doesn't match project id",
+                ));
+            }
+
+            match identity {
+                identities::SomeIdentity::Person(_) => {
+                    storage
+                        .identities::<git::identities::Person>()
+                        .verify(to)
+                        .map_err(|e| Error::VerifyIdentity(e.to_string()))?;
+                }
+                identities::SomeIdentity::Project(_) => {
+                    storage
+                        .identities::<git::identities::Project>()
+                        .verify(to, lookup)
+                        .map_err(|e| Error::VerifyIdentity(e.to_string()))?;
+                }
+                _ => {
+                    return Err(Error::Unauthorized("unknown identity type"));
+                }
+            }
+
+            // Set local project identity to point to the verified commit pushed by the user.
+            repo.reference(
+                &format!("refs/{}", RAD_ID_REF),
+                to,
+                false,
+                &format!("set-project-id ({})", self.key_fingerprint),
+            )?;
+        }
+        Ok(())
     }
 
     pub fn notify_org_node(&self) -> Result<(), Error> {
