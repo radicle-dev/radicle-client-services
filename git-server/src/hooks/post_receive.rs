@@ -100,17 +100,21 @@ impl PostReceive {
         let mut post_receive = Self::from_stdin()?;
         let repo = Repository::open_bare(&post_receive.env.git_dir)?;
 
+        repo.set_namespace(&post_receive.env.git_namespace)?;
+
         let identity_exists = repo.find_reference(&format!("refs/{}", RAD_ID_REF)).is_ok();
         if identity_exists {
-            post_receive.update_refs()?;
+            println!("Pushing to existing identity...");
+            post_receive.update_refs(&repo)?;
         } else {
+            println!("Pushing new identity...");
             post_receive.initialize_identity(&repo)?;
         }
 
         Ok(())
     }
 
-    pub fn update_refs(&self) -> Result<(), Error> {
+    pub fn update_refs(&self, repo: &Repository) -> Result<(), Error> {
         // If there is no default branch, it means we're pushing a personal identity.
         // In that case there is nothing to do.
         if let Some(default_branch) = &self.env.default_branch {
@@ -118,6 +122,8 @@ impl PostReceive {
 
             for (refname, _, _) in self.updates.iter() {
                 let (peer_id, rest) = crate::parse_ref(refname)?;
+
+                println!("Updating ref for {}: {}", peer_id, rest);
 
                 // Only delegates can update refs.
                 if !self.delegates.contains(&peer_id) {
@@ -127,10 +133,12 @@ impl PostReceive {
                 if rest != suffix {
                     continue;
                 }
+                println!("Ref update to default branch detected, setting HEAD...");
+
                 // TODO: This should only update when a quorum is reached between delegates.
                 // For a single delegate, we can just always allow it.
                 if self.delegates.len() == 1 {
-                    self.set_head(refname.as_str(), default_branch)?;
+                    self.set_head(refname.as_str(), default_branch, repo)?;
                 } else {
                     println!("Cannot set head for multi-delegate project: not supported.");
                 }
@@ -149,12 +157,14 @@ impl PostReceive {
     ///
     /// Creates the necessary refs so that a `git clone` may succeed and checkout the correct
     /// branch.
-    fn set_head(&self, branch_ref: &str, branch: &str) -> Result<git2::Oid, git2::Error> {
+    fn set_head(
+        &self,
+        branch_ref: &str,
+        branch: &str,
+        repo: &Repository,
+    ) -> Result<git2::Oid, git2::Error> {
         let urn = &self.urn;
-        let paths = &self.paths;
-
         let namespace = urn.encode_id();
-        let repository = git2::Repository::open_bare(paths.git_dir())?;
 
         println!("Setting repository head for {} to {}.", urn, branch_ref);
 
@@ -163,7 +173,7 @@ impl PostReceive {
         let branch_ref = namespace_path.join(branch_ref);
 
         let branch_ref = branch_ref.to_string_lossy();
-        let reference = repository.find_reference(&branch_ref)?;
+        let reference = repo.find_reference(&branch_ref)?;
 
         let oid = reference.target().expect("reference target must exist");
         let head = namespace_path.join("HEAD");
@@ -173,10 +183,10 @@ impl PostReceive {
         let local_branch_ref = local_branch_ref.to_str().expect("ref is valid unicode");
 
         println!("Setting ref {:?} -> {:?}", &local_branch_ref, oid);
-        repository.reference(local_branch_ref, oid, true, "set-local-branch (radicle)")?;
+        repo.reference(local_branch_ref, oid, true, "set-local-branch (radicle)")?;
 
         println!("Setting ref {:?} -> {:?}", &head, local_branch_ref);
-        repository.reference_symbolic(head, local_branch_ref, true, "set-head (radicle)")?;
+        repo.reference_symbolic(head, local_branch_ref, true, "set-head (radicle)")?;
 
         Ok(oid)
     }
