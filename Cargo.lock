@@ -4409,6 +4409,7 @@ dependencies = [
  "byteorder",
  "either",
  "envconfig",
+ "flate2",
  "git2",
  "hex",
  "http",

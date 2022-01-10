@@ -22,6 +22,7 @@ argh = { version = "0.1.4" }
 base64 = { version = "0.13" }
 byteorder = { version = "1.4" }
 either = { version = "1.6" }
+flate2 = { version = "1.0" }
 git2 = "0.13"
 http = { version = "0.2" }
 librad = { version = "0" }

@@ -7,13 +7,14 @@ pub mod hooks;
 
 use std::collections::HashMap;
 use std::convert::{Infallible, TryFrom};
-use std::io::{BufRead, Read};
+use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::{io, net};
 
 use either::Either;
+use flate2::write::GzDecoder;
 use http::{HeaderMap, Method};
 use librad::git::identities;
 use librad::git::storage::Pool;
@@ -426,20 +427,31 @@ async fn git(
     // Spawn the git backend.
     let mut child = cmd.spawn()?;
 
-    // Copy the request body to git-http-backend's stdin.
-    // CGI requires gzip support, but we're not going to support that.
-    if let Some(Ok("gzip")) = headers.get("Content-Encoding").map(|h| h.to_str()) {
-        return Err(Error::UnsupportedContentEncoding("gzip"));
-    } else {
+    // Whether the request body is compressed.
+    let gzip = matches!(
+        headers.get("Content-Encoding").map(|h| h.to_str()),
+        Some(Ok("gzip"))
+    );
+
+    {
         // This is safe because we captured the child's stdin.
         let mut stdin = child.stdin.take().unwrap();
 
-        while body.has_remaining() {
-            let mut chunk = body.chunk();
-            let count = chunk.len();
+        // Copy the request body to git-http-backend's stdin.
+        if gzip {
+            let mut decoder = GzDecoder::new(&mut stdin);
+            let mut reader = body.reader();
 
-            io::copy(&mut chunk, &mut stdin)?;
-            body.advance(count);
+            io::copy(&mut reader, &mut decoder)?;
+            decoder.finish()?;
+        } else {
+            while body.has_remaining() {
+                let mut chunk = body.chunk();
+                let count = chunk.len();
+
+                io::copy(&mut chunk, &mut stdin)?;
+                body.advance(count);
+            }
         }
     }
 
