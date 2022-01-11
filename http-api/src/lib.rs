@@ -267,8 +267,14 @@ async fn blob_handler(
 
 async fn remotes_handler(ctx: Context, project: Urn) -> Result<impl Reply, Rejection> {
     let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
-    let tracked_peers = tracking::tracked(&storage, &project).map_err(|_| Error::NotFound)?;
-    let response = tracked_peers.collect::<Vec<_>>();
+    let tracked = tracking::tracked(&storage, Some(&project)).map_err(|_| Error::NotFound)?;
+    let result = tracked
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(Error::from)?;
+    let response = result
+        .into_iter()
+        .filter_map(|t| t.peer_id())
+        .collect::<Vec<_>>();
 
     Ok(warp::reply::json(&response))
 }

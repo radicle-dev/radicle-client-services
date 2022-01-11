@@ -20,6 +20,10 @@ pub enum Error {
     #[error("missing delegations in project")]
     MissingDelegations,
 
+    /// Error related to tracking.
+    #[error("tracking: {0}")]
+    Tracking(#[from] radicle_daemon::git::tracking::error::Tracked),
+
     /// Invalid branch name.
     #[error("invalid branch name")]
     BranchName,

@@ -9,11 +9,11 @@ members = [
 
 [patch.crates-io.radicle-daemon]
 git = "https://github.com/radicle-dev/radicle-link"
-rev = "c8ab110503cc1228cabaae8f34fac1469f2a1eb2"
+rev = "cc7d348ff79f338c8136903393fedd7f098665d6"
 
 [patch.crates-io.librad]
 git = "https://github.com/radicle-dev/radicle-link"
-rev = "c8ab110503cc1228cabaae8f34fac1469f2a1eb2"
+rev = "cc7d348ff79f338c8136903393fedd7f098665d6"
 
 # These patches are the same as those listed in
 # https://github.com/radicle-dev/radicle-link/blob/master/Cargo.toml

@@ -7,6 +7,7 @@ use thiserror::Error;
 
 use librad::{
     git,
+    git::tracking::policy::Track,
     git::{identities, refs, storage, storage::fetcher, tracking},
     net::{
         discovery::{self, Discovery as _},
@@ -50,8 +51,8 @@ pub enum Error {
     #[error(transparent)]
     Storage(#[from] peer::error::Storage),
 
-    #[error(transparent)]
-    Tracking(#[from] tracking::Error),
+    #[error("track: {0}")]
+    Track(#[from] librad::git::tracking::error::Track),
 
     #[error(transparent)]
     Identities(#[from] Box<identities::Error>),
@@ -809,12 +810,14 @@ impl Client {
         let peer_id = peer_info.peer_id;
         let result = {
             let urn = urn.clone();
+            let cfg = tracking::config::Config::default();
 
             api.using_storage(move |storage| {
-                if tracking::track(storage, &urn, peer_id)? {
-                    Ok::<_, Error>(true)
-                } else {
-                    Ok(false)
+                match tracking::track(storage, &urn, Some(peer_id), cfg, Track::MustNotExist)? {
+                    // If we don't have an error, our policy went through, otherwise it failed
+                    // because the relationship already existed.
+                    Ok(_) => Ok::<_, Error>(true),
+                    Err(_) => Ok(false),
                 }
             })
             .await?
