@@ -10,7 +10,6 @@
 use std::io::prelude::*;
 use std::io::{stdin, Write};
 use std::os::unix::net::UnixStream;
-use std::path::Path;
 use std::str::FromStr;
 
 use envconfig::Envconfig;
@@ -99,10 +98,10 @@ impl PostReceive {
 
         let mut post_receive = Self::from_stdin()?;
         let repo = Repository::open_bare(&post_receive.env.git_dir)?;
+        let identity_exists = repo
+            .find_reference(&post_receive.namespace_ref(RAD_ID_REF))
+            .is_ok();
 
-        repo.set_namespace(&post_receive.env.git_namespace)?;
-
-        let identity_exists = repo.find_reference(&format!("refs/{}", RAD_ID_REF)).is_ok();
         if identity_exists {
             println!("Pushing to existing identity...");
             post_receive.update_refs(&repo)?;
@@ -168,25 +167,23 @@ impl PostReceive {
 
         println!("Setting repository head for {} to {}.", urn, branch_ref);
 
+        // eg. refs/namespaces/<namespace>
+        let namespace_path = format!("refs/namespaces/{}", namespace);
         // eg. refs/namespaces/<namespace>/refs/remotes/<peer>/heads/master
-        let namespace_path = Path::new("refs").join("namespaces").join(&namespace);
-        let branch_ref = namespace_path.join(branch_ref);
-
-        let branch_ref = branch_ref.to_string_lossy();
+        let branch_ref = format!("{}/{}", namespace_path, branch_ref);
         let reference = repo.find_reference(&branch_ref)?;
-
         let oid = reference.target().expect("reference target must exist");
-        let head = namespace_path.join("HEAD");
-        let head = head.to_str().unwrap();
 
-        let local_branch_ref = namespace_path.join("refs").join("heads").join(&branch);
-        let local_branch_ref = local_branch_ref.to_str().expect("ref is valid unicode");
+        // eg. refs/namespaces/<namespace>/HEAD
+        let head_ref = format!("{}/HEAD", namespace_path);
+        // eg. refs/namespaces/<namespace>/refs/heads/master
+        let local_branch_ref = &format!("{}/refs/heads/{}", namespace_path, branch);
 
         println!("Setting ref {:?} -> {:?}", &local_branch_ref, oid);
         repo.reference(local_branch_ref, oid, true, "set-local-branch (radicle)")?;
 
-        println!("Setting ref {:?} -> {:?}", &head, local_branch_ref);
-        repo.reference_symbolic(head, local_branch_ref, true, "set-head (radicle)")?;
+        println!("Setting ref {:?} -> {:?}", head_ref, local_branch_ref);
+        repo.reference_symbolic(&head_ref, local_branch_ref, true, "set-head (radicle)")?;
 
         Ok(oid)
     }
@@ -249,13 +246,20 @@ impl PostReceive {
 
             // Set local project identity to point to the verified commit pushed by the user.
             repo.reference(
-                &format!("refs/{}", RAD_ID_REF),
+                &self.namespace_ref(RAD_ID_REF),
                 to,
                 false,
                 &format!("set-project-id ({})", self.key_fingerprint),
             )?;
         }
         Ok(())
+    }
+
+    fn namespace_ref(&self, refname: &str) -> String {
+        format!(
+            "refs/namespaces/{}/refs/{}",
+            &self.env.git_namespace, refname
+        )
     }
 
     pub fn notify_org_node(&self) -> Result<(), Error> {
