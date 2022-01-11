@@ -16,11 +16,13 @@ use envconfig::Envconfig;
 use git2::{Oid, Repository};
 use librad::git;
 use librad::git::storage::read::ReadOnlyStorage as _;
+use librad::git::tracking;
 use librad::git::Urn;
 use librad::identities;
 use librad::paths::Paths;
 use librad::PeerId;
 
+use super::storage::Storage;
 use super::{types::ReceivePackEnv, CertSignerDetails};
 use crate::error::Error;
 
@@ -104,10 +106,19 @@ impl PostReceive {
 
         if identity_exists {
             println!("Pushing to existing identity...");
+
             post_receive.update_refs(&repo)?;
+
+            if let Some((refname, _, _)) = post_receive.updates.first() {
+                let (peer_id, _) = crate::parse_ref(refname)?;
+
+                post_receive.track_identity(Some(peer_id))?;
+            }
         } else {
             println!("Pushing new identity...");
+
             post_receive.initialize_identity(&repo)?;
+            post_receive.track_identity(None)?;
         }
 
         Ok(())
@@ -207,7 +218,7 @@ impl PostReceive {
                 return Err(Error::Unauthorized("identity must be initialized first"));
             }
 
-            let storage = git::storage::ReadOnly::open(&self.paths)?;
+            let storage = librad::git::storage::ReadOnly::open(&self.paths)?;
             let lookup = |urn| {
                 let refname = git::types::Reference::rad_id(git::types::Namespace::from(urn));
                 storage.reference_oid(&refname).map(|oid| oid.into())
@@ -260,6 +271,29 @@ impl PostReceive {
             "refs/namespaces/{}/refs/{}",
             &self.env.git_namespace, refname
         )
+    }
+
+    fn track_identity(&self, peer_id: Option<PeerId>) -> Result<(), Error> {
+        if let Some(peer_id) = peer_id {
+            println!("Tracking peer {}...", peer_id);
+        } else {
+            println!("Tracking project...");
+        }
+
+        let cfg = tracking::config::Config::default();
+        let storage = Storage::open(&self.paths)?;
+
+        tracking::track(
+            &storage,
+            &self.urn,
+            peer_id,
+            cfg,
+            tracking::policy::Track::Any,
+        )??;
+
+        println!("Tracking successful.");
+
+        Ok(())
     }
 
     pub fn notify_org_node(&self) -> Result<(), Error> {

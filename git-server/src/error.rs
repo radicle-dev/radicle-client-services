@@ -112,6 +112,14 @@ pub enum Error {
     /// Stored refs error.
     #[error(transparent)]
     Stored(#[from] librad::git::refs::stored::Error),
+
+    /// Tracking error.
+    #[error(transparent)]
+    Track(#[from] librad::git::tracking::error::Track),
+
+    /// Tracking error (inner).
+    #[error(transparent)]
+    PreviousError(#[from] librad::git::tracking::git::refdb::PreviousError<librad::git_ext::Oid>),
 }
 
 impl Error {

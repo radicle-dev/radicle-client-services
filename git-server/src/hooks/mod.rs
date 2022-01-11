@@ -1,5 +1,6 @@
 pub mod post_receive;
 pub mod pre_receive;
+pub mod storage;
 pub mod types;
 
 use crate::error::Error;
