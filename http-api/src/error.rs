@@ -16,9 +16,9 @@ pub enum Error {
     #[error("missing default branch in project")]
     MissingDefaultBranch,
 
-    /// The project does not have delegations.
-    #[error("missing delegations in project")]
-    MissingDelegations,
+    /// The project does not have a local state.
+    #[error("missing local state in project")]
+    MissingLocalState,
 
     /// Error related to tracking.
     #[error("tracking: {0}")]

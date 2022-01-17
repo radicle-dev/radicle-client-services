@@ -449,19 +449,12 @@ fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
     let meta = get_project_metadata(&urn, &paths)?;
     let repo = git::Repository::new(paths.git_dir().to_owned())?;
     let namespace = git::namespace::Namespace::try_from(urn.encode_id().as_str())?;
-    let delegate = meta.delegates.first().ok_or(Error::MissingDelegations)?;
     let browser = git::Browser::new_with_namespace(
         &repo,
         &namespace,
         git::Branch::local(&meta.default_branch),
     )
-    .or_else(|_| {
-        git::Browser::new_with_namespace(
-            &repo,
-            &namespace,
-            remote_branch(&meta.default_branch, delegate),
-        )
-    })?;
+    .map_err(|_| Error::MissingLocalState)?;
     let history = browser.get();
     let head = history.first();
 
