@@ -363,18 +363,37 @@ async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
     #[derive(serde::Serialize)]
     struct Project {
         name: String,
+        description: String,
+        head: String,
         urn: String,
+        delegates: Vec<PeerId>,
     }
 
     let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
+    let repo = git::Repository::new(&ctx.paths.git_dir().to_owned()).map_err(Error::from)?;
     let projects = identities::any::list(&storage)
         .map_err(Error::from)?
         .filter_map(|res| {
             res.map(|id| match id {
                 SomeIdentity::Project(project) => {
-                    let name = (&project.payload().subject.name).to_string();
-                    let urn = project.urn().to_string();
-                    Some(Project { name, urn })
+                    let urn = &project.urn();
+                    let meta: project::Metadata = project.try_into().ok()?;
+                    let project::Metadata {
+                        name,
+                        description,
+                        default_branch,
+                        maintainers: _,
+                        delegates,
+                    } = meta;
+                    let head = get_head_commit(&repo, urn, &default_branch).ok()?;
+
+                    Some(Project {
+                        name,
+                        description,
+                        urn: urn.to_string(),
+                        head: head.id.to_string(),
+                        delegates,
+                    })
                 }
                 _ => None,
             })
@@ -446,18 +465,9 @@ where
 }
 
 fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
-    let meta = get_project_metadata(&urn, &paths)?;
     let repo = git::Repository::new(paths.git_dir().to_owned())?;
-    let namespace = git::namespace::Namespace::try_from(urn.encode_id().as_str())?;
-    let browser = git::Browser::new_with_namespace(
-        &repo,
-        &namespace,
-        git::Branch::local(&meta.default_branch),
-    )
-    .map_err(|_| Error::MissingLocalState)?;
-    let history = browser.get();
-    let head = history.first();
-
+    let meta = get_project_metadata(&urn, &paths)?;
+    let head = get_head_commit(&repo, &urn, &meta.default_branch)?;
     Ok(Info {
         meta,
         head: head.id.to_string(),
@@ -470,6 +480,20 @@ fn get_project_metadata(urn: &Urn, paths: &Paths) -> Result<project::Metadata, E
     let meta: project::Metadata = project.try_into()?;
 
     Ok(meta)
+}
+
+fn get_head_commit(
+    repo: &git::Repository,
+    urn: &Urn,
+    default_branch: &str,
+) -> Result<git::Commit, Error> {
+    let namespace = git::namespace::Namespace::try_from(urn.encode_id().as_str())?;
+    let browser =
+        git::Browser::new_with_namespace(repo, &namespace, git::Branch::local(default_branch))
+            .map_err(|_| Error::MissingLocalState)?;
+    let history = browser.get();
+
+    Ok(history.first().to_owned())
 }
 
 fn remote_branch(branch_name: &str, peer_id: &PeerId) -> git::Branch {
