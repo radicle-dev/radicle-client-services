@@ -160,21 +160,20 @@ impl refdb::Write for Storage {
     where
         I: IntoIterator<Item = refdb::Update<'a, Self::Oid>>,
     {
+        use refdb::{Applied, PreviousError, Update, Updated};
+
         let raw = &self.backend;
         let mut txn = raw.transaction().map_err(error::Txn::Acquire)?;
-        let mut applied = refdb::Applied::default();
+        let mut applied = Applied::default();
         let mut reject_or_update =
-            |previous: Option<refdb::PreviousError<Self::Oid>>,
-             update: refdb::Updated<'a, Self::Oid>| {
-                match previous {
-                    None => applied.updates.push(update),
-                    Some(rejection) => applied.rejections.push(rejection),
-                }
+            |apply: Result<Updated<'a, Self::Oid>, PreviousError<Self::Oid>>| match apply {
+                Ok(update) => applied.updates.push(update),
+                Err(rejection) => applied.rejections.push(rejection),
             };
 
         for update in updates {
             match update {
-                refdb::Update::Write {
+                Update::Write {
                     name,
                     target,
                     previous,
@@ -195,16 +194,18 @@ impl refdb::Write for Storage {
                     };
                     match self.reference(&name)? {
                         Some(r) => reject_or_update(
-                            previous.guard(r.target().map(Oid::from).as_ref(), set)?,
-                            refdb::Updated::Written { name, target },
+                            previous
+                                .guard(r.target().map(Oid::from).as_ref(), set)?
+                                .map_or(Ok(Updated::Written { name, target }), Err),
                         ),
                         None => reject_or_update(
-                            previous.guard(None, set)?,
-                            refdb::Updated::Written { name, target },
+                            previous
+                                .guard(None, set)?
+                                .map_or(Ok(Updated::Written { name, target }), Err),
                         ),
                     }
                 }
-                refdb::Update::Delete { name, previous } => {
+                Update::Delete { name, previous } => {
                     let refname = name.to_string();
                     txn.lock_ref(&refname).map_err(|err| error::Txn::Lock {
                         refname: refname.clone(),
@@ -218,24 +219,26 @@ impl refdb::Write for Storage {
                     };
                     match self.reference(&name)? {
                         Some(r) => reject_or_update(
-                            previous.guard(r.target().map(Oid::from).as_ref(), delete)?,
-                            refdb::Updated::Deleted {
-                                name,
-                                previous: Some(
-                                    r.target()
-                                        .map(Ok)
-                                        .unwrap_or(Err(error::SymbolicRef))?
-                                        .into(),
+                            previous
+                                .guard(r.target().map(Oid::from).as_ref(), delete)?
+                                .map_or(
+                                    Ok(Updated::Deleted {
+                                        name,
+                                        previous: r
+                                            .target()
+                                            .map(Ok)
+                                            .unwrap_or(Err(error::SymbolicRef))?
+                                            .into(),
+                                    }),
+                                    Err,
                                 ),
-                            },
                         ),
-                        None => reject_or_update(
-                            previous.guard(None, delete)?,
-                            refdb::Updated::Deleted {
-                                name,
-                                previous: None,
-                            },
-                        ),
+                        None => match previous {
+                            refdb::PreviousValue::Any
+                            | refdb::PreviousValue::MustNotExist
+                            | refdb::PreviousValue::IfExistsMustMatch(_) => { /* no-op */ }
+                            _ => reject_or_update(Err(PreviousError::DidNotExist)),
+                        },
                     }
                 }
             }
