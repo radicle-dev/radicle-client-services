@@ -7,12 +7,13 @@ use std::convert::TryFrom as _;
 use std::convert::TryInto as _;
 use std::net;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use serde_json::json;
 use warp::hyper::StatusCode;
 use warp::reply;
 use warp::reply::Json;
-use warp::{self, filters::BoxedFilter, path, Filter, Rejection, Reply};
+use warp::{self, filters::BoxedFilter, path, query, Filter, Rejection, Reply};
 
 use radicle_daemon::librad::git::identities;
 use radicle_daemon::librad::git::storage::read::ReadOnly;
@@ -120,7 +121,8 @@ async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible>
 /// Combination of all source filters.
 fn filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
     project_root_filter(ctx.clone())
-        .or(commits_filter(ctx.clone()))
+        .or(commit_filter(ctx.clone()))
+        .or(history_filter(ctx.clone()))
         .or(project_filter(ctx.clone()))
         .or(tree_filter(ctx.clone()))
         .or(remotes_filter(ctx.clone()))
@@ -168,15 +170,26 @@ fn remote_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Reje
         .and_then(remote_handler)
 }
 
+/// `GET /:project/commits?from=<sha>`
+fn history_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::get()
+        .map(move || ctx.clone())
+        .and(path::param::<Urn>())
+        .and(path("commits"))
+        .and(query::<HashMap<String, String>>())
+        .and(path::end())
+        .and_then(history_handler)
+}
+
 /// `GET /:project/commits/:sha`
-fn commits_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+fn commit_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
         .map(move || ctx.clone())
         .and(path::param::<Urn>())
         .and(path("commits"))
         .and(path::param::<One>())
         .and(path::end())
-        .and_then(commits_handler)
+        .and_then(commit_handler)
 }
 
 /// `GET /:project/readme/:sha`
@@ -316,8 +329,23 @@ async fn remote_handler(
     Ok(warp::reply::json(&response))
 }
 
-async fn commits_handler(ctx: Context, project: Urn, sha: One) -> Result<impl Reply, Rejection> {
-    let reference = Reference::head(Namespace::from(project), None, sha);
+async fn history_handler(
+    ctx: Context,
+    project: Urn,
+    qs: HashMap<String, String>,
+) -> Result<impl Reply, Rejection> {
+    let (sha, fallback_to_head) = match qs.get("from").cloned() {
+        Some(commit) => (commit, false),
+        None => {
+            let meta = project_info(project.to_owned(), ctx.paths.to_owned())?;
+            (meta.head, true)
+        }
+    };
+    let reference = Reference::head(
+        Namespace::from(project),
+        None,
+        One::from_str(&sha).map_err(|_| Error::NotFound)?,
+    );
     let commits = browse(reference, ctx.paths, |browser| {
         radicle_source::commits::<PeerId>(browser, None)
     })
@@ -326,6 +354,28 @@ async fn commits_handler(ctx: Context, project: Urn, sha: One) -> Result<impl Re
         "headers": &commits.headers,
         "stats": &commits.stats,
     });
+
+    if fallback_to_head {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&response),
+            StatusCode::FOUND,
+        ));
+    }
+
+    Ok(warp::reply::with_status(
+        warp::reply::json(&response),
+        StatusCode::OK,
+    ))
+}
+
+async fn commit_handler(ctx: Context, project: Urn, sha: One) -> Result<impl Reply, Rejection> {
+    let reference = Reference::head(Namespace::from(project), None, sha.to_owned());
+    let commit = browse(reference, ctx.paths, |browser| {
+        let oid = browser.oid(&sha)?;
+        radicle_source::commit(browser, oid)
+    })
+    .await?;
+    let response = json!(&commit);
 
     Ok(warp::reply::json(&response))
 }
