@@ -459,11 +459,11 @@ async fn git(
         Ok(output) if output.status.success() => {
             tracing::info!("git-http-backend: exited successfully for {}", urn);
 
-            let mut reader = io::BufReader::new(&output.stdout[..]);
+            let mut reader = std::io::Cursor::new(output.stdout);
             let mut headers = HashMap::new();
 
             // Parse headers returned by git so that we can use them in the client response.
-            for line in reader.by_ref().lines() {
+            for line in io::Read::by_ref(&mut reader).lines() {
                 let line = line?;
 
                 if line.is_empty() || line == "\r" {
@@ -499,8 +499,8 @@ async fn git(
                     .unwrap_or(StatusCode::OK)
             };
 
-            let mut body = Vec::new();
-            reader.read_to_end(&mut body)?;
+            let position = reader.position() as usize;
+            let body = reader.into_inner().split_off(position);
 
             Ok((status, headers, body))
         }
