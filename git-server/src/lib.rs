@@ -455,80 +455,67 @@ async fn git(
         }
     }
 
-    let mut reader = io::BufReader::new(child.stdout.take().unwrap());
-    let mut headers = HashMap::new();
+    match child.wait_with_output() {
+        Ok(output) if output.status.success() => {
+            tracing::info!("git-http-backend: exited successfully for {}", urn);
 
-    // Parse headers returned by git so that we can use them in the client response.
-    for line in reader.by_ref().lines() {
-        let line = line?;
+            let mut reader = io::BufReader::new(&output.stdout[..]);
+            let mut headers = HashMap::new();
 
-        if line.is_empty() || line == "\r" {
-            break;
-        }
+            // Parse headers returned by git so that we can use them in the client response.
+            for line in reader.by_ref().lines() {
+                let line = line?;
 
-        let mut parts = line.splitn(2, ':');
-        let key = parts.next();
-        let value = parts.next();
+                if line.is_empty() || line == "\r" {
+                    break;
+                }
 
-        if let (Some(key), Some(value)) = (key, value) {
-            let value = &value[1..];
+                let mut parts = line.splitn(2, ':');
+                let key = parts.next();
+                let value = parts.next();
 
-            headers
-                .entry(key.to_string())
-                .or_insert_with(Vec::new)
-                .push(value.to_string());
-        } else {
-            return Err(Error::Backend);
-        }
-    }
+                if let (Some(key), Some(value)) = (key, value) {
+                    let value = &value[1..];
 
-    let status = {
-        tracing::debug!("http-backend: {:?}", &headers);
-
-        let line = headers.remove("Status").unwrap_or_default();
-        let line = line.into_iter().next().unwrap_or_default();
-        let mut parts = line.split(' ');
-
-        parts
-            .next()
-            .and_then(|p| p.parse().ok())
-            .unwrap_or(StatusCode::OK)
-    };
-
-    // Read stderr.
-    if let Some(mut out) = child.stderr.take() {
-        let mut buf = Vec::new();
-
-        while let Ok(count) = out.read(&mut buf) {
-            if count == 0 {
-                break;
+                    headers
+                        .entry(key.to_string())
+                        .or_insert_with(Vec::new)
+                        .push(value.to_string());
+                } else {
+                    return Err(Error::Backend);
+                }
             }
+
+            let status = {
+                tracing::debug!("http-backend: {:?}", &headers);
+
+                let line = headers.remove("Status").unwrap_or_default();
+                let line = line.into_iter().next().unwrap_or_default();
+                let mut parts = line.split(' ');
+
+                parts
+                    .next()
+                    .and_then(|p| p.parse().ok())
+                    .unwrap_or(StatusCode::OK)
+            };
+
+            let mut body = Vec::new();
+            reader.read_to_end(&mut body)?;
+
+            Ok((status, headers, body))
         }
-        if let Ok(err) = String::from_utf8(buf) {
-            if !err.trim().is_empty() {
-                tracing::error!("http-backend: {}", err);
+        Ok(output) => {
+            tracing::error!("git-http-backend: exited with code {}", output.status);
+
+            if let Ok(output) = std::str::from_utf8(&output.stderr) {
+                tracing::error!("git-http-backend: stderr: {}", output.trim_end());
             }
-        }
-    }
-
-    let mut body = Vec::new();
-    reader.read_to_end(&mut body)?;
-
-    match child.wait() {
-        Ok(status) if status.success() => {
-            tracing::info!("git-http-backend exited successfully for {}", urn);
-        }
-        Ok(status) => {
-            tracing::error!("git-http-backend exited with code {}", status);
-
-            return Err(Error::Backend);
+            Err(Error::Backend)
         }
         Err(err) => {
             panic!("failed to wait for git-http-backend: {}", err);
         }
     }
-
-    Ok((status, headers, body))
 }
 
 async fn recover(err: Rejection) -> Result<Box<dyn Reply>, Infallible> {
