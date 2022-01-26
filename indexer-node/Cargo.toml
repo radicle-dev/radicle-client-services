@@ -1,0 +1,24 @@
+[package]
+name = "radicle-indexer-node"
+license = "MIT OR Apache-2.0"
+version = "0.0.1"
+authors = ["Alexis Sellier <self@cloudhead.io>"]
+edition = "2018"
+build = "../build.rs"
+default-run = "radicle-indexer-node"
+
+[dependencies]
+shared = { path = "../shared", default-features = false }
+async-trait = { version = "0.1" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
+librad = { version = "0" }
+tokio = { version = "1.2", features = ["macros", "rt", "sync"] }
+thiserror = { version = "1" }
+argh = { version = "0.1.4" }
+tracing = "0.1"
+anyhow = "1.0"
+warp = { version = "0.3.1", features = ["tls"] }
+rocksdb = "0.17.0"
+url = { version = "*" }
+git2 = "0.13"

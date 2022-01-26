@@ -4,6 +4,7 @@ members = [
   "org-node",
   "git-server",
   "service-init",
+  "indexer-node",
   "shared",
 ]
 
