@@ -94,6 +94,17 @@ impl Context {
         Ok(())
     }
 
+    /// Disables the allowed signers file.
+    /// We already have methods for authorizing keys, so this just gets in the way.
+    pub fn disable_signers_file(&self) -> Result<(), Error> {
+        let field = "gpg.ssh.allowedSignersFile";
+        let value = "/dev/null";
+
+        self.set_root_git_config(field, value)?;
+
+        Ok(())
+    }
+
     /// Enables users to submit a signed push: `push --signed`
     ///
     /// "You should set the certNonceSeed setting to some randomly generated long string that should
@@ -231,6 +242,13 @@ pub async fn run(options: Options) {
     if let Err(e) = ctx.advertise_push_options() {
         tracing::error!(
             "Failed to set push config! required to enable `push --signed`: {:?}",
+            e
+        );
+        std::process::exit(1);
+    }
+    if let Err(e) = ctx.disable_signers_file() {
+        tracing::error!(
+            "Failed to set signers file config! required to enable `push --signed`: {:?}",
             e
         );
         std::process::exit(1);
