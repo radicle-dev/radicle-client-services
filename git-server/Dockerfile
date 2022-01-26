@@ -15,8 +15,8 @@ RUN cargo install --all-features --locked --path .
 # Run
 FROM debian:bullseye-slim@sha256:96e65f809d753e35c54b7ba33e59d92e53acc8eb8b57bf1ccece73b99700b3b0
 
-EXPOSE 8778/tcp
-RUN apt-get update && apt-get install -y libssl1.1 git && rm -rf /var/lib/apt/lists/*
+RUN echo deb http://deb.debian.org/debian bullseye-backports main contrib non-free >/etc/apt/sources.list.d/backports.list
+RUN apt-get update && apt-get install -y libssl1.1 && apt -t bullseye-backports install --yes git && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/cargo/bin/radicle-git-server /usr/local/bin/radicle-git-server
 COPY --from=build /usr/local/cargo/bin/pre-receive /usr/local/bin/pre-receive
 COPY --from=build /usr/local/cargo/bin/post-receive /usr/local/bin/post-receive

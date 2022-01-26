@@ -14,6 +14,8 @@ services:
     restart: unless-stopped
     networks:
       - radicle-services
+    depends_on:
+      - git-server
   git-server:
     image: gcr.io/radicle-services/git-server:latest
     build:
