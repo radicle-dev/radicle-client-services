@@ -520,6 +520,8 @@ async fn git(
         }
         Ok(status) => {
             tracing::error!("git-http-backend exited with code {}", status);
+
+            return Err(Error::Backend);
         }
         Err(err) => {
             panic!("failed to wait for git-http-backend: {}", err);
