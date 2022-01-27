@@ -34,7 +34,7 @@ pub struct Options {
     #[argh(switch)]
     pub git_receive_pack: bool,
 
-    /// list of comma delimited GPG authorized keys to verify a signed push
+    /// list of comma delimited SSH authorized key fingerprints to verify a signed push
     #[argh(option)]
     pub authorized_keys: Option<String>,
 

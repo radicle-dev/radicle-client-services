@@ -124,6 +124,24 @@ impl Context {
         Ok(())
     }
 
+    /// Sets the SLOP delay for signed push verification.
+    ///
+    /// "When a `git push --signed` sent a push certificate with a "nonce" that was issued by a
+    /// receive-pack serving the same repository within this many seconds, export the "nonce" found
+    /// in the certificate to GIT_PUSH_CERT_NONCE to the hooks (instead of what the receive-pack
+    /// asked the sending side to include). This may allow writing checks in pre-receive and
+    /// post-receive a bit easier. Instead of checking GIT_PUSH_CERT_NONCE_SLOP environment
+    /// variable that records by how many seconds the nonce is stale to decide if they want to
+    /// accept the certificate, they only can check GIT_PUSH_CERT_NONCE_STATUS is OK."
+    pub fn set_cert_nonce_slop(&self) -> Result<(), Error> {
+        let field = "receive.certNonceSlop";
+        let value = 60; // Seconds.
+
+        self.set_root_git_config(field, &value.to_string())?;
+
+        Ok(())
+    }
+
     /// updates the git config in the root project
     pub fn set_root_git_config(&self, field: &str, value: &str) -> Result<(), Error> {
         let path = self.root.clone().join("git/config");
@@ -235,6 +253,13 @@ pub async fn run(options: Options) {
     if let Err(e) = ctx.set_cert_nonce_seed() {
         tracing::error!(
             "Failed to set certificate nonce seed! required to enable `push --signed`: {:?}",
+            e
+        );
+        std::process::exit(1);
+    }
+    if let Err(e) = ctx.set_cert_nonce_slop() {
+        tracing::error!(
+            "Failed to set certificate nonce slop! required to enable `push --signed`: {:?}",
             e
         );
         std::process::exit(1);
