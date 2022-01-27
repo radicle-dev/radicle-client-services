@@ -10,6 +10,7 @@
 use std::io::prelude::*;
 use std::io::{stdin, Write};
 use std::os::unix::net::UnixStream;
+use std::str;
 use std::str::FromStr;
 
 use envconfig::Envconfig;
@@ -113,6 +114,7 @@ impl PostReceive {
                 let (peer_id, _) = crate::parse_ref(refname)?;
 
                 post_receive.track_identity(Some(peer_id))?;
+                post_receive.receive_hook()?;
             }
         } else {
             println!("Pushing new identity...");
@@ -292,6 +294,51 @@ impl PostReceive {
         )??;
 
         println!("Tracking successful.");
+
+        Ok(())
+    }
+
+    pub fn receive_hook(&self) -> Result<(), Error> {
+        use std::process::{Command, Stdio};
+
+        let hook = if let Some(path) = &self.env.receive_hook {
+            path
+        } else {
+            return Ok(());
+        };
+        println!("Running custom receive hook...");
+
+        let mut child = Command::new(hook)
+            .stderr(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stdin(Stdio::piped())
+            .spawn()
+            .map_err(Error::CustomHook)?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            for (refname, old, new) in self.updates.iter() {
+                let (peer_id, refname) = crate::parse_ref(refname)?;
+
+                if let Some(branch) = refname.strip_prefix("heads/") {
+                    writeln!(
+                        &mut stdin,
+                        "{} {} {} {} {} {}",
+                        self.urn, self.key_fingerprint, peer_id, old, new, branch
+                    )?;
+                }
+            }
+        }
+
+        match child.wait() {
+            Ok(status) => {
+                if status.success() {
+                    println!("Custom receive hook success.");
+                } else {
+                    println!("Custom receive hook failed.");
+                }
+            }
+            Err(err) => return Err(err.into()),
+        }
 
         Ok(())
     }

@@ -27,6 +27,10 @@ pub enum Error {
     #[error("project has no default branch")]
     NoDefaultBranch,
 
+    /// Custom hook failed to spawn.
+    #[error("custom hook failed to spawn: {0}")]
+    CustomHook(std::io::Error),
+
     /// Failed certificate verification.
     #[error("failed certification verification")]
     FailedCertificateVerification,

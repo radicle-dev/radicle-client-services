@@ -34,6 +34,10 @@ pub struct Options {
     #[argh(switch)]
     pub git_receive_pack: bool,
 
+    /// executable to call after a successful push is received (default: none)
+    #[argh(option)]
+    pub git_receive_hook: Option<PathBuf>,
+
     /// list of comma delimited SSH authorized key fingerprints to verify a signed push
     #[argh(option)]
     pub authorized_keys: Option<String>,
@@ -61,6 +65,7 @@ impl From<Options> for server::Options {
             tls_key: other.tls_key,
             listen: other.listen,
             git_receive_pack: other.git_receive_pack,
+            git_receive_hook: other.git_receive_hook,
             authorized_keys: other
                 .authorized_keys
                 .map(|k| k.split(',').map(|s| s.to_owned()).collect::<Vec<String>>())

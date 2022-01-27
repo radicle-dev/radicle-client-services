@@ -153,6 +153,10 @@ pub struct ReceivePackEnv {
     #[envconfig(from = "RADICLE_PEER_ID")]
     pub peer_id: Option<PeerId>,
 
+    /// path to "on receive" hook
+    #[envconfig(from = "RADICLE_RECEIVE_HOOK")]
+    pub receive_hook: Option<PathBuf>,
+
     /// project default branch.
     #[envconfig(from = "RADICLE_DEFAULT_BRANCH")]
     pub default_branch: Option<String>,

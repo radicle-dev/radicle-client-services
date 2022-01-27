@@ -39,6 +39,7 @@ pub struct Options {
     pub listen: net::SocketAddr,
     pub tls_cert: Option<PathBuf>,
     pub tls_key: Option<PathBuf>,
+    pub git_receive_hook: Option<PathBuf>,
     pub git_receive_pack: bool,
     pub authorized_keys: Vec<String>,
     pub cert_nonce_seed: Option<String>,
@@ -51,6 +52,7 @@ pub struct Context {
     git_receive_pack: bool,
     authorized_keys: Vec<String>,
     cert_nonce_seed: Option<String>,
+    git_receive_hook: Option<PathBuf>,
     allow_unauthorized_keys: bool,
     aliases: Arc<RwLock<HashMap<String, Urn>>>,
     pool: Pool<git::storage::ReadOnly>,
@@ -72,6 +74,7 @@ impl Context {
         Ok(Context {
             root: root_path.canonicalize()?,
             git_receive_pack: options.git_receive_pack,
+            git_receive_hook: options.git_receive_hook.clone(),
             authorized_keys: options.authorized_keys.clone(),
             cert_nonce_seed: options.cert_nonce_seed.clone(),
             allow_unauthorized_keys: options.allow_unauthorized_keys,
@@ -444,6 +447,9 @@ async fn git(
     }
     if let Some(default_branch) = default_branch {
         cmd.env("RADICLE_DEFAULT_BRANCH", default_branch);
+    }
+    if let Some(hook) = ctx.git_receive_hook {
+        cmd.env("RADICLE_RECEIVE_HOOK", hook);
     }
 
     cmd.env("REQUEST_METHOD", method.as_str());
