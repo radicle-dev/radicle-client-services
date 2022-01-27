@@ -23,7 +23,8 @@ base64 = { version = "0.13" }
 byteorder = { version = "1.4" }
 either = { version = "1.6" }
 flate2 = { version = "1.0" }
-git2 = "0.13"
+fastrand = { version = "1.5" }
+git2 = { version = "0.13" }
 http = { version = "0.2" }
 librad = { version = "0" }
 shared = { path = "../shared", default-features = false }
@@ -37,12 +38,10 @@ radicle-source = { version = "0.2.0" }
 
 # hooks feature enabled dependencies
 envconfig = { version = "0.10.0", optional = true }
-pgp = { version = "0.7.2", optional = true }
 hex = { version = "0.4.3", optional = true }
-rand = "0.8.4"
 
 [features]
 default = ["hooks"]
 gcp = ["shared/gcp"]
-hooks = ["envconfig", "pgp", "hex"]
+hooks = ["envconfig", "hex"]
 

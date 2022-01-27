@@ -80,11 +80,6 @@ pub enum Error {
     #[error(transparent)]
     Utf8Error(#[from] std::str::Utf8Error),
 
-    /// OpenPGP errors.
-    #[cfg(feature = "hooks")]
-    #[error(transparent)]
-    PgpError(#[from] pgp::errors::Error),
-
     /// Librad profile error.
     #[error(transparent)]
     Profile(#[from] librad::profile::Error),

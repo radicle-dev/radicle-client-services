@@ -23,7 +23,6 @@ use librad::identities::SomeIdentity;
 use librad::paths::Paths;
 use librad::profile::Profile;
 use librad::PeerId;
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use tokio::sync::RwLock;
 use warp::hyper::StatusCode;
 use warp::reply;
@@ -576,11 +575,13 @@ async fn recover(err: Rejection) -> Result<Box<dyn Reply>, Infallible> {
 
 /// Helper method to generate random string for cert nonce;
 fn gen_random_string() -> String {
-    thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(12)
-        .map(char::from)
-        .collect()
+    let rng = fastrand::Rng::new();
+    let mut out = String::new();
+
+    for _ in 0..12 {
+        out.push(rng.alphanumeric());
+    }
+    out
 }
 
 /// Get the SSH key fingerprint from a peer id.

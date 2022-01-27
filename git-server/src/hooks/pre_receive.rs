@@ -18,13 +18,10 @@
 //! update the repository.
 use std::io::prelude::*;
 use std::io::stdin;
-
-use std::path::Path;
 use std::str::FromStr;
 
 use envconfig::Envconfig;
 use git2::{Oid, Repository};
-use pgp::{types::KeyTrait, Deserializable};
 
 use super::{
     types::{CertNonceStatus, CertStatus, ReceivePackEnv},
@@ -33,9 +30,6 @@ use super::{
 use crate::error::Error;
 
 pub type KeyRing = Vec<String>;
-
-#[allow(dead_code)]
-pub const DEFAULT_RAD_KEYS_PATH: &str = ".rad/keys/openpgp/";
 
 /// `PreReceive` provides access to the standard input values passed into the `pre-receive`
 /// git hook, as well as parses environmental variables that may be used to process the hook.
@@ -186,43 +180,5 @@ impl PreReceive {
         }
 
         Err(Error::Unauthorized("key is not in keyring"))
-    }
-
-    /// Check the local repo .rad/keys/ directory for the GPG key matching the cert key
-    /// used to sign the push certificate.
-    #[allow(dead_code)]
-    fn is_cert_authorized(&self) -> Result<bool, Error> {
-        if let Some(key) = self.env.cert_key.clone() {
-            // search for the public key in the rad keys directory.
-            let repo = Repository::open(&self.env.git_dir)?;
-
-            // the path of the public key to verify.
-            let key_path = Path::new(DEFAULT_RAD_KEYS_PATH).join(&key);
-
-            // set the namespace for the repo equal to the git namespace env.
-            repo.set_namespace(&self.env.git_namespace)?;
-
-            let (refname, _, _) = &self.updates[0];
-            let rfc = repo.find_reference(refname)?;
-
-            if let Ok(tree) = rfc.peel_to_tree() {
-                if let Ok(entry) = tree.get_path(&key_path) {
-                    let obj = entry.to_object(&repo)?;
-                    let blob = obj.peel_to_blob()?;
-                    let content = std::str::from_utf8(blob.content())?;
-                    let (pk, _) = pgp::SignedPublicKey::from_string(content)?;
-
-                    // verify the key on file.
-                    pk.verify()?;
-
-                    let key_id = hex::encode(pk.primary_key.key_id().as_ref()).to_uppercase();
-
-                    // check the key matches the key from the signed push certificate.
-                    return Ok(key_id == key);
-                }
-            };
-        }
-
-        Ok(false)
     }
 }
