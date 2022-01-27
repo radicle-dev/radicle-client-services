@@ -6,7 +6,7 @@ pub mod error;
 pub mod hooks;
 
 use std::collections::HashMap;
-use std::convert::{Infallible, TryFrom};
+use std::convert::Infallible;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -31,8 +31,6 @@ use warp::{self, path, Buf, Filter, Rejection, Reply};
 
 use error::Error;
 
-use radicle_source::surf::vcs::git::namespace::Namespace;
-
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const STORAGE_POOL_SIZE: usize = 3;
 
@@ -55,7 +53,7 @@ pub struct Context {
     authorized_keys: Vec<String>,
     cert_nonce_seed: Option<String>,
     allow_unauthorized_keys: bool,
-    aliases: Arc<RwLock<HashMap<String, Namespace>>>,
+    aliases: Arc<RwLock<HashMap<String, Urn>>>,
     pool: Pool<git::storage::ReadOnly>,
 }
 
@@ -156,7 +154,7 @@ impl Context {
     }
 
     /// Populates alias map with unique projects' names and their urns
-    async fn populate_aliases(&self, map: &mut HashMap<String, Namespace>) -> Result<(), Error> {
+    async fn populate_aliases(&self, map: &mut HashMap<String, Urn>) -> Result<(), Error> {
         use librad::git::identities::SomeIdentity::Project;
 
         let storage = self.pool.get().await?;
@@ -164,7 +162,7 @@ impl Context {
 
         for identity in identities.flatten() {
             if let Project(project) = identity {
-                let urn = Namespace::try_from(project.urn().encode_id().as_str()).unwrap();
+                let urn = project.urn();
                 let name = (&project.payload().subject.name).to_string();
 
                 tracing::info!("alias {:?} for {:?}", name, urn.to_string());
@@ -320,30 +318,31 @@ async fn git_handler(
     headers: HeaderMap,
     body: impl Buf,
     remote: Option<net::SocketAddr>,
-    namespace: String,
+    project_id: String,
     peer_id: Option<PeerId>,
     request: warp::filters::path::Peek,
     query: String,
 ) -> Result<Box<dyn Reply>, Rejection> {
     let remote = remote.expect("There is always a remote for HTTP connections");
-    let id = if let Some(name) = namespace.strip_suffix(".git") {
-        tracing::debug!("looking for project alias {:?}", name);
+    let urn = if let Some(name) = project_id.strip_suffix(".git") {
+        if let Ok(urn) = Urn::try_from_id(name) {
+            urn
+        } else {
+            tracing::debug!("looking for project alias {:?}", name);
 
-        let mut aliases = ctx.aliases.write().await;
-        if !aliases.contains_key(name) {
-            // If the alias does not exist, rebuild the cache.
-            ctx.populate_aliases(&mut aliases).await?;
+            let mut aliases = ctx.aliases.write().await;
+            if !aliases.contains_key(name) {
+                // If the alias does not exist, rebuild the cache.
+                ctx.populate_aliases(&mut aliases).await?;
+            }
+            let urn = aliases.get(name).cloned().ok_or(Error::AliasNotFound)?;
+            tracing::debug!("project alias resolved to {}", urn);
+
+            urn
         }
-        aliases
-            .get(name)
-            .map(Namespace::to_string)
-            .ok_or(Error::AliasNotFound)?
     } else {
-        namespace
+        Urn::try_from_id(project_id).map_err(|_| Error::InvalidId)?
     };
-    let urn = Urn::try_from_id(id).map_err(|_| Error::InvalidId)?;
-
-    tracing::debug!("project alias resolved to {}", urn);
 
     let (status, headers, body) = git(
         ctx,
