@@ -10,20 +10,6 @@ services:
       - /var/opt/radicle:/app/radicle:ro
     user: $RADICLE_SEED_USER:$RADICLE_SEED_USER
     command: ["--log-format", "gcp"]
-  org-node:
-    logging:
-      driver: fluentd
-      options:
-        fluentd-address: 127.0.0.1:24224
-        tag: docker.org_node
-    volumes:
-      - /var/opt/radicle:/app/radicle
-    user: $RADICLE_SEED_USER:$RADICLE_SEED_USER
-    command: ["--orgs", $RADICLE_ORGS, "--subgraph", "https://gateway.thegraph.com/api/1758a78ae257ad4906f9c638e4a68c19/subgraphs/id/0x2f0963e77ca6ac0c2dad1bf4147b6b40e0dd8728-0", "--rpc-url", $ETH_RPC_URL, "--log-format", "gcp", '--influxdb', 'http://influxdb:8086', '--influxdb-token', $RADICLE_INFLUXDB_TOKEN]
   git-server:
     volumes:
       - /var/opt/radicle:/app/radicle
-  influxdb:
-    volumes:
-      - /var/opt/radicle/influxdb:/var/lib/influxdb2
-      - $PWD/influxdb:/docker-entrypoint-initdb.d
