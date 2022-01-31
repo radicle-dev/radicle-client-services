@@ -2,7 +2,7 @@
 mod error;
 mod project;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom as _;
 use std::convert::TryInto as _;
 use std::net;
@@ -428,6 +428,8 @@ struct Project {
     description: String,
     head: String,
     urn: String,
+    default_branch: String,
+    maintainers: HashSet<Urn>,
     delegates: Vec<PeerId>,
 }
 
@@ -448,7 +450,7 @@ async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
                         name,
                         description,
                         default_branch,
-                        maintainers: _,
+                        maintainers,
                         delegates,
                     } = meta;
                     let head = get_head_commit(&repo, urn, &default_branch).ok()?;
@@ -458,6 +460,8 @@ async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
                         description,
                         urn: urn.to_string(),
                         head: head.id.to_string(),
+                        default_branch,
+                        maintainers,
                         delegates,
                     })
                 }
@@ -528,7 +532,7 @@ async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl 
                         name,
                         description,
                         default_branch,
-                        maintainers: _,
+                        maintainers,
                         delegates,
                     } = meta;
                     let head = get_head_commit(&repo, urn, &default_branch).ok()?;
@@ -538,6 +542,8 @@ async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl 
                         description,
                         urn: urn.to_string(),
                         head: head.id.to_string(),
+                        default_branch,
+                        maintainers,
                         delegates,
                     })
                 }
