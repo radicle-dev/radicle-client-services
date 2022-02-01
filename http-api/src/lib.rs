@@ -62,12 +62,22 @@ pub async fn run(options: Options) {
         .and(warp::get().and(path::end()))
         .and_then(move || peer_handler(peer_id));
 
-    let projects = path("projects").and(filters(ctx));
+    let projects = path("projects").and(filters(ctx.clone()));
+
+    let delegates = path("delegates").and(
+        warp::get()
+            .map(move || ctx.clone())
+            .and(path::param::<Urn>())
+            .and(path("projects"))
+            .and(path::end())
+            .and_then(delegates_projects_handler),
+    );
 
     let routes = path::end()
         .and_then(root_handler)
         .or(v1.and(peer))
         .or(v1.and(projects))
+        .or(v1.and(delegates))
         .recover(recover)
         .with(warp::cors().allow_any_origin())
         .with(warp::log("http::api"));
@@ -251,6 +261,11 @@ async fn root_handler() -> Result<impl Reply, Rejection> {
                 "href": "/v1/peer",
                 "rel": "peer",
                 "type": "GET"
+            },
+            {
+                "href": "/v1/delegates/:urn/projects",
+                "rel": "projects",
+                "type": "GET"
             }
         ]
     });
@@ -407,17 +422,18 @@ async fn readme_handler(ctx: Context, project: Urn, sha: One) -> Result<impl Rep
     Ok(warp::reply::json(&blob))
 }
 
+#[derive(serde::Serialize)]
+struct Project {
+    name: String,
+    description: String,
+    head: String,
+    urn: String,
+    delegates: Vec<PeerId>,
+}
+
 /// List all projects
 async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
     use radicle_daemon::git::identities::SomeIdentity;
-    #[derive(serde::Serialize)]
-    struct Project {
-        name: String,
-        description: String,
-        head: String,
-        urn: String,
-        delegates: Vec<PeerId>,
-    }
 
     let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
     let repo = git::Repository::new(&ctx.paths.git_dir().to_owned()).map_err(Error::from)?;
@@ -484,6 +500,55 @@ async fn tree_handler(
     });
 
     Ok(warp::reply::json(&response))
+}
+
+/// List all projects that delegate is a part of
+async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl Reply, Rejection> {
+    use radicle_daemon::git::identities::SomeIdentity;
+
+    let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
+    let repo = git::Repository::new(&ctx.paths.git_dir().to_owned()).map_err(Error::from)?;
+    let projects = identities::any::list(&storage)
+        .map_err(Error::from)?
+        .filter_map(|res| {
+            res.map(|id| match id {
+                SomeIdentity::Project(project) => {
+                    use either::Either;
+
+                    if !project.delegations().iter().any(|d| match d {
+                        Either::Right(indirect) => indirect.urn() == delegate,
+                        Either::Left(_) => false,
+                    }) {
+                        return None;
+                    }
+
+                    let urn = &project.urn();
+                    let meta: project::Metadata = project.try_into().ok()?;
+                    let project::Metadata {
+                        name,
+                        description,
+                        default_branch,
+                        maintainers: _,
+                        delegates,
+                    } = meta;
+                    let head = get_head_commit(&repo, urn, &default_branch).ok()?;
+
+                    Some(Project {
+                        name,
+                        description,
+                        urn: urn.to_string(),
+                        head: head.id.to_string(),
+                        delegates,
+                    })
+                }
+                _ => None,
+            })
+            .transpose()
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(Error::from)?;
+
+    Ok(warp::reply::json(&projects))
 }
 
 async fn browse<T, F>(reference: Reference<Single>, paths: Paths, callback: F) -> Result<T, Error>
