@@ -120,7 +120,8 @@ impl PreReceive {
         for (refname, _, _) in self.updates.iter() {
             // Get the peer/remote we are attempting to push to, and convert it to an SSH
             // key fingerpint.
-            let (peer_id, _) = crate::parse_ref(refname)?;
+            let (peer_id, _) = crate::parse_ref(refname)
+                .map_err(|_| Error::InvalidRefPushed(refname.to_owned()))?;
             let peer_fingerprint = crate::to_ssh_fingerprint(&peer_id)?;
 
             if key_fingerprint[..] != peer_fingerprint[..] {
@@ -169,6 +170,7 @@ impl PreReceive {
 
         if let Some(key) = &self.env.cert_key {
             if self.env.allow_unauthorized_keys.unwrap_or_default() {
+                eprintln!("Unauthorized keys allowed.");
                 return Ok(());
             }
             eprintln!("Checking provided key {}...", key);

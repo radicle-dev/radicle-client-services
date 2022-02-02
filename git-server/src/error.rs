@@ -51,6 +51,10 @@ pub enum Error {
     #[error("peer-id is invalid")]
     InvalidPeerId,
 
+    /// Invalid ref pushed.
+    #[error("invalid ref pushed: {0}")]
+    InvalidRefPushed(String),
+
     /// Namespace not found.
     #[error("namespace does not exist")]
     NamespaceNotFound,
