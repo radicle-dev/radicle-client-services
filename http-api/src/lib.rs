@@ -8,8 +8,10 @@ use std::convert::TryInto as _;
 use std::net;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use serde_json::json;
+use tokio::sync::RwLock;
 use warp::hyper::StatusCode;
 use warp::reply;
 use warp::reply::Json;
@@ -43,6 +45,30 @@ pub struct Options {
 pub struct Context {
     paths: Paths,
     theme: String,
+    aliases: Arc<RwLock<HashMap<String, Urn>>>,
+}
+
+impl Context {
+    /// Populates alias map with unique projects' names and their urns
+    async fn populate_aliases(&self, map: &mut HashMap<String, Urn>) -> Result<(), Error> {
+        use radicle_daemon::git::identities::SomeIdentity::Project;
+
+        let storage = ReadOnly::open(&self.paths).expect("failed to open storage");
+        let identities = identities::any::list(&storage)?;
+
+        for identity in identities.flatten() {
+            if let Project(project) = identity {
+                let urn = project.urn();
+                let name = (&project.payload().subject.name).to_string();
+
+                if let std::collections::hash_map::Entry::Vacant(e) = map.entry(name.clone()) {
+                    e.insert(urn);
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Run the HTTP API.
@@ -53,6 +79,7 @@ pub async fn run(options: Options) {
 
     let ctx = Context {
         paths,
+        aliases: Default::default(),
         theme: options.theme,
     };
 
@@ -133,7 +160,8 @@ fn filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
     project_root_filter(ctx.clone())
         .or(commit_filter(ctx.clone()))
         .or(history_filter(ctx.clone()))
-        .or(project_filter(ctx.clone()))
+        .or(project_urn_filter(ctx.clone()))
+        .or(project_alias_filter(ctx.clone()))
         .or(tree_filter(ctx.clone()))
         .or(remotes_filter(ctx.clone()))
         .or(remote_filter(ctx.clone()))
@@ -224,13 +252,27 @@ fn project_root_filter(
         .boxed()
 }
 
-/// `GET /:project`
-fn project_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+/// `GET /:project-urn`
+fn project_urn_filter(
+    ctx: Context,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
         .map(move || ctx.clone())
         .and(path::param::<Urn>())
         .and(path::end())
-        .and_then(project_handler)
+        .and_then(project_urn_handler)
+        .boxed()
+}
+
+/// `GET /:project-alias`
+fn project_alias_filter(
+    ctx: Context,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::get()
+        .map(move || ctx.clone())
+        .and(path::param::<String>())
+        .and(path::end())
+        .and_then(project_alias_handler)
         .boxed()
 }
 
@@ -444,16 +486,16 @@ async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
         .filter_map(|res| {
             res.map(|id| match id {
                 SomeIdentity::Project(project) => {
-                    let urn = &project.urn();
                     let meta: project::Metadata = project.try_into().ok()?;
                     let project::Metadata {
+                        urn,
                         name,
                         description,
                         default_branch,
                         maintainers,
                         delegates,
                     } = meta;
-                    let head = get_head_commit(&repo, urn, &default_branch).ok()?;
+                    let head = get_head_commit(&repo, &urn, &default_branch).ok()?;
 
                     Some(Project {
                         name,
@@ -475,10 +517,24 @@ async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
     Ok(warp::reply::json(&projects))
 }
 
-async fn project_handler(ctx: Context, urn: Urn) -> Result<Json, Rejection> {
+async fn project_urn_handler(ctx: Context, urn: Urn) -> Result<Json, Rejection> {
     let info = project_info(urn, ctx.paths)?;
 
     Ok(warp::reply::json(&info))
+}
+
+async fn project_alias_handler(ctx: Context, name: String) -> Result<Json, Rejection> {
+    let mut aliases = ctx.aliases.write().await;
+    if !aliases.contains_key(&name) {
+        // If the alias does not exist, rebuild the cache.
+        ctx.populate_aliases(&mut aliases).await?;
+    }
+    let urn = aliases
+        .get(&name)
+        .cloned()
+        .ok_or_else(warp::reject::not_found)?;
+
+    project_urn_handler(ctx.clone(), urn).await
 }
 
 /// Fetch a [`radicle_source::Tree`].
@@ -526,16 +582,16 @@ async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl 
                         return None;
                     }
 
-                    let urn = &project.urn();
                     let meta: project::Metadata = project.try_into().ok()?;
                     let project::Metadata {
+                        urn,
                         name,
                         description,
                         default_branch,
                         maintainers,
                         delegates,
                     } = meta;
-                    let head = get_head_commit(&repo, urn, &default_branch).ok()?;
+                    let head = get_head_commit(&repo, &urn, &default_branch).ok()?;
 
                     Some(Project {
                         name,

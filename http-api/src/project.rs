@@ -21,6 +21,8 @@ pub struct Info {
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Metadata {
+    /// Project urn.
+    pub urn: Urn,
     /// Project name.
     pub name: String,
     /// Project description.
@@ -62,6 +64,7 @@ impl TryFrom<radicle_daemon::Project> for Metadata {
             .collect::<Vec<PeerId>>();
 
         Ok(Self {
+            urn: project.urn(),
             name: subject.name.to_string(),
             description: subject
                 .description
