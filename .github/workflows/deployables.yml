@@ -17,10 +17,13 @@ jobs:
           registry: gcr.io
           username: _json_key
           password: ${{ secrets.GCR_JSON_KEY }}
+      - name: Checkout code
+        uses: actions/checkout@v2
       - name: Build and push http-api
         id: http_api
         uses: docker/build-push-action@v2
         with:
+          context: .
           file: http-api/Dockerfile
           push: true
           tags: gcr.io/radicle-services/http-api:latest,gcr.io/radicle-services/http-api:${{ github.sha }}
@@ -30,6 +33,7 @@ jobs:
         id: git_server
         uses: docker/build-push-action@v2
         with:
+          context: .
           file: git-server/Dockerfile
           push: true
           tags: gcr.io/radicle-services/git-server:latest,gcr.io/radicle-services/git-server:${{ github.sha }}
