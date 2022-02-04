@@ -204,67 +204,68 @@ impl PostReceive {
     fn initialize_identity(&mut self, repo: &Repository) -> Result<(), Error> {
         eprintln!("Verifying identity...");
 
-        if let Some((refname, from, to)) = self.updates.pop() {
-            // When initializing a new identity, we only expect a single ref update.
-            if !self.updates.is_empty() {
-                return Err(Error::Unauthorized(
-                    "unexpected ref updates for new identity",
-                ));
-            }
-            // We shouldn't be updating anything, we should be creating a new ref.
-            if !from.is_zero() {
-                return Err(Error::Unauthorized("identity old ref should be zero"));
-            }
-            // We only authorize updates that first write to the key-specific staging area.
-            if !refname.ends_with(RAD_ID_REF) {
-                return Err(Error::Unauthorized("identity must be initialized first"));
-            }
+        // Make sure one of the ref updates is initializing `rad/id`.
+        let (_, _, identity_oid) = if let Some(update) = self
+            .updates
+            .iter()
+            .find(|(refname, _, _)| refname.ends_with(RAD_ID_REF))
+        {
+            update
+        } else {
+            return Err(Error::Unauthorized("identity must be initialized first"));
+        };
 
-            let storage = librad::git::storage::ReadOnly::open(&self.paths)?;
-            let lookup = |urn| {
-                let refname = git::types::Reference::rad_id(git::types::Namespace::from(urn));
-                storage.reference_oid(&refname).map(|oid| oid.into())
-            };
-
-            let identity = storage
-                .identities::<identities::SomeIdentity>()
-                .some_identity(to)
-                .map_err(|_| Error::NamespaceNotFound)?;
-
-            // Make sure that the identity we're pushing matches the namespace
-            // we're pushing to.
-            if identity.urn() != self.urn {
-                return Err(Error::Unauthorized(
-                    "identity document doesn't match project id",
-                ));
-            }
-
-            match identity {
-                identities::SomeIdentity::Person(_) => {
-                    storage
-                        .identities::<git::identities::Person>()
-                        .verify(to)
-                        .map_err(|e| Error::VerifyIdentity(e.to_string()))?;
-                }
-                identities::SomeIdentity::Project(_) => {
-                    storage
-                        .identities::<git::identities::Project>()
-                        .verify(to, lookup)
-                        .map_err(|e| Error::VerifyIdentity(e.to_string()))?;
-                }
-                _ => {
-                    return Err(Error::Unauthorized("unknown identity type"));
-                }
-            }
-
-            // Set local project identity to point to the verified commit pushed by the user.
-            repo.reference(
-                &self.namespace_ref(RAD_ID_REF),
-                to,
-                false,
-                &format!("set-project-id ({})", self.key_fingerprint),
-            )?;
+        // When initializing a new identity, We shouldn't be updating anything, we should be
+        // creating new refs.
+        if !self.updates.iter().all(|(_, from, _)| from.is_zero()) {
+            return Err(Error::Unauthorized("identity old ref already exists"));
         }
+
+        let storage = librad::git::storage::ReadOnly::open(&self.paths)?;
+        let lookup = |urn| {
+            let refname = git::types::Reference::rad_id(git::types::Namespace::from(urn));
+            storage.reference_oid(&refname).map(|oid| oid.into())
+        };
+
+        let identity = storage
+            .identities::<identities::SomeIdentity>()
+            .some_identity(*identity_oid)
+            .map_err(|_| Error::NamespaceNotFound)?;
+
+        // Make sure that the identity we're pushing matches the namespace
+        // we're pushing to.
+        if identity.urn() != self.urn {
+            return Err(Error::Unauthorized(
+                "identity document doesn't match project id",
+            ));
+        }
+
+        match identity {
+            identities::SomeIdentity::Person(_) => {
+                storage
+                    .identities::<git::identities::Person>()
+                    .verify(*identity_oid)
+                    .map_err(|e| Error::VerifyIdentity(e.to_string()))?;
+            }
+            identities::SomeIdentity::Project(_) => {
+                storage
+                    .identities::<git::identities::Project>()
+                    .verify(*identity_oid, lookup)
+                    .map_err(|e| Error::VerifyIdentity(e.to_string()))?;
+            }
+            _ => {
+                return Err(Error::Unauthorized("unknown identity type"));
+            }
+        }
+
+        // Set local project identity to point to the verified commit pushed by the user.
+        repo.reference(
+            &self.namespace_ref(RAD_ID_REF),
+            *identity_oid,
+            false,
+            &format!("set-project-id ({})", self.key_fingerprint),
+        )?;
+
         Ok(())
     }
 
