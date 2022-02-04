@@ -13,13 +13,15 @@ use std::os::unix::net::UnixStream;
 use std::str;
 use std::str::FromStr;
 
+use either::Either;
 use envconfig::Envconfig;
 use git2::{Oid, Repository};
 use librad::git;
+use librad::git::identities;
+use librad::git::identities::SomeIdentity;
 use librad::git::storage::read::ReadOnlyStorage as _;
 use librad::git::tracking;
 use librad::git::Urn;
-use librad::identities;
 use librad::paths::Paths;
 use librad::PeerId;
 
@@ -277,23 +279,60 @@ impl PostReceive {
     }
 
     fn track_identity(&self, peer_id: Option<PeerId>) -> Result<(), Error> {
-        if let Some(peer_id) = peer_id {
-            println!("Tracking peer {}...", peer_id);
-        } else {
-            println!("Tracking project...");
-        }
-
         let cfg = tracking::config::Config::default();
         let storage = Storage::open(&self.paths)?;
 
-        tracking::track(
-            &storage,
-            &self.urn,
-            peer_id,
-            cfg,
-            tracking::policy::Track::Any,
-        )??;
+        if let Some(peer) = peer_id {
+            println!("Tracking {}...", peer);
 
+            tracking::track(
+                &storage,
+                &self.urn,
+                Some(peer),
+                cfg,
+                tracking::policy::Track::Any,
+            )??;
+        } else {
+            println!("Fetching project delegates...");
+
+            let identity = identities::any::get(&storage, &self.urn)?.unwrap();
+            let mut delegates: Vec<PeerId> = Vec::new();
+
+            match identity {
+                SomeIdentity::Person(doc) => {
+                    for key in doc.delegations() {
+                        delegates.push(PeerId::from(*key));
+                    }
+                }
+                SomeIdentity::Project(doc) => {
+                    for d in doc.delegations() {
+                        match d {
+                            Either::Left(key) => {
+                                delegates.push(PeerId::from(*key));
+                            }
+                            Either::Right(indirect) => {
+                                for key in indirect.delegations() {
+                                    delegates.push(PeerId::from(*key));
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+
+            for peer in delegates {
+                println!("Tracking {}...", peer);
+
+                tracking::track(
+                    &storage,
+                    &self.urn,
+                    Some(peer),
+                    cfg.clone(),
+                    tracking::policy::Track::Any,
+                )??;
+            }
+        }
         println!("Tracking successful.");
 
         Ok(())

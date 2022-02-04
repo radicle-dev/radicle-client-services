@@ -17,14 +17,25 @@ type Ref<'a> = refdb::Ref<'a, Oid>;
 pub struct Storage {
     pub backend: git2::Repository,
     pub paths: Paths,
+
+    ro: librad::git::storage::ReadOnly,
+}
+
+impl AsRef<librad::git::storage::ReadOnly> for Storage {
+    fn as_ref(&self) -> &librad::git::storage::ReadOnly {
+        &self.ro
+    }
 }
 
 impl Storage {
     pub fn open(paths: &Paths) -> Result<Self, Error> {
         let backend = git2::Repository::open(paths.git_dir())?;
+        let ro = librad::git::storage::ReadOnly::open(paths)?;
+
         Ok(Self {
             backend,
             paths: paths.clone(),
+            ro,
         })
     }
 
