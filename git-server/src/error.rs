@@ -39,6 +39,10 @@ pub enum Error {
     #[error("unauthorized: {0}")]
     Unauthorized(&'static str),
 
+    /// Post-receive hook error.
+    #[error("{0}")]
+    PostReceive(&'static str),
+
     /// Project alias not found.
     #[error("alias does not exist")]
     AliasNotFound,

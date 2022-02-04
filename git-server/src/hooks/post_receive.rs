@@ -84,7 +84,7 @@ impl PostReceive {
         let key_fingerprint = env
             .cert_key
             .as_ref()
-            .ok_or(Error::Unauthorized("push certificate is not available"))?
+            .ok_or(Error::PostReceive("push certificate is not available"))?
             .to_owned();
 
         Ok(Self {
@@ -214,13 +214,13 @@ impl PostReceive {
         {
             update
         } else {
-            return Err(Error::Unauthorized("identity must be initialized first"));
+            return Err(Error::PostReceive("identity must be initialized first"));
         };
 
         // When initializing a new identity, We shouldn't be updating anything, we should be
         // creating new refs.
         if !self.updates.iter().all(|(_, from, _)| from.is_zero()) {
-            return Err(Error::Unauthorized("identity old ref already exists"));
+            return Err(Error::PostReceive("identity old ref already exists"));
         }
 
         let storage = librad::git::storage::ReadOnly::open(&self.paths)?;
@@ -237,7 +237,7 @@ impl PostReceive {
         // Make sure that the identity we're pushing matches the namespace
         // we're pushing to.
         if identity.urn() != self.urn {
-            return Err(Error::Unauthorized(
+            return Err(Error::PostReceive(
                 "identity document doesn't match project id",
             ));
         }
@@ -256,7 +256,7 @@ impl PostReceive {
                     .map_err(|e| Error::VerifyIdentity(e.to_string()))?;
             }
             _ => {
-                return Err(Error::Unauthorized("unknown identity type"));
+                return Err(Error::PostReceive("unknown identity type"));
             }
         }
 
@@ -295,7 +295,8 @@ impl PostReceive {
         } else {
             println!("Fetching project delegates...");
 
-            let identity = identities::any::get(&storage, &self.urn)?.unwrap();
+            let identity = identities::any::get(&storage, &self.urn)?
+                .ok_or(Error::PostReceive("identity could not be found"))?;
             let mut delegates: Vec<PeerId> = Vec::new();
 
             match identity {
