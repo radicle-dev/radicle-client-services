@@ -149,6 +149,10 @@ pub struct ReceivePackEnv {
     #[envconfig(from = "RADICLE_ALLOW_UNAUTHORIZED_KEYS")]
     pub allow_unauthorized_keys: Option<bool>,
 
+    /// name of identity being pushed.
+    #[envconfig(from = "RADICLE_NAME")]
+    pub name: Option<String>,
+
     /// peer-id specified for push.
     #[envconfig(from = "RADICLE_PEER_ID")]
     pub peer_id: Option<PeerId>,

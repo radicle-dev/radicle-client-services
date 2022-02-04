@@ -180,19 +180,25 @@ impl Context {
         Ok(())
     }
 
-    async fn get_meta(&self, urn: &Urn) -> Result<(Vec<PeerId>, Option<String>), Error> {
+    async fn get_meta(
+        &self,
+        urn: &Urn,
+    ) -> Result<(Option<String>, Vec<PeerId>, Option<String>), Error> {
         let storage = self.pool.get().await?;
         let doc = identities::any::get(&storage, urn)?;
 
         if let Some(doc) = doc {
             let mut peer_ids = Vec::new();
             let mut default_branch = None;
+            let mut name = None;
 
             match doc {
                 SomeIdentity::Person(doc) => {
+                    name = Some(doc.payload().subject.name.to_string());
                     peer_ids.extend(doc.delegations().iter().cloned().map(PeerId::from))
                 }
                 SomeIdentity::Project(doc) => {
+                    name = Some(doc.payload().subject.name.to_string());
                     default_branch = Some(
                         doc.subject()
                             .default_branch
@@ -214,9 +220,9 @@ impl Context {
                 }
                 _ => {}
             }
-            Ok((peer_ids, default_branch))
+            Ok((name, peer_ids, default_branch))
         } else {
-            Ok((vec![], None))
+            Ok((None, vec![], None))
         }
     }
 }
@@ -401,7 +407,7 @@ async fn git(
     }
 
     let path = Path::new("/git").join(request);
-    let (delegates, default_branch) = ctx.get_meta(&urn).await?;
+    let (name, delegates, default_branch) = ctx.get_meta(&urn).await?;
     let delegates_encoded = delegates
         .iter()
         .filter_map(|p| match to_ssh_fingerprint(p) {
@@ -441,6 +447,9 @@ async fn git(
     }
     if ctx.allow_unauthorized_keys {
         cmd.env("RADICLE_ALLOW_UNAUTHORIZED_KEYS", "true");
+    }
+    if let Some(name) = name {
+        cmd.env("RADICLE_NAME", name);
     }
     if let Some(peer_id) = peer_id {
         cmd.env("RADICLE_PEER_ID", peer_id.default_encoding());

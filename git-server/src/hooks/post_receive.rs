@@ -223,7 +223,7 @@ impl PostReceive {
             return Err(Error::PostReceive("identity old ref already exists"));
         }
 
-        let storage = librad::git::storage::ReadOnly::open(&self.paths)?;
+        let storage = git::storage::ReadOnly::open(&self.paths)?;
         let lookup = |urn| {
             let refname = git::types::Reference::rad_id(git::types::Namespace::from(urn));
             storage.reference_oid(&refname).map(|oid| oid.into())
@@ -361,11 +361,7 @@ impl PostReceive {
                 let (peer_id, refname) = crate::parse_ref(refname)?;
 
                 if let Some(branch) = refname.strip_prefix("heads/") {
-                    writeln!(
-                        &mut stdin,
-                        "{} {} {} {} {} {}",
-                        self.urn, self.key_fingerprint, peer_id, old, new, branch
-                    )?;
+                    writeln!(&mut stdin, "{} {} {} {}", peer_id, old, new, branch)?;
                 }
             }
         }
