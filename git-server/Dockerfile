@@ -21,8 +21,8 @@ COPY --from=build /usr/local/cargo/bin/radicle-git-server /usr/local/bin/radicle
 COPY --from=build /usr/local/cargo/bin/pre-receive /usr/local/bin/pre-receive
 COPY --from=build /usr/local/cargo/bin/post-receive /usr/local/bin/post-receive
 COPY --from=build /usr/local/cargo/bin/radicle-service-init /usr/local/bin/radicle-service-init
-COPY --from=build /usr/src/radicle-client-services/git-server/docker/start-up.sh /usr/local/bin/start-up-radicle-git-server.sh
+COPY --from=build /usr/src/radicle-client-services/git-server/docker/radicle-git-server.sh /usr/local/bin/radicle-git-server.sh
 
 WORKDIR /app/radicle
 
-ENTRYPOINT ["/usr/local/bin/start-up-radicle-git-server.sh"]
+ENTRYPOINT ["/usr/local/bin/radicle-git-server.sh"]
