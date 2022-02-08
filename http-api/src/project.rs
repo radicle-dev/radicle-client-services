@@ -11,10 +11,21 @@ use crate::error;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Info {
-    /// Project head commit hash.
-    pub head: String,
-    /// Project metadata.
-    pub meta: Metadata,
+    /// Project urn.
+    pub urn: Urn,
+    /// Project name.
+    pub name: String,
+    /// Project description.
+    pub description: String,
+    /// Project HEAD commit.
+    #[serde(with = "string")]
+    pub head: git2::Oid,
+    /// Project default branch.
+    pub default_branch: String,
+    /// List of maintainers.
+    pub maintainers: HashSet<Urn>,
+    /// List of delegates.
+    pub delegates: Vec<PeerId>,
 }
 
 /// Project metadata.
@@ -74,5 +85,19 @@ impl TryFrom<radicle_daemon::Project> for Metadata {
             maintainers,
             delegates,
         })
+    }
+}
+
+mod string {
+    use std::fmt::Display;
+
+    use serde::Serializer;
+
+    pub fn serialize<T, S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        T: Display,
+        S: Serializer,
+    {
+        serializer.collect_str(value)
     }
 }

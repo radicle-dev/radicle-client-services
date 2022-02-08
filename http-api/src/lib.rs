@@ -2,7 +2,7 @@
 mod error;
 mod project;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::convert::TryFrom as _;
 use std::convert::TryInto as _;
 use std::net;
@@ -395,7 +395,7 @@ async fn history_handler(
         Some(commit) => (commit, false),
         None => {
             let meta = project_info(project.to_owned(), ctx.paths.to_owned())?;
-            (meta.head, true)
+            (meta.head.to_string(), true)
         }
     };
     let reference = Reference::head(
@@ -464,17 +464,6 @@ async fn readme_handler(ctx: Context, project: Urn, sha: One) -> Result<impl Rep
     Ok(warp::reply::json(&blob))
 }
 
-#[derive(serde::Serialize)]
-struct Project {
-    name: String,
-    description: String,
-    head: String,
-    urn: String,
-    default_branch: String,
-    maintainers: HashSet<Urn>,
-    delegates: Vec<PeerId>,
-}
-
 /// List all projects
 async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
     use radicle_daemon::git::identities::SomeIdentity;
@@ -497,11 +486,11 @@ async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
                     } = meta;
                     let head = get_head_commit(&repo, &urn, &default_branch).ok()?;
 
-                    Some(Project {
+                    Some(Info {
                         name,
                         description,
-                        urn: urn.to_string(),
-                        head: head.id.to_string(),
+                        urn,
+                        head: head.id,
                         default_branch,
                         maintainers,
                         delegates,
@@ -593,11 +582,11 @@ async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl 
                     } = meta;
                     let head = get_head_commit(&repo, &urn, &default_branch).ok()?;
 
-                    Some(Project {
+                    Some(Info {
                         name,
                         description,
-                        urn: urn.to_string(),
-                        head: head.id.to_string(),
+                        urn,
+                        head: head.id,
                         default_branch,
                         maintainers,
                         delegates,
@@ -643,11 +632,24 @@ where
 
 fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
     let repo = git::Repository::new(paths.git_dir().to_owned())?;
-    let meta = get_project_metadata(&urn, &paths)?;
-    let head = get_head_commit(&repo, &urn, &meta.default_branch)?;
+    let project::Metadata {
+        urn,
+        name,
+        description,
+        default_branch,
+        maintainers,
+        delegates,
+    } = get_project_metadata(&urn, &paths)?;
+    let head = get_head_commit(&repo, &urn, &default_branch)?;
+
     Ok(Info {
-        meta,
-        head: head.id.to_string(),
+        head: head.id,
+        urn,
+        name,
+        description,
+        default_branch,
+        maintainers,
+        delegates,
     })
 }
 
