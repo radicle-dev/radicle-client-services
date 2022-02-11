@@ -39,7 +39,6 @@ pub struct Options {
     pub listen: net::SocketAddr,
     pub tls_cert: Option<PathBuf>,
     pub tls_key: Option<PathBuf>,
-    pub git_receive_hook: Option<PathBuf>,
     pub git_receive_pack: bool,
     pub authorized_keys: Vec<String>,
     pub cert_nonce_seed: Option<String>,
@@ -52,7 +51,7 @@ pub struct Context {
     git_receive_pack: bool,
     authorized_keys: Vec<String>,
     cert_nonce_seed: Option<String>,
-    git_receive_hook: Option<PathBuf>,
+    git_receive_hook: PathBuf,
     allow_unauthorized_keys: bool,
     aliases: Arc<RwLock<HashMap<String, Urn>>>,
     pool: Pool<git::storage::ReadOnly>,
@@ -71,10 +70,13 @@ impl Context {
 
         tracing::debug!("Root path set to: {:?}", root_path);
 
+        let root = root_path.canonicalize()?;
+        let git_receive_hook = root.join("hooks").join("receive-hook");
+
         Ok(Context {
-            root: root_path.canonicalize()?,
+            root,
             git_receive_pack: options.git_receive_pack,
-            git_receive_hook: options.git_receive_hook.clone(),
+            git_receive_hook,
             authorized_keys: options.authorized_keys.clone(),
             cert_nonce_seed: options.cert_nonce_seed.clone(),
             allow_unauthorized_keys: options.allow_unauthorized_keys,
@@ -457,10 +459,8 @@ async fn git(
     if let Some(default_branch) = default_branch {
         cmd.env("RADICLE_DEFAULT_BRANCH", default_branch);
     }
-    if let Some(hook) = ctx.git_receive_hook {
-        cmd.env("RADICLE_RECEIVE_HOOK", hook);
-    }
 
+    cmd.env("RADICLE_RECEIVE_HOOK", &ctx.git_receive_hook);
     cmd.env("REQUEST_METHOD", method.as_str());
     cmd.env("GIT_PROJECT_ROOT", &ctx.root);
     cmd.env("GIT_NAMESPACE", namespace);

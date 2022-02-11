@@ -8,7 +8,7 @@
 //! `pre-receive` certification verification and authorization.
 //!
 use std::io::prelude::*;
-use std::io::{stdin, Write};
+use std::io::{stdin, ErrorKind, Write};
 use std::os::unix::net::UnixStream;
 use std::str;
 use std::str::FromStr;
@@ -349,12 +349,21 @@ impl PostReceive {
         };
         println!("Running custom receive hook...");
 
-        let mut child = Command::new(hook)
+        let child = Command::new(hook)
             .stderr(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stdin(Stdio::piped())
             .spawn()
-            .map_err(Error::CustomHook)?;
+            .map_err(Error::CustomHook);
+
+        if let Err(Error::CustomHook(ref err)) = child {
+            if err.kind() == ErrorKind::NotFound {
+                println!("Custom receive hook not found in {:?}, skipping...", hook);
+                return Ok(());
+            }
+        }
+
+        let mut child = child?;
 
         if let Some(mut stdin) = child.stdin.take() {
             for (refname, old, new) in self.updates.iter() {
