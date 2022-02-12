@@ -181,6 +181,6 @@ impl PreReceive {
             }
         }
 
-        Err(Error::Unauthorized("key is not in keyring"))
+        Err(Error::Unauthorized("key is not authorized to push"))
     }
 }

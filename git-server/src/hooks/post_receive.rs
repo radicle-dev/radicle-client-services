@@ -23,6 +23,7 @@ use librad::git::storage::read::ReadOnlyStorage as _;
 use librad::git::tracking;
 use librad::git::Urn;
 use librad::paths::Paths;
+use librad::profile::Profile;
 use librad::PeerId;
 
 use super::storage::Storage;
@@ -72,7 +73,11 @@ impl PostReceive {
 
         let env = ReceivePackEnv::init_from_env()?;
         let urn = Urn::try_from_id(&env.git_namespace).map_err(|_| Error::InvalidId)?;
-        let paths = Paths::from_root(env.git_project_root.clone())?;
+        let paths = if let Some(root) = &env.storage_root {
+            Paths::from_root(root)?
+        } else {
+            Profile::load()?.paths().clone()
+        };
         let delegates = if let Some(keys) = &env.delegates {
             keys.split(',')
                 .map(PeerId::from_str)

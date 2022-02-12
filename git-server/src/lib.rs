@@ -7,6 +7,7 @@ pub mod hooks;
 
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::fs::File;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -32,6 +33,8 @@ use error::Error;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const STORAGE_POOL_SIZE: usize = 3;
+pub const AUTHORIZED_KEYS_FILE: &str = "authorized-keys";
+pub const POST_RECEIVE_OK_HOOK: &str = "post-receive-ok";
 
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -47,7 +50,8 @@ pub struct Options {
 
 #[derive(Clone)]
 pub struct Context {
-    root: PathBuf,
+    paths: Paths,
+    root: Option<PathBuf>,
     git_receive_pack: bool,
     authorized_keys: Vec<String>,
     cert_nonce_seed: Option<String>,
@@ -58,26 +62,54 @@ pub struct Context {
 }
 
 impl Context {
-    fn from(options: &Options, pool: Pool<git::storage::ReadOnly>) -> Result<Self, Error> {
-        let root_path = if let Some(root) = &options.root {
-            root.to_owned()
+    fn from(options: &Options) -> Result<Self, Error> {
+        let paths = if let Some(root) = &options.root {
+            Paths::from_root(root)?
         } else {
-            let mut root = Profile::load()?.paths().git_dir().to_path_buf();
-            // Remove the `/git/` directory to use the project (parent) directory as the root.
-            root.pop();
-            root
+            Profile::load()?.paths().clone()
         };
 
-        tracing::debug!("Root path set to: {:?}", root_path);
+        let pool = git::storage::Pool::new(
+            git::storage::pool::ReadConfig::new(paths.clone()),
+            STORAGE_POOL_SIZE,
+        );
 
-        let root = root_path.canonicalize()?;
-        let git_receive_hook = root.join("hooks").join("receive-hook");
+        let git_root = paths.git_dir().canonicalize()?;
+        let git_receive_hook = git_root.join("hooks").join(POST_RECEIVE_OK_HOOK);
+        let mut authorized_keys = options.authorized_keys.clone();
+
+        tracing::debug!("Git root path set to: {:?}", git_root);
+
+        match File::open(git_root.join(AUTHORIZED_KEYS_FILE)) {
+            Ok(file) => {
+                tracing::info!("Found authorized keys file...");
+                for line in io::BufReader::new(file).lines() {
+                    let key = line?;
+                    tracing::info!("Authorizing {}...", key);
+
+                    authorized_keys.push(key);
+                }
+            }
+            Err(_) => {
+                tracing::info!("Authorized keys file not loaded");
+            }
+        }
+        authorized_keys.sort();
+        authorized_keys.dedup();
+
+        if !options.allow_unauthorized_keys
+            && options.git_receive_pack
+            && authorized_keys.is_empty()
+        {
+            tracing::warn!("No authorized keys configured");
+        }
 
         Ok(Context {
-            root,
+            paths,
+            root: options.root.clone().map(|p| p.canonicalize()).transpose()?,
             git_receive_pack: options.git_receive_pack,
             git_receive_hook,
-            authorized_keys: options.authorized_keys.clone(),
+            authorized_keys,
             cert_nonce_seed: options.cert_nonce_seed.clone(),
             allow_unauthorized_keys: options.allow_unauthorized_keys,
             aliases: Default::default(),
@@ -146,7 +178,7 @@ impl Context {
 
     /// updates the git config in the root project
     pub fn set_root_git_config(&self, field: &str, value: &str) -> Result<(), Error> {
-        let path = self.root.clone().join("git/config");
+        let path = self.paths.git_dir().join("config");
 
         tracing::debug!("Searching for git config at: {:?}", path);
 
@@ -238,18 +270,7 @@ pub async fn run(options: Options) {
         .stdout;
     tracing::info!("{}", std::str::from_utf8(&git_version).unwrap().trim());
 
-    let paths = if let Some(ref root) = options.root {
-        Paths::from_root(root).unwrap()
-    } else {
-        Profile::load().unwrap().paths().clone()
-    };
-    let storage = git::storage::Pool::new(
-        git::storage::pool::ReadConfig::new(paths),
-        STORAGE_POOL_SIZE,
-    );
-
-    let ctx =
-        Context::from(&options, storage).expect("Failed to create context from service options");
+    let ctx = Context::from(&options).expect("Failed to create context from service options");
     {
         let mut aliases = ctx.aliases.write().await;
 
@@ -387,7 +408,7 @@ async fn git(
     remote: net::SocketAddr,
     urn: Urn,
     peer_id: Option<PeerId>,
-    request: &str,
+    path: &str,
     query: String,
 ) -> Result<(http::StatusCode, HashMap<String, Vec<String>>, Vec<u8>), Error> {
     let namespace = urn.encode_id();
@@ -398,7 +419,7 @@ async fn git(
             ""
         };
 
-    match (request, query.as_str()) {
+    match (path, query.as_str()) {
         // Eg. `git push`
         ("git-receive-pack", _) | (_, "service=git-receive-pack") => {
             if !ctx.git_receive_pack {
@@ -408,19 +429,7 @@ async fn git(
         _ => {}
     }
 
-    let path = Path::new("/git").join(request);
     let (name, delegates, default_branch) = ctx.get_meta(&urn).await?;
-    let delegates_encoded = delegates
-        .iter()
-        .filter_map(|p| match to_ssh_fingerprint(p) {
-            Ok(f) => Some(f),
-            Err(_) => None,
-        })
-        .map(base64::encode);
-
-    let authorized_keys = delegates_encoded
-        .chain(ctx.authorized_keys.iter().cloned())
-        .collect::<Vec<_>>();
 
     tracing::debug!("headers: {:?}", headers);
     tracing::debug!("namespace: {}", namespace);
@@ -428,14 +437,14 @@ async fn git(
     tracing::debug!("method: {:?}", method.as_str());
     tracing::debug!("remote: {:?}", remote.to_string());
     tracing::debug!("delegates: {:?}", delegates);
-    tracing::debug!("authorized keys: {:?}", authorized_keys);
+    tracing::debug!("authorized keys: {:?}", ctx.authorized_keys);
 
     let mut cmd = Command::new("git");
 
     cmd.arg("http-backend");
 
-    if !authorized_keys.is_empty() {
-        cmd.env("RADICLE_AUTHORIZED_KEYS", authorized_keys.join(","));
+    if !ctx.authorized_keys.is_empty() {
+        cmd.env("RADICLE_AUTHORIZED_KEYS", ctx.authorized_keys.join(","));
     }
     if !delegates.is_empty() {
         cmd.env(
@@ -459,12 +468,15 @@ async fn git(
     if let Some(default_branch) = default_branch {
         cmd.env("RADICLE_DEFAULT_BRANCH", default_branch);
     }
+    if let Some(root) = ctx.root {
+        cmd.env("RADICLE_STORAGE_ROOT", &root);
+    }
 
     cmd.env("RADICLE_RECEIVE_HOOK", &ctx.git_receive_hook);
     cmd.env("REQUEST_METHOD", method.as_str());
-    cmd.env("GIT_PROJECT_ROOT", &ctx.root);
+    cmd.env("GIT_PROJECT_ROOT", ctx.paths.git_dir().canonicalize()?);
     cmd.env("GIT_NAMESPACE", namespace);
-    cmd.env("PATH_INFO", path);
+    cmd.env("PATH_INFO", Path::new("/").join(path));
     cmd.env("CONTENT_TYPE", content_type);
     // "The backend process sets GIT_COMMITTER_NAME to $REMOTE_USER and GIT_COMMITTER_EMAIL to
     // ${REMOTE_USER}@http.${REMOTE_ADDR}, ensuring that any reflogs created by git-receive-pack
