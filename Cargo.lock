@@ -4101,6 +4101,7 @@ dependencies = [
 name = "radicle-git-server"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "argh",
  "base64 0.13.0",
  "byteorder",

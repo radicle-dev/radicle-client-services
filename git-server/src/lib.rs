@@ -14,6 +14,8 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::{io, net};
 
+use anyhow::bail;
+use anyhow::Context as _;
 use either::Either;
 use flate2::write::GzDecoder;
 use http::{HeaderMap, Method};
@@ -43,7 +45,6 @@ pub struct Options {
     pub tls_cert: Option<PathBuf>,
     pub tls_key: Option<PathBuf>,
     pub git_receive_pack: bool,
-    pub authorized_keys: Vec<String>,
     pub cert_nonce_seed: Option<String>,
     pub allow_unauthorized_keys: bool,
 }
@@ -53,7 +54,6 @@ pub struct Context {
     paths: Paths,
     root: Option<PathBuf>,
     git_receive_pack: bool,
-    authorized_keys: HashSet<String>,
     cert_nonce_seed: Option<String>,
     git_receive_hook: PathBuf,
     allow_unauthorized_keys: bool,
@@ -76,11 +76,6 @@ impl Context {
 
         let git_root = paths.git_dir().canonicalize()?;
         let git_receive_hook = git_root.join("hooks").join(POST_RECEIVE_OK_HOOK);
-        let authorized_keys: HashSet<String> = options
-            .authorized_keys
-            .iter()
-            .map(|s| s.to_owned())
-            .collect();
 
         tracing::debug!("Git root path set to: {:?}", git_root);
 
@@ -89,7 +84,6 @@ impl Context {
             root: options.root.clone().map(|p| p.canonicalize()).transpose()?,
             git_receive_pack: options.git_receive_pack,
             git_receive_hook,
-            authorized_keys,
             cert_nonce_seed: options.cert_nonce_seed.clone(),
             allow_unauthorized_keys: options.allow_unauthorized_keys,
             aliases: Default::default(),
@@ -98,22 +92,28 @@ impl Context {
     }
 
     /// (Re-)load the authorized keys file.
-    pub fn load_authorized_keys(&mut self) -> io::Result<()> {
+    pub fn load_authorized_keys(&self) -> io::Result<Vec<String>> {
+        let mut authorized_keys = HashSet::new();
+
         match File::open(self.paths.git_dir().join(AUTHORIZED_KEYS_FILE)) {
             Ok(file) => {
                 for line in io::BufReader::new(file).lines() {
                     let key = line?;
-
-                    if self.authorized_keys.insert(key.clone()) {
-                        tracing::info!("Authorizing {}...", key);
+                    if !key.is_empty() {
+                        authorized_keys.insert(key.clone());
                     }
                 }
             }
-            Err(_) => {
-                tracing::info!("Authorized keys file not loaded");
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                if !self.allow_unauthorized_keys && self.git_receive_pack {
+                    tracing::warn!("No authorized keys loaded");
+                }
+            }
+            Err(err) => {
+                tracing::error!("Authorized keys file could not be loaded: {}", err);
             }
         }
-        Ok(())
+        Ok(authorized_keys.into_iter().collect())
     }
 
     /// Sets the config receive.advertisePushOptions, which lets the user known they can provide a push option `-o`,
@@ -175,7 +175,7 @@ impl Context {
         Ok(())
     }
 
-    /// updates the git config in the root project
+    /// Updates the git config in the root project.
     pub fn set_root_git_config(&self, field: &str, value: &str) -> Result<(), Error> {
         let path = self.paths.git_dir().join("config");
 
@@ -261,57 +261,34 @@ impl Context {
 }
 
 /// Run the Git Server.
-pub async fn run(options: Options) {
+pub async fn run(options: Options) -> anyhow::Result<()> {
     let git_version = Command::new("git")
         .arg("version")
         .output()
-        .expect("'git' command must be available")
+        .context("'git' command must be available")?
         .stdout;
-    tracing::info!("{}", std::str::from_utf8(&git_version).unwrap().trim());
+    tracing::info!("{}", std::str::from_utf8(&git_version)?.trim());
 
-    let mut ctx = Context::from(&options).expect("context creation must not fail");
-    ctx.load_authorized_keys()
-        .expect("authorized keys must not fail to load");
-
-    if !ctx.allow_unauthorized_keys && ctx.git_receive_pack && ctx.authorized_keys.is_empty() {
-        tracing::warn!("No authorized keys configured");
-    }
-
+    let ctx = Context::from(&options).expect("context creation must not fail");
     {
         let mut aliases = ctx.aliases.write().await;
 
         ctx.populate_aliases(&mut aliases)
             .await
-            .expect("Failed to populate aliases");
+            .context("populating aliases")?;
     }
 
     if let Err(e) = ctx.set_cert_nonce_seed() {
-        tracing::error!(
-            "Failed to set certificate nonce seed! required to enable `push --signed`: {:?}",
-            e
-        );
-        std::process::exit(1);
+        bail!("Failed to set certificate nonce seed: {:?}", e);
     }
     if let Err(e) = ctx.set_cert_nonce_slop() {
-        tracing::error!(
-            "Failed to set certificate nonce slop! required to enable `push --signed`: {:?}",
-            e
-        );
-        std::process::exit(1);
+        bail!("Failed to set certificate nonce slop: {:?}", e);
     }
     if let Err(e) = ctx.advertise_push_options() {
-        tracing::error!(
-            "Failed to set push config! required to enable `push --signed`: {:?}",
-            e
-        );
-        std::process::exit(1);
+        bail!("Failed to set push config: {:?}", e);
     }
     if let Err(e) = ctx.disable_signers_file() {
-        tracing::error!(
-            "Failed to set signers file config! required to enable `push --signed`: {:?}",
-            e
-        );
-        std::process::exit(1);
+        bail!("Failed to set signers file config: {:?}", e);
     }
 
     let peer_id = path::param::<PeerId>()
@@ -343,10 +320,11 @@ pub async fn run(options: Options) {
             .cert_path(cert)
             .key_path(key)
             .run(options.listen)
-            .await
+            .await;
     } else {
-        server.run(options.listen).await
+        server.run(options.listen).await;
     }
+    Ok(())
 }
 
 async fn git_handler(
@@ -407,7 +385,7 @@ async fn git_handler(
 }
 
 async fn git(
-    mut ctx: Context,
+    ctx: Context,
     method: Method,
     headers: HeaderMap,
     mut body: impl Buf,
@@ -424,17 +402,16 @@ async fn git(
         } else {
             ""
         };
-
-    match (path, query.as_str()) {
+    let authorized_keys = match (path, query.as_str()) {
         // Eg. `git push`
         ("git-receive-pack", _) | (_, "service=git-receive-pack") => {
             if !ctx.git_receive_pack {
                 return Err(Error::ServiceUnavailable("git-receive-pack"));
             }
-            ctx.load_authorized_keys()?;
+            ctx.load_authorized_keys()?
         }
-        _ => {}
-    }
+        _ => vec![],
+    };
 
     let (name, delegates, default_branch) = ctx.get_meta(&urn).await?;
 
@@ -444,20 +421,14 @@ async fn git(
     tracing::debug!("method: {:?}", method.as_str());
     tracing::debug!("remote: {:?}", remote.to_string());
     tracing::debug!("delegates: {:?}", delegates);
-    tracing::debug!("authorized keys: {:?}", ctx.authorized_keys);
+    tracing::debug!("authorized keys: {:?}", authorized_keys);
 
     let mut cmd = Command::new("git");
 
     cmd.arg("http-backend");
 
-    if !ctx.authorized_keys.is_empty() {
-        cmd.env(
-            "RADICLE_AUTHORIZED_KEYS",
-            ctx.authorized_keys
-                .into_iter()
-                .collect::<Vec<_>>()
-                .join(","),
-        );
+    if !authorized_keys.is_empty() {
+        cmd.env("RADICLE_AUTHORIZED_KEYS", authorized_keys.join(","));
     }
     if !delegates.is_empty() {
         cmd.env(

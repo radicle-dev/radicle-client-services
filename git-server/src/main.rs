@@ -1,5 +1,5 @@
-use std::net;
 use std::path::PathBuf;
+use std::{net, process};
 
 use radicle_git_server as server;
 
@@ -34,10 +34,6 @@ pub struct Options {
     #[argh(switch)]
     pub git_receive_pack: bool,
 
-    /// list of comma delimited SSH authorized key fingerprints to verify a signed push
-    #[argh(option)]
-    pub authorized_keys: Option<String>,
-
     /// certificate nonce seed used to enable `push --signed`
     #[argh(option)]
     pub cert_nonce_seed: Option<String>,
@@ -61,10 +57,6 @@ impl From<Options> for server::Options {
             tls_key: other.tls_key,
             listen: other.listen,
             git_receive_pack: other.git_receive_pack,
-            authorized_keys: other
-                .authorized_keys
-                .map(|k| k.split(',').map(|s| s.to_owned()).collect::<Vec<String>>())
-                .unwrap_or_default(),
             cert_nonce_seed: other.cert_nonce_seed,
             allow_unauthorized_keys: other.allow_unauthorized_keys,
         }
@@ -78,5 +70,11 @@ async fn main() {
     shared::init_logger(options.log_format);
     tracing::info!("version {}-{}", env!("CARGO_PKG_VERSION"), env!("GIT_HEAD"));
 
-    server::run(options.into()).await;
+    match server::run(options.into()).await {
+        Ok(()) => {}
+        Err(err) => {
+            tracing::error!("Fatal: {}", err);
+            process::exit(1);
+        }
+    }
 }
