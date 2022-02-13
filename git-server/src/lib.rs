@@ -595,23 +595,6 @@ fn gen_random_string() -> String {
     out
 }
 
-/// Get the SSH key fingerprint from a peer id.
-fn to_ssh_fingerprint(peer_id: &PeerId) -> Result<Vec<u8>, io::Error> {
-    use byteorder::{BigEndian, WriteBytesExt};
-    use sha2::Digest;
-
-    let mut buf = Vec::new();
-    let name = b"ssh-ed25519";
-    let key = peer_id.as_public_key().as_ref();
-
-    buf.write_u32::<BigEndian>(name.len() as u32)?;
-    buf.extend_from_slice(name);
-    buf.write_u32::<BigEndian>(key.len() as u32)?;
-    buf.extend_from_slice(key);
-
-    Ok(sha2::Sha256::digest(&buf).to_vec())
-}
-
 /// Parse a remote git ref into a peer id and return the remaining input.
 ///
 /// Eg. `refs/remotes/<peer>/heads/master`
