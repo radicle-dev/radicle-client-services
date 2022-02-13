@@ -5,7 +5,7 @@ pub mod error;
 #[cfg(feature = "hooks")]
 pub mod hooks;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::fs::File;
 use std::io::prelude::*;
@@ -53,7 +53,7 @@ pub struct Context {
     paths: Paths,
     root: Option<PathBuf>,
     git_receive_pack: bool,
-    authorized_keys: Vec<String>,
+    authorized_keys: HashSet<String>,
     cert_nonce_seed: Option<String>,
     git_receive_hook: PathBuf,
     allow_unauthorized_keys: bool,
@@ -76,33 +76,13 @@ impl Context {
 
         let git_root = paths.git_dir().canonicalize()?;
         let git_receive_hook = git_root.join("hooks").join(POST_RECEIVE_OK_HOOK);
-        let mut authorized_keys = options.authorized_keys.clone();
+        let authorized_keys: HashSet<String> = options
+            .authorized_keys
+            .iter()
+            .map(|s| s.to_owned())
+            .collect();
 
         tracing::debug!("Git root path set to: {:?}", git_root);
-
-        match File::open(git_root.join(AUTHORIZED_KEYS_FILE)) {
-            Ok(file) => {
-                tracing::info!("Found authorized keys file...");
-                for line in io::BufReader::new(file).lines() {
-                    let key = line?;
-                    tracing::info!("Authorizing {}...", key);
-
-                    authorized_keys.push(key);
-                }
-            }
-            Err(_) => {
-                tracing::info!("Authorized keys file not loaded");
-            }
-        }
-        authorized_keys.sort();
-        authorized_keys.dedup();
-
-        if !options.allow_unauthorized_keys
-            && options.git_receive_pack
-            && authorized_keys.is_empty()
-        {
-            tracing::warn!("No authorized keys configured");
-        }
 
         Ok(Context {
             paths,
@@ -115,6 +95,25 @@ impl Context {
             aliases: Default::default(),
             pool,
         })
+    }
+
+    /// (Re-)load the authorized keys file.
+    pub fn load_authorized_keys(&mut self) -> io::Result<()> {
+        match File::open(self.paths.git_dir().join(AUTHORIZED_KEYS_FILE)) {
+            Ok(file) => {
+                for line in io::BufReader::new(file).lines() {
+                    let key = line?;
+
+                    if self.authorized_keys.insert(key.clone()) {
+                        tracing::info!("Authorizing {}...", key);
+                    }
+                }
+            }
+            Err(_) => {
+                tracing::info!("Authorized keys file not loaded");
+            }
+        }
+        Ok(())
     }
 
     /// Sets the config receive.advertisePushOptions, which lets the user known they can provide a push option `-o`,
@@ -270,7 +269,14 @@ pub async fn run(options: Options) {
         .stdout;
     tracing::info!("{}", std::str::from_utf8(&git_version).unwrap().trim());
 
-    let ctx = Context::from(&options).expect("Failed to create context from service options");
+    let mut ctx = Context::from(&options).expect("context creation must not fail");
+    ctx.load_authorized_keys()
+        .expect("authorized keys must not fail to load");
+
+    if !ctx.allow_unauthorized_keys && ctx.git_receive_pack && ctx.authorized_keys.is_empty() {
+        tracing::warn!("No authorized keys configured");
+    }
+
     {
         let mut aliases = ctx.aliases.write().await;
 
@@ -401,7 +407,7 @@ async fn git_handler(
 }
 
 async fn git(
-    ctx: Context,
+    mut ctx: Context,
     method: Method,
     headers: HeaderMap,
     mut body: impl Buf,
@@ -425,6 +431,7 @@ async fn git(
             if !ctx.git_receive_pack {
                 return Err(Error::ServiceUnavailable("git-receive-pack"));
             }
+            ctx.load_authorized_keys()?;
         }
         _ => {}
     }
@@ -444,7 +451,13 @@ async fn git(
     cmd.arg("http-backend");
 
     if !ctx.authorized_keys.is_empty() {
-        cmd.env("RADICLE_AUTHORIZED_KEYS", ctx.authorized_keys.join(","));
+        cmd.env(
+            "RADICLE_AUTHORIZED_KEYS",
+            ctx.authorized_keys
+                .into_iter()
+                .collect::<Vec<_>>()
+                .join(","),
+        );
     }
     if !delegates.is_empty() {
         cmd.env(
