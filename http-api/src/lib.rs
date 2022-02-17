@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use radicle_source::commit::Header;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::RwLock;
 use warp::hyper::StatusCode;
@@ -39,6 +41,13 @@ pub struct Options {
     pub tls_cert: Option<PathBuf>,
     pub tls_key: Option<PathBuf>,
     pub theme: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct CommitsQueryString {
+    parent: Option<String>,
+    since: Option<i64>,
+    until: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -214,7 +223,7 @@ fn history_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rej
         .map(move || ctx.clone())
         .and(path::param::<Urn>())
         .and(path("commits"))
-        .and(query::<HashMap<String, String>>())
+        .and(query::<CommitsQueryString>())
         .and(path::end())
         .and_then(history_handler)
 }
@@ -410,22 +419,53 @@ async fn remote_handler(
 async fn history_handler(
     ctx: Context,
     project: Urn,
-    qs: HashMap<String, String>,
+    qs: CommitsQueryString,
 ) -> Result<impl Reply, Rejection> {
-    let (sha, fallback_to_head) = match qs.get("from").cloned() {
+    let CommitsQueryString {
+        since,
+        until,
+        parent,
+    } = qs;
+
+    let (sha, fallback_to_head) = match parent {
         Some(commit) => (commit, false),
         None => {
             let meta = project_info(project.to_owned(), ctx.paths.to_owned())?;
             (meta.head.to_string(), true)
         }
     };
+
     let reference = Reference::head(
         Namespace::from(project),
         None,
         One::from_str(&sha).map_err(|_| Error::NotFound)?,
     );
+
     let commits = browse(reference, ctx.paths, |browser| {
-        radicle_source::commits::<PeerId>(browser, None)
+        let mut result = radicle_source::commits::<PeerId>(browser, None)?;
+        let headers: Vec<Header> = result
+            .headers
+            .iter()
+            .filter(|q| {
+                if let (Some(since), Some(until)) = (since, until) {
+                    q.committer_time.seconds() >= since && q.committer_time.seconds() < until
+                } else if let Some(since) = since {
+                    q.committer_time.seconds() >= since
+                } else if let Some(until) = until {
+                    q.committer_time.seconds() < until
+                } else {
+                    // If neither `since` nor `until` are specified, we include the commit.
+                    true
+                }
+            })
+            .cloned()
+            .collect();
+
+        result.headers = headers;
+        // Since the headers filtering can alter the amount of commits we have to recalculate it here.
+        result.stats.commits = result.headers.len();
+
+        Ok(result)
     })
     .await?;
     let response = json!({
