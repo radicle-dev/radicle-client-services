@@ -4114,6 +4114,7 @@ dependencies = [
  "http",
  "librad",
  "radicle-source",
+ "serde_json",
  "sha2 0.9.8",
  "shared",
  "thiserror",

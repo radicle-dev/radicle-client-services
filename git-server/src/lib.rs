@@ -26,6 +26,7 @@ use librad::identities::SomeIdentity;
 use librad::paths::Paths;
 use librad::profile::Profile;
 use librad::PeerId;
+use serde_json::json;
 use tokio::sync::RwLock;
 use warp::hyper::StatusCode;
 use warp::reply;
@@ -295,7 +296,15 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
         .map(Some)
         .or_else(|_| async { Ok::<(Option<PeerId>,), Infallible>((None,)) });
 
-    let server = warp::filters::any::any()
+    let _ctx = ctx.clone();
+    let info = warp::path("info").and(
+        warp::get()
+            .map(move || _ctx.clone())
+            .and(path::end())
+            .and_then(info_handler),
+    );
+
+    let git = warp::filters::any::any()
         .map(move || ctx.clone())
         .and(warp::method())
         .and(warp::filters::header::headers_cloned())
@@ -312,7 +321,9 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
         .and_then(git_handler)
         .recover(recover)
         .with(warp::log("radicle_git_server"));
-    let server = warp::serve(server);
+
+    let routes = info.or(git);
+    let server = warp::serve(routes);
 
     if let (Some(cert), Some(key)) = (options.tls_cert, options.tls_key) {
         server
@@ -382,6 +393,33 @@ async fn git_handler(
     let response = builder.body(body).map_err(Error::from)?;
 
     Ok(Box::new(response))
+}
+
+async fn info_handler(ctx: Context) -> Result<impl Reply, Rejection> {
+    let git_version = Command::new("git")
+        .arg("version")
+        .output()
+        .map_err(Error::from)?
+        .stdout;
+
+    let git_version = std::str::from_utf8(&git_version)
+        .map_err(Error::from)?
+        .trim();
+
+    let mut authorized_keys = ctx.load_authorized_keys().map_err(Error::from)?;
+    if authorized_keys.is_empty() && ctx.allow_unauthorized_keys {
+        authorized_keys.push(String::from("*"));
+    }
+
+    let response = json!({
+        "git": {
+            "version": git_version
+        },
+        "root": ctx.root,
+        "authorized-keys": authorized_keys,
+    });
+
+    Ok(warp::reply::json(&response))
 }
 
 async fn git(
