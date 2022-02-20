@@ -354,7 +354,7 @@ async fn remotes_handler(ctx: Context, urn: Urn) -> Result<impl Reply, Rejection
                 Some(peer),
             )) {
                 if let Ok(Some(person)) = identities::person::get(&storage, &delegate_urn) {
-                    let delegate = meta.delegates.contains(&peer);
+                    let delegate = meta.delegates.iter().any(|d| d.contains(&peer));
 
                     return Ok(json!({
                         "id": peer,
@@ -502,7 +502,6 @@ async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
                         name,
                         description,
                         default_branch,
-                        maintainers,
                         delegates,
                     } = meta;
                     let head = get_head_commit(&repo, &urn, &default_branch).ok()?;
@@ -513,7 +512,6 @@ async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
                         urn,
                         head: head.id,
                         default_branch,
-                        maintainers,
                         delegates,
                     })
                 }
@@ -598,7 +596,6 @@ async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl 
                         name,
                         description,
                         default_branch,
-                        maintainers,
                         delegates,
                     } = meta;
                     let head = get_head_commit(&repo, &urn, &default_branch).ok()?;
@@ -609,7 +606,6 @@ async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl 
                         urn,
                         head: head.id,
                         default_branch,
-                        maintainers,
                         delegates,
                     })
                 }
@@ -658,7 +654,6 @@ fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
         name,
         description,
         default_branch,
-        maintainers,
         delegates,
     } = get_project_metadata(&urn, &paths)?;
     let head = get_head_commit(&repo, &urn, &default_branch)?;
@@ -669,7 +664,6 @@ fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
         name,
         description,
         default_branch,
-        maintainers,
         delegates,
     })
 }

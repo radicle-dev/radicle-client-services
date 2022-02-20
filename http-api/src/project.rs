@@ -22,10 +22,27 @@ pub struct Info {
     pub head: git2::Oid,
     /// Project default branch.
     pub default_branch: String,
-    /// List of maintainers.
-    pub maintainers: HashSet<Urn>,
     /// List of delegates.
-    pub delegates: Vec<PeerId>,
+    pub delegates: Vec<Delegate>,
+}
+
+/// Project delegate.
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", tag = "type")]
+pub enum Delegate {
+    /// Direct delegation, ie. public key.
+    Direct { id: PeerId },
+    /// Indirect delegation, ie. a personal identity.
+    Indirect { urn: Urn, ids: HashSet<PeerId> },
+}
+
+impl Delegate {
+    pub fn contains(&self, other: &PeerId) -> bool {
+        match self {
+            Self::Direct { id } => id == other,
+            Self::Indirect { ids, .. } => ids.contains(other),
+        }
+    }
 }
 
 /// Project metadata.
@@ -40,10 +57,8 @@ pub struct Metadata {
     pub description: String,
     /// Default branch of project.
     pub default_branch: String,
-    /// List of maintainers.
-    pub maintainers: HashSet<Urn>,
     /// List of delegates.
-    pub delegates: Vec<PeerId>,
+    pub delegates: Vec<Delegate>,
 }
 
 impl TryFrom<radicle_daemon::Project> for Metadata {
@@ -51,28 +66,32 @@ impl TryFrom<radicle_daemon::Project> for Metadata {
 
     fn try_from(project: radicle_daemon::Project) -> Result<Self, Self::Error> {
         let subject = project.subject();
-        // TODO: Some maintainers may be directly delegating, i.e. only supply their PublicKey.
-        let maintainers = project
-            .delegations()
-            .iter()
-            .indirect()
-            .map(|indirect| indirect.urn())
-            .collect();
         let default_branch = subject
             .default_branch
             .clone()
             .ok_or(error::Error::MissingDefaultBranch)?
             .to_string();
-        let delegates = project
-            .delegations()
-            .iter()
-            .flat_map(|either| match either {
-                Either::Left(pk) => Either::Left(std::iter::once(PeerId::from(*pk))),
-                Either::Right(indirect) => {
-                    Either::Right(indirect.delegations().iter().map(|pk| PeerId::from(*pk)))
+
+        let mut delegates = Vec::new();
+        for delegate in project.delegations().iter() {
+            match delegate {
+                Either::Left(pk) => {
+                    delegates.push(Delegate::Direct {
+                        id: PeerId::from(*pk),
+                    });
                 }
-            })
-            .collect::<Vec<PeerId>>();
+                Either::Right(indirect) => {
+                    delegates.push(Delegate::Indirect {
+                        urn: indirect.urn(),
+                        ids: indirect
+                            .delegations()
+                            .iter()
+                            .map(|pk| PeerId::from(*pk))
+                            .collect(),
+                    });
+                }
+            }
+        }
 
         Ok(Self {
             urn: project.urn(),
@@ -82,7 +101,6 @@ impl TryFrom<radicle_daemon::Project> for Metadata {
                 .clone()
                 .map_or_else(|| "".into(), |desc| desc.to_string()),
             default_branch,
-            maintainers,
             delegates,
         })
     }
