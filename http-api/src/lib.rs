@@ -335,16 +335,37 @@ async fn blob_handler(
     Ok(warp::reply::json(&blob))
 }
 
-async fn remotes_handler(ctx: Context, project: Urn) -> Result<impl Reply, Rejection> {
+async fn remotes_handler(ctx: Context, urn: Urn) -> Result<impl Reply, Rejection> {
     let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
-    let tracked = tracking::tracked(&storage, Some(&project)).map_err(|_| Error::NotFound)?;
+    let project = identities::project::get(&storage, &urn)
+        .map_err(Error::Identities)?
+        .ok_or(Error::NotFound)?;
+    let meta: project::Metadata = project.try_into()?;
+    let tracked = tracking::tracked(&storage, Some(&urn)).map_err(|_| Error::NotFound)?;
     let result = tracked
         .collect::<Result<Vec<_>, _>>()
         .map_err(Error::from)?;
     let response = result
         .into_iter()
         .filter_map(|t| t.peer_id())
-        .collect::<Vec<_>>();
+        .map(|peer| -> Result<serde_json::Value, Rejection> {
+            if let Ok(delegate_urn) = Urn::try_from(Reference::rad_self(
+                Namespace::from(urn.clone()),
+                Some(peer),
+            )) {
+                if let Ok(Some(person)) = identities::person::get(&storage, &delegate_urn) {
+                    let delegate = meta.delegates.contains(&peer);
+
+                    return Ok(json!({
+                        "id": peer,
+                        "name": person.subject().name.to_string(),
+                        "delegate": delegate
+                    }));
+                }
+            }
+            Ok(json!({ "id": peer }))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(warp::reply::json(&response))
 }
@@ -551,7 +572,7 @@ async fn tree_handler(
     Ok(warp::reply::json(&response))
 }
 
-/// List all projects that delegate is a part of
+/// List all projects that delegate is a part of.
 async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl Reply, Rejection> {
     use radicle_daemon::git::identities::SomeIdentity;
 
