@@ -627,21 +627,15 @@ where
 
 fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
     let repo = git::Repository::new(paths.git_dir().to_owned())?;
-    let meta = get_project_metadata(&urn, &paths)?;
+    let storage = ReadOnly::open(&paths)?;
+    let project = identities::project::get(&storage, &urn)?.ok_or(Error::NotFound)?;
+    let meta: project::Metadata = project.try_into()?;
     let head = get_head_commit(&repo, &urn, &meta.default_branch)?;
 
     Ok(Info {
         head: head.id,
         meta,
     })
-}
-
-fn get_project_metadata(urn: &Urn, paths: &Paths) -> Result<project::Metadata, Error> {
-    let storage = ReadOnly::open(paths)?;
-    let project = identities::project::get(&storage, urn)?.ok_or(Error::NotFound)?;
-    let meta: project::Metadata = project.try_into()?;
-
-    Ok(meta)
 }
 
 fn get_head_commit(
