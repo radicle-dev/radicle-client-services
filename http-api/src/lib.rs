@@ -497,22 +497,11 @@ async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
             res.map(|id| match id {
                 SomeIdentity::Project(project) => {
                     let meta: project::Metadata = project.try_into().ok()?;
-                    let project::Metadata {
-                        urn,
-                        name,
-                        description,
-                        default_branch,
-                        delegates,
-                    } = meta;
-                    let head = get_head_commit(&repo, &urn, &default_branch).ok()?;
+                    let head = get_head_commit(&repo, &meta.urn, &meta.default_branch).ok()?;
 
                     Some(Info {
-                        name,
-                        description,
-                        urn,
+                        meta,
                         head: head.id,
-                        default_branch,
-                        delegates,
                     })
                 }
                 _ => None,
@@ -591,22 +580,11 @@ async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl 
                     }
 
                     let meta: project::Metadata = project.try_into().ok()?;
-                    let project::Metadata {
-                        urn,
-                        name,
-                        description,
-                        default_branch,
-                        delegates,
-                    } = meta;
-                    let head = get_head_commit(&repo, &urn, &default_branch).ok()?;
+                    let head = get_head_commit(&repo, &meta.urn, &meta.default_branch).ok()?;
 
                     Some(Info {
-                        name,
-                        description,
-                        urn,
+                        meta,
                         head: head.id,
-                        default_branch,
-                        delegates,
                     })
                 }
                 _ => None,
@@ -649,22 +627,12 @@ where
 
 fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
     let repo = git::Repository::new(paths.git_dir().to_owned())?;
-    let project::Metadata {
-        urn,
-        name,
-        description,
-        default_branch,
-        delegates,
-    } = get_project_metadata(&urn, &paths)?;
-    let head = get_head_commit(&repo, &urn, &default_branch)?;
+    let meta = get_project_metadata(&urn, &paths)?;
+    let head = get_head_commit(&repo, &urn, &meta.default_branch)?;
 
     Ok(Info {
         head: head.id,
-        urn,
-        name,
-        description,
-        default_branch,
-        delegates,
+        meta,
     })
 }
 

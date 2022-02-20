@@ -11,19 +11,12 @@ use crate::error;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Info {
-    /// Project urn.
-    pub urn: Urn,
-    /// Project name.
-    pub name: String,
-    /// Project description.
-    pub description: String,
+    /// Project metadata.
+    #[serde(flatten)]
+    pub meta: Metadata,
     /// Project HEAD commit.
     #[serde(with = "string")]
     pub head: git2::Oid,
-    /// Project default branch.
-    pub default_branch: String,
-    /// List of delegates.
-    pub delegates: Vec<Delegate>,
 }
 
 /// Project delegate.
