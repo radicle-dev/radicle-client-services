@@ -2,36 +2,16 @@
 
 🏕️ Services backing the Radicle client interfaces.
 
-## Setting up an *Org Seed Node*
+## Setting up a *Seed Node*
 
-An *org seed node* is a type of node that replicates and distributes Radicle
-projects under one or more Radicle orgs, making them freely and publicly
-accessible on the web, and via peer-to-peer protocols.
+A *seed node* is a type of node that replicates and distributes Radicle
+projects making them freely and publicly accessible on the web, and via
+peer-to-peer protocols.
 
 Though it's possible to rely on shared infrastructure and community seed nodes,
-it is recommend for most orgs (and users) to self-host their projects in true
-peer-to-peer fashion. This can be achieved by running `radicle-org-node` and
-optionally `radicle-http-api` and `radicle-git-server` on a server or instance
-in the cloud.
-
-### `radicle-org-node`
-
-The *org node* service is a peer-to-peer service which uses the Radicle Link protocol
-to connect to peers and replicate projects under the specified org(s). To find
-which projects to replicate, it listens for events and updates on the Ethereum
-network where Radicle orgs keep their state.
-
-When a new project is added to an org via a process called *anchoring*, the org
-node attempts to fetch this project from the network.
-
-> 💡 It is recommend to configure your Radicle clients to use your org node(s) as seeds,
-so that changes you make to projects as well as projects you create are made available
-to the org node with minimal delay, and thus the rest of the network.
-
-Though the org node helps with reliable code distribution over the Radicle Link
-network, it does not expose projects in a way that is accessible to web and other
-HTTP clients. This is what the `radicle-http-api` is for. To serve `git` clients,
-the `radicle-git-server` should be used.
+it is recommend for most teams and communities to self-host their projects in true
+peer-to-peer fashion. This can be achieved by running `radicle-http-api` and
+`radicle-git-server` on a server or instance in the cloud.
 
 ### `radicle-http-api`
 
@@ -53,32 +33,20 @@ maps requests to specific namespaces in the shared repository and allows a Radic
 node to act as a typical Git server. It is then possible to clone a project
 by simply specifying its ID, for example:
 
-    git clone https://seed.alt-clients.radicle.xyz/hnrkyghsrokxzxpy9pww69xr11dr9q7edbxfo
+    git clone https://seed.alt-clients.radicle.xyz/hnrkyghsrokxzxpy9pww69xr11dr9q7edbxfo.git
 
 ### Service setup
 
-Though it's possible to only run the `radicle-org-node`, for maximum accessibility,
-it's recommended to run all services. Since the HTTP API wraps a local monorepo,
-these services should have access to the same file-system. The org node requires
+The services should have access to the same file-system. The git server requires
 *write* access to the file system, while the HTTP API only requires *read* access.
 
 For this setup to work, it's import to point all services to the same *root*,
 which is the path to the monorepo, eg.:
 
-    $ radicle-org-node --root ~/.radicle/root --orgs …
     $ radicle-http-api --root ~/.radicle/root …
     $ radicle-git-server --root ~/.radicle/root …
 
-This ensures the API and Git server can read the org node's state.
-
-#### Bootstrapping
-
-It's generally useful for the org seed node to connect to a pre-existing
-node to replicate projects from and find peers. This is done via the
-`--bootstrap` flag. See `radicle-org-node --help` for details on the format.
-
-Any (seed) node will do as a bootstrap peer. Multiple bootstrap nodes may
-be specified by separating them with a `,`.
+This ensures the API and Git server can read the same state.
 
 #### Identity file
 
@@ -88,19 +56,7 @@ be specified on the CLI via the `--identity` flag, similar to SSH's `-i`
 flag. Specifically, the path to the private key file should be used. If
 no private key is found at that path, a new key will be generated.
 
-#### JSON-RPC URL
-
-For `radicle-org-node`, it's necessary to specify a WebSocket URL to an
-Ethereum full node with JSON-RPC and WebSocket support, using the `--rpc-url`
-option.  This could be the address to your own node running locally, eg.
-`ws://localhost:8545`, or the URL of a third-party API such as Alchemy or
-Infura.
-
 #### Firewall configuration
-
-For `radicle-org-node`, a UDP port of your choosing should be opened. This port
-can then be specified via the `--listen` parameter, eg.
-`radicle-org-node --listen 0.0.0.0:8776`.  The default port is `8776`.
 
 For `radicle-http-api`, an HTTP port of your choosing should be opened. This port
 can then be specified via the `--listen` parameter, eg.
@@ -126,26 +82,18 @@ Certificates can be obtained from *Let's Encrypt*, using [Certbot](https://certb
 To enable logging for either service, set the `RUST_LOG` environment variable.
 Setting it to `info` is usually enough, but `debug` is also possible.
 
-### Org setup
+### ENS setup
 
-Once these services are running, orgs wishing to point Radicle clients to them
+Once these services are running, users wishing to point Radicle clients to them
 for project browsing should set the relevant records on ENS. This requires
-an ENS name to be registered for each org.
+an ENS name to be registered for each seed node.
 
 To point Radicle clients to the right seed endpoint, use the
-`eth.radicle.seed.id` text record, usually labeled "Seed ID", combined with the
-host address and port, eg.
-
-    hynkyndc6w3p8urucfkobzna7sxbgctny7xxtw88dtx3pkf7m3nrzc@seed.acme.org:8776
-
-To point HTTP clients to the right service endpoint, use the `eth.radicle.seed.host`
-text record, usually labeled "Seed Host", combined with the port number, to
-your HTTP API endpoint, eg.
-
-    https://seed.acme.org:8777
+`eth.radicle.seed.host` text record, usually labeled "Seed Host" to the
+seed host, eg `seed.acme.org`.
 
 These records can be set on the web client. For example, the records for the
-Alt.-clients org can be found at <https://app.radicle.network/registrations/alt-clients>.
+Alt.-clients org can be found at <https://app.radicle.network/registrations/alt-clients.radicle.eth>.
 
 ### Docker
 
@@ -155,26 +103,10 @@ There are `Dockerfile` provided for both services in the respective directories.
 
 To build the containers, run:
 
-    $ docker build -t radicle-services/org-node -f org-node/Dockerfile .
     $ docker build -t radicle-services/http-api -f http-api/Dockerfile .
     $ docker build -t radicle-services/git-server -f git-server/Dockerfile .
 
 #### Running
-
-To run the org node after it is built, you can run for example:
-
-    $ docker run \
-        --init \
-        -e RUST_LOG=info \
-        -p 8776:8776 \
-        -v $HOME/.radicle:/app/radicle radicle-services/org-node \
-        --subgraph https://api.thegraph.com/subgraphs/name/radicle-dev/radicle-orgs \
-        --orgs 0xceAa01bd5A428d2910C82BBEfE1Bc7a8Cc6207D9 \
-        --rpc-url ws://localhost:8545
-
-Make sure the *identity* file can be found under `$HOME/.radicle/identity` and
-that you replace the org address with your own. Don't forget to specify the
-`--bootstrap` option if needed.
 
 To run the HTTP API, run:
 
@@ -215,11 +147,9 @@ Then clone this repository and `cd` into it:
     git clone <repository-url> radicle-client-services
     cd radicle-client-service
 
-Then set `RADICLE_ORGS` to the address of your org, `RADICLE_DOMAIN` to your
-seed node's domain, eg. `seed.cloudhead.io`, and `ETH_RPC_URL` to an Ethereum
-JSON-RPC WebSocket endpoint, eg. `ws://localhost:8545` or a third-party provider
-such as Infura or Alchemy. These can be set in the environment, or in a `.env`
-file in the current directory.
+Then set `RADICLE_DOMAIN` to your seed node's domain, eg. `seed.cloudhead.io`.
+These can be set in the environment, or in a `.env` file in the current
+directory.
 
 Finally, pull the containers and start the services:
 
