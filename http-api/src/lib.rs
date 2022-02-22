@@ -15,7 +15,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::RwLock;
 use warp::hyper::StatusCode;
-use warp::reply;
 use warp::reply::Json;
 use warp::{self, filters::BoxedFilter, path, query, Filter, Rejection, Reply};
 
@@ -152,16 +151,16 @@ async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible>
 
         StatusCode::BAD_REQUEST
     };
-    let res = reply::json(&json!({
+    let body = json!({
         "error": status.canonical_reason(),
         "code": status.as_u16()
-    }));
+    });
 
-    Ok(reply::with_header(
-        reply::with_status(res, status),
-        "Content-Type",
-        "application/json",
-    ))
+    Ok(warp::http::Response::builder()
+        .header("Content-Type", "application/json")
+        .header("Access-Control-Allow-Origin", "*")
+        .status(status)
+        .body(body.to_string()))
 }
 
 /// Combination of all source filters.
