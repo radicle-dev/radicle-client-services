@@ -10,7 +10,7 @@ WORKDIR /usr/src/radicle-client-services/http-api
 RUN cargo install --all-features --locked --path .
 
 # Run
-FROM debian:bullseye-slim@sha256:96e65f809d753e35c54b7ba33e59d92e53acc8eb8b57bf1ccece73b99700b3b0
+FROM debian:bullseye-slim@sha256:4c25ffa6ef572cf0d57da8c634769a08ae94529f7de5be5587ec8ce7b9b50f9c
 
 EXPOSE 8777/tcp
 RUN apt-get update && apt-get install -y libssl1.1 && rm -rf /var/lib/apt/lists/*
