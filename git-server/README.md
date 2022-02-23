@@ -12,7 +12,7 @@ Git [hooks](https://git-scm.com/book/en/v2/Customizing-Git-Git-Hooks) are used b
 
 This crate includes a `bin` folder that contains hooks used by the `radicle-git-server` for authorizing requests and performing other tasks.
 
-In order to use these hooks, the binaries in the `bin` folder must be built using `cargo build --bin pre-receive --feature hooks` and `cargo build --bin post-receive --feature hooks` (`--release` for production) and moved to the radicle root under `git/hooks/` (e.g. `~/.radicle/git/hooks/`) folder. These executables will automatically be called by the http-backend.
+In order to use these hooks, the binaries in the `bin` folder must be built using `cargo build --bin pre-receive` and `cargo build --bin post-receive` and moved to the radicle root under `git/hooks/` (e.g. `~/.radicle/git/hooks/`) folder. These executables will automatically be called by the git-http-backend.
 
 ## Authorizing Signed Push Certificates in `pre-receive` Hook
 
@@ -28,17 +28,9 @@ While developing it can sometimes be useful to disable certificate verification 
 radicle-git-server ... --allow-unauthorized-keys
 ```
 
-### Providing a Command Line Argument Authorized Keyring
+### Using `authorized-keys` for Authorization
 
-It is possible to provide the `git-server` with a comma delimited list of authorized GPG key fingerprints to use as a simple keyring for verifying a signed push certificate. To set an authorized keys list, run the `git-server` with the following command:
-
-```
-radicle-git-server ... --authorized-keys 817EEFE32E1F0AA5,...,...
-```
-
-### Using `.rad/keys/openpgp/<key_id>` for Authorization
-
-By default, the `pre-receive` hook will check the target repository for a `.rad/keys/openpgp/<key_id>` public key file on push. If it exists, it will check the public key's fingerprint matches the `$GIT_PUSH_CERT_KEY` set by the http-backend. The `$GIT_PUSH_CERT_KEY` is used to find the file in the namespace tree, comparing the fingerprint in the authorized keyring against the signed certificate.
+By default, the `pre-receive` hook will check the mono-repository for a `authorized-keys` public key file on push. If it exists, it will check the public key's fingerprint matches the `$GIT_PUSH_CERT_KEY` set by the http-backend. The `$GIT_PUSH_CERT_KEY` is used to find the file in the namespace tree, comparing the fingerprint in the authorized keyring against the signed certificate.
 
 No `git-server` command arguments are needed to perform this check.
 
