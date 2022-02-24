@@ -25,4 +25,4 @@ COPY --from=build /usr/src/radicle-client-services/git-server/docker/radicle-git
 
 WORKDIR /app/radicle
 
-ENTRYPOINT ["/usr/local/bin/radicle-git-server.sh"]
+ENTRYPOINT ["/usr/local/bin/radicle-git-server.sh", "--git-receive-pack", "--listen", "0.0.0.0:8778"]

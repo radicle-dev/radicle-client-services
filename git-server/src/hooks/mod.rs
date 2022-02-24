@@ -14,7 +14,7 @@ pub trait CertSignerDetails {
     /// returns the name of the GPG signer set from the `$GIT_PUSH_CERT_SIGNER` env.
     fn signer_name(cert_signer: Option<String>) -> Result<String, Error> {
         if let Some(signer) = cert_signer {
-            let end = signer.find('<').unwrap_or_else(|| signer.len()) - 1;
+            let end = signer.find('<').unwrap_or(signer.len()) - 1;
 
             return Ok(signer[0..end].to_owned());
         }

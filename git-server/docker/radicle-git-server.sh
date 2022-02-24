@@ -11,7 +11,7 @@ main () {
     cp --force /usr/local/bin/pre-receive /app/radicle/root/git/hooks/pre-receive
     cp --force /usr/local/bin/post-receive /app/radicle/root/git/hooks/post-receive
 
-    exec /usr/local/bin/radicle-git-server --git-receive-pack --root /app/radicle/root --listen 0.0.0.0:8778 "$@"
+    exec /usr/local/bin/radicle-git-server --root /app/radicle/root "$@"
 }
 
 main "$@"

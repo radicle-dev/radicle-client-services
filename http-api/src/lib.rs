@@ -529,7 +529,7 @@ async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
     use radicle_daemon::git::identities::SomeIdentity;
 
     let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
-    let repo = git::Repository::new(&ctx.paths.git_dir().to_owned()).map_err(Error::from)?;
+    let repo = git::Repository::new(&ctx.paths.git_dir()).map_err(Error::from)?;
     let projects = identities::any::list(&storage)
         .map_err(Error::from)?
         .filter_map(|res| {
@@ -603,7 +603,7 @@ async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl 
     use radicle_daemon::git::identities::SomeIdentity;
 
     let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
-    let repo = git::Repository::new(&ctx.paths.git_dir().to_owned()).map_err(Error::from)?;
+    let repo = git::Repository::new(&ctx.paths.git_dir()).map_err(Error::from)?;
     let projects = identities::any::list(&storage)
         .map_err(Error::from)?
         .filter_map(|res| {
@@ -658,14 +658,14 @@ where
         .try_into()
         .map_err(|_| Error::NotFound)?,
     };
-    let repo = git::Repository::new(paths.git_dir().to_owned())?;
+    let repo = git::Repository::new(paths.git_dir())?;
     let mut browser = git::Browser::new_with_namespace(&repo, &namespace, revision)?;
 
     Ok(callback(&mut browser)?)
 }
 
 fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
-    let repo = git::Repository::new(paths.git_dir().to_owned())?;
+    let repo = git::Repository::new(paths.git_dir())?;
     let storage = ReadOnly::open(&paths)?;
     let project = identities::project::get(&storage, &urn)?.ok_or(Error::NotFound)?;
     let meta: project::Metadata = project.try_into()?;
