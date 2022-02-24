@@ -95,64 +95,28 @@ seed host, eg `seed.acme.org`.
 These records can be set on the web client. For example, the records for the
 Alt.-clients org can be found at <https://app.radicle.network/registrations/alt-clients.radicle.eth>.
 
-### Docker
-
-There are `Dockerfile` provided for both services in the respective directories.
-
-#### Building
-
-To build the containers, run:
-
-    $ docker build -t radicle-services/http-api -f http-api/Dockerfile .
-    $ docker build -t radicle-services/git-server -f git-server/Dockerfile .
-
-#### Running
-
-To run the HTTP API, run:
-
-    $ docker run \
-        --init \
-        -e RUST_LOG=info \
-        -p 8777:8777 \
-        -v $HOME/.radicle:/app/radicle radicle-services/http-api \
-        --tls-cert /app/radicle/fullchain.pem \
-        --tls-key /app/radicle/privkey.pem
-
-Make sure your TLS certificate files can be found under `$HOME/.radicle`. If you
-are not using TLS termination, simply omit the `--tls-*` arguments.
-
-Running `radicle-git-server` is more or less identical to running the HTTP API.
-
-You may also want to detach the process (`-d`) and run with a TTY in interactive
-mode (`-it`).
-
 ### Docker Compose
 
-As an alternative to building the containers yourself, a `docker-compose.yml`
-file is included in the repository. To run the services via Docker Compose, you
-have to:
+A Docker Compose setup is supported.  It offers automatic HTTPS via Caddy web
+server.  **A public, registered domain is required**.  To run the services via
+Docker Compose, you want to:
 
-1. Install Docker and Docker Compose
-2. Clone this repository
-3. Set the necessary environment variables
-4. Start the radicle client services via Docker Compose
+1. Install Docker by following instruction at https://docs.docker.com/engine/install/
+2. Download Radicle Services configuration files:
 
-To install Docker Compose, run:
+```Bash
+$ wget 'https://raw.githubusercontent.com/radicle-dev/radicle-client-services/master/docker-compose.yml'
+$ wget 'https://raw.githubusercontent.com/radicle-dev/radicle-client-services/master/Caddyfile'
+```
 
-    sudo apt-get install docker
-    pip install docker-compose
+3. Configure your public domain in the `.env` file:
 
-Then clone this repository and `cd` into it:
+```Bash
+# e.g. RADICLE_DOMAIN=seed.radicle.community
+echo RADICLE_DOMAIN=YOUR_PUBLIC_DNS >.env
+```
 
-    git clone <repository-url> radicle-client-services
-    cd radicle-client-service
-
-Then set `RADICLE_DOMAIN` to your seed node's domain, eg. `seed.cloudhead.io`.
-These can be set in the environment, or in a `.env` file in the current
-directory.
-
-Finally, pull the containers and start the services:
-
-    docker-compose pull
-    docker-compose up --detach
-
+4. Install `pipx` from your package manager (for Debian/Ubuntu it's `sudo apt install python3-venv pipx`)
+5. Install docker-compose via `pipx`: `pipx install docker-compose`
+6. Pull Radicle Services Docker images: `docker-compose pull`
+7. Start Radicle Services containers in the background: `docker-compose up --detach`
