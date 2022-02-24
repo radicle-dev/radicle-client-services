@@ -1,0 +1,12 @@
+#!/bin/sh
+
+echo "hook: I am the receive hook!"
+echo "hook: Project name is $RADICLE_NAME"
+
+while read line
+do
+  echo "hook: stdin: $line"
+done
+
+echo "hook: Exiting..."
+exit 0
