@@ -9,10 +9,7 @@ on:
 jobs:
   build:
     name: Build & Test
-    strategy:
-      matrix:
-        os: ['ubuntu-latest']
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Update packages
         run: sudo apt-get update
