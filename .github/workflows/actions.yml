@@ -23,47 +23,11 @@ jobs:
         with:
           profile: minimal
       - name: Build
-        run: cargo build --release --verbose --all-features
+        run: cargo build --verbose --all-features
         env:
           RUSTFLAGS: -D warnings
       - name: Run tests
         run: cargo test --all --verbose --all-features
-      - name: Create artifacts directory
-        run: mkdir artifacts
-      - name: Copy binaries to a separate directory
-        run: find target/release -maxdepth 1 -type f -executable | xargs --replace cp '{}' artifacts
-      - name: Strip binaries of debugging symbols
-        run: strip artifacts/*
-      - name: Upload binaries for use in a dependent job
-        uses: actions/upload-artifact@v2
-        with:
-          name: client-services
-          path: artifacts/*
-
-
-  upload-binaries-to-gcs:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: 'read'
-      id-token: 'write'
-    steps:
-      - uses: actions/download-artifact@v2
-        with:
-          name: client-services
-          path: artifacts
-      - id: 'auth'
-        uses: 'google-github-actions/auth@v0'
-        with:
-          workload_identity_provider: 'projects/281042598092/locations/global/workloadIdentityPools/github-actions/providers/google-cloud'
-          service_account: 'github-actions@radicle-services.iam.gserviceaccount.com'
-      - name: Upload binaries to Google Cloud Storage
-        if: ${{ github.ref == 'refs/heads/master' }}
-        uses: 'google-github-actions/upload-cloud-storage@v0'
-        with:
-          path: artifacts
-          destination: radicle-client-services/
-          parent: false
 
   docs:
     name: Docs
