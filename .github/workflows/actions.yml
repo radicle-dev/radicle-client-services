@@ -1,4 +1,4 @@
-name: Cargo
+name: Test & Lint
 
 on:
   push:
