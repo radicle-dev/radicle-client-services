@@ -536,7 +536,9 @@ async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
             res.map(|id| match id {
                 SomeIdentity::Project(project) => {
                     let meta: project::Metadata = project.try_into().ok()?;
-                    let head = get_head_commit(&repo, &meta.urn, &meta.default_branch).ok()?;
+                    let head =
+                        get_head_commit(&repo, &meta.urn, &meta.default_branch, &meta.delegates)
+                            .ok()?;
 
                     Some(Info {
                         meta,
@@ -619,7 +621,9 @@ async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl 
                     }
 
                     let meta: project::Metadata = project.try_into().ok()?;
-                    let head = get_head_commit(&repo, &meta.urn, &meta.default_branch).ok()?;
+                    let head =
+                        get_head_commit(&repo, &meta.urn, &meta.default_branch, &meta.delegates)
+                            .ok()?;
 
                     Some(Info {
                         meta,
@@ -669,7 +673,7 @@ fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
     let storage = ReadOnly::open(&paths)?;
     let project = identities::project::get(&storage, &urn)?.ok_or(Error::NotFound)?;
     let meta: project::Metadata = project.try_into()?;
-    let head = get_head_commit(&repo, &urn, &meta.default_branch)?;
+    let head = get_head_commit(&repo, &urn, &meta.default_branch, &meta.delegates)?;
 
     Ok(Info {
         head: head.id,
@@ -681,11 +685,46 @@ fn get_head_commit(
     repo: &git::Repository,
     urn: &Urn,
     default_branch: &str,
+    delegates: &[project::Delegate],
 ) -> Result<git::Commit, Error> {
     let namespace = git::namespace::Namespace::try_from(urn.encode_id().as_str())?;
-    let browser =
-        git::Browser::new_with_namespace(repo, &namespace, git::Branch::local(default_branch))
-            .map_err(|_| Error::MissingLocalState)?;
+    let result =
+        git::Browser::new_with_namespace(repo, &namespace, git::Branch::local(default_branch));
+
+    let browser = match result {
+        Ok(b) => b,
+        Err(_) => {
+            tracing::debug!("No local head, falling back to project delegates");
+            let resolved_default_delegate = match delegates {
+                [project::Delegate::Direct { id }] => Ok(id),
+                [project::Delegate::Indirect { ids, .. }] => {
+                    let ids: Vec<&PeerId> = ids.iter().collect();
+                    if let [id] = ids.as_slice() {
+                        Ok(*id)
+                    } else {
+                        Err(Error::NoHead("project has single indirect delegate with zero or more than one direct delegate"))
+                    }
+                }
+                other => {
+                    if other.len() > 1 {
+                        Err(Error::NoHead("project has multiple delegates"))
+                    } else {
+                        Err(Error::NoHead("project has no delegates"))
+                    }
+                }
+            }?;
+
+            git::Browser::new_with_namespace(
+                repo,
+                &namespace,
+                git::Branch::remote(
+                    &format!("heads/{}", default_branch),
+                    &resolved_default_delegate.to_string(),
+                ),
+            )
+            .map_err(|_| Error::NoHead("history lookup failed"))?
+        }
+    };
     let history = browser.get();
 
     Ok(history.first().to_owned())

@@ -20,7 +20,7 @@ pub struct Info {
 }
 
 /// Project delegate.
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum Delegate {
     /// Direct delegation, ie. public key.
