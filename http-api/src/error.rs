@@ -20,10 +20,6 @@ pub enum Error {
     #[error("tracking: {0}")]
     Tracking(#[from] radicle_daemon::git::tracking::error::Tracked),
 
-    /// Invalid branch name.
-    #[error("invalid branch name")]
-    BranchName,
-
     /// The entity was not found.
     #[error("entity not found")]
     NotFound,

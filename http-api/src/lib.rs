@@ -25,7 +25,6 @@ use radicle_daemon::librad::git::types::{One, Reference, Single};
 use radicle_daemon::{git::types::Namespace, Paths, PeerId, Urn};
 use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
-use radicle_source::surf::vcs::git::RepositoryRef;
 
 use crate::project::Info;
 
@@ -393,26 +392,22 @@ async fn remote_handler(
 
     let namespace = project.encode_id();
     let remote = peer_id.default_encoding();
+    let prefix = format!(
+        "refs/namespaces/{}/refs/remotes/{}/heads/",
+        namespace, remote
+    );
+    let glob = format!("{}*", prefix);
+    let refs = repo.references_glob(&glob).unwrap();
 
-    repo.set_namespace(&namespace).map_err(Error::from)?;
+    let branches = refs
+        .filter_map(|r| {
+            let reference = r.ok()?;
+            let name = reference.name()?.strip_prefix(&prefix)?;
+            let oid = reference.target()?;
 
-    let branches = RepositoryRef::from(&repo)
-        .list_branches(git::RefScope::Remote { name: Some(remote) })
-        .map_err(Error::from)?
-        .iter()
-        .filter(|branch| !branch.name.to_string().starts_with("rad/"))
-        .map(|branch| {
-            let reflike = branch
-                .name
-                .name()
-                .try_into()
-                .map_err(|_| Error::BranchName)?;
-            let reference = Reference::head(Namespace::from(project.clone()), peer_id, reflike);
-            let oid = reference.oid(&repo)?;
-
-            Ok::<_, Error>((branch.name.to_string(), oid.to_string()))
+            Some((name.to_string(), oid.to_string()))
         })
-        .collect::<Result<HashMap<_, _>, _>>()?;
+        .collect::<HashMap<_, _>>();
 
     let response = json!({ "heads": &branches });
 
