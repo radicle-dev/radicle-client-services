@@ -73,7 +73,7 @@ async fn main() {
     match server::run(options.into()).await {
         Ok(()) => {}
         Err(err) => {
-            tracing::error!("Fatal: {}", err);
+            tracing::error!("Fatal: {:#}", err);
             process::exit(1);
         }
     }

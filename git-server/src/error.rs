@@ -113,7 +113,7 @@ pub enum Error {
     VerifyIdentity(String),
 
     /// An error occured with a git storage pool.
-    #[error(transparent)]
+    #[error("storage error: {0}")]
     Pool(#[from] librad::git::storage::pool::PoolError),
 
     /// Stored refs error.
