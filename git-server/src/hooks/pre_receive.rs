@@ -127,7 +127,10 @@ impl PreReceive {
             let peer_fingerprint = to_ssh_fingerprint(&peer_id)?;
 
             if key_fingerprint[..] != peer_fingerprint[..] {
-                return Err(Error::Unauthorized("signer does not match remote ref"));
+                return Err(Error::KeyMismatch {
+                    actual: self.key_fingerprint.clone(),
+                    expected: base64::encode(peer_fingerprint),
+                });
             }
         }
         Ok(())

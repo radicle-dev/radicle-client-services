@@ -43,6 +43,10 @@ pub enum Error {
     #[error("{0}")]
     PostReceive(&'static str),
 
+    /// Signer key mismatch.
+    #[error("signer key mismatch: expected {expected}, got {actual}")]
+    KeyMismatch { actual: String, expected: String },
+
     /// Project alias not found.
     #[error("alias does not exist")]
     AliasNotFound,
@@ -135,6 +139,7 @@ impl Error {
             Error::UnsupportedContentEncoding(_) => http::StatusCode::NOT_IMPLEMENTED,
             Error::ServiceUnavailable(_) => http::StatusCode::SERVICE_UNAVAILABLE,
             Error::Unauthorized(_) => http::StatusCode::UNAUTHORIZED,
+            Error::KeyMismatch { .. } => http::StatusCode::UNAUTHORIZED,
             Error::AliasNotFound => http::StatusCode::NOT_FOUND,
             _ => http::StatusCode::INTERNAL_SERVER_ERROR,
         }

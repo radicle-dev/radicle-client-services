@@ -327,6 +327,8 @@ impl PostReceive {
                 _ => {}
             }
 
+            // TODO: We shouldn't track all delegates because we don't have their branches/remotes!
+            // We should only track the peer that is pushing.
             for peer in delegates {
                 println!("Tracking {}...", peer);
 
