@@ -14,9 +14,10 @@ pub struct Info {
     /// Project metadata.
     #[serde(flatten)]
     pub meta: Metadata,
-    /// Project HEAD commit.
-    #[serde(with = "string")]
-    pub head: git2::Oid,
+    /// Project HEAD commit. If empty, it's likely that no delegate
+    /// branches have been replicated on this node.
+    #[serde(with = "option")]
+    pub head: Option<git2::Oid>,
 }
 
 /// Project delegate.
@@ -99,16 +100,20 @@ impl TryFrom<radicle_daemon::Project> for Metadata {
     }
 }
 
-mod string {
+mod option {
     use std::fmt::Display;
 
     use serde::Serializer;
 
-    pub fn serialize<T, S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<T, S>(value: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
     where
         T: Display,
         S: Serializer,
     {
-        serializer.collect_str(value)
+        if let Some(value) = value {
+            serializer.collect_str(value)
+        } else {
+            serializer.serialize_none()
+        }
     }
 }

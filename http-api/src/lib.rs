@@ -141,18 +141,22 @@ async fn peer_handler(peer_id: PeerId) -> Result<impl warp::Reply, warp::Rejecti
 }
 
 async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible> {
-    let status = if err.is_not_found() {
-        StatusCode::NOT_FOUND
+    let (status, msg) = if err.is_not_found() {
+        (StatusCode::NOT_FOUND, None)
     } else if let Some(Error::NotFound) = err.find::<Error>() {
-        StatusCode::NOT_FOUND
+        (StatusCode::NOT_FOUND, None)
+    } else if let Some(Error::NoHead(msg)) = err.find::<Error>() {
+        (StatusCode::NOT_FOUND, Some(*msg))
+    } else if let Some(Error::Git(e)) = err.find::<Error>() {
+        (StatusCode::INTERNAL_SERVER_ERROR, Some(e.message()))
     } else {
         // Log the non-standard errors.
         tracing::error!("Error: {:?}", err);
 
-        StatusCode::BAD_REQUEST
+        (StatusCode::INTERNAL_SERVER_ERROR, None)
     };
     let body = json!({
-        "error": status.canonical_reason(),
+        "error": msg.or_else(||status.canonical_reason()),
         "code": status.as_u16()
     });
 
@@ -430,7 +434,12 @@ async fn history_handler(
         Some(commit) => (commit, false),
         None => {
             let meta = project_info(project.to_owned(), ctx.paths.to_owned())?;
-            (meta.head.to_string(), true)
+
+            if let Some(head) = meta.head {
+                (head.to_string(), true)
+            } else {
+                return Err(Error::NoHead("project head is not set").into());
+            }
         }
     };
 
@@ -538,12 +547,10 @@ async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
                     let meta: project::Metadata = project.try_into().ok()?;
                     let head =
                         get_head_commit(&repo, &meta.urn, &meta.default_branch, &meta.delegates)
-                            .ok()?;
+                            .map(|h| h.id)
+                            .ok();
 
-                    Some(Info {
-                        meta,
-                        head: head.id,
-                    })
+                    Some(Info { meta, head })
                 }
                 _ => None,
             })
@@ -623,12 +630,10 @@ async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl 
                     let meta: project::Metadata = project.try_into().ok()?;
                     let head =
                         get_head_commit(&repo, &meta.urn, &meta.default_branch, &meta.delegates)
-                            .ok()?;
+                            .map(|h| h.id)
+                            .ok();
 
-                    Some(Info {
-                        meta,
-                        head: head.id,
-                    })
+                    Some(Info { meta, head })
                 }
                 _ => None,
             })
@@ -673,12 +678,11 @@ fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
     let storage = ReadOnly::open(&paths)?;
     let project = identities::project::get(&storage, &urn)?.ok_or(Error::NotFound)?;
     let meta: project::Metadata = project.try_into()?;
-    let head = get_head_commit(&repo, &urn, &meta.default_branch, &meta.delegates)?;
+    let head = get_head_commit(&repo, &urn, &meta.default_branch, &meta.delegates)
+        .map(|h| h.id)
+        .ok();
 
-    Ok(Info {
-        head: head.id,
-        meta,
-    })
+    Ok(Info { head, meta })
 }
 
 fn get_head_commit(
