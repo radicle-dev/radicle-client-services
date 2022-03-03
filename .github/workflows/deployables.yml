@@ -1,12 +1,12 @@
-name: Build and publish Docker images
+name: Build and push container images
 
 on:
   push:
     branches:
-     - deploy/*
+      - deploy/*
 
 jobs:
-  docker:
+  build-and-push-images:
     runs-on: ubuntu-latest
     steps:
       - name: Set up Docker Buildx
@@ -39,3 +39,60 @@ jobs:
           tags: gcr.io/radicle-services/git-server:latest,gcr.io/radicle-services/git-server:${{ github.sha }}
           cache-from: type=registry,ref=gcr.io/radicle-services/git-server:latest
           cache-to: type=inline
+
+  deploy-images:
+    runs-on: ubuntu-latest
+    needs: build-and-push-images
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    steps:
+      - id: 'auth'
+        uses: 'google-github-actions/auth@v0'
+        with:
+          workload_identity_provider: 'projects/281042598092/locations/global/workloadIdentityPools/github-actions/providers/google-cloud'
+          service_account: 'github-actions@radicle-services.iam.gserviceaccount.com'
+
+      - name: Make sure .env file exists
+        run: gcloud beta compute ssh --zone "europe-west4-c" "github-actions@alt-clients-seed" --project "radicle-services" --command="test -f .env && grep -w RADICLE_DOMAIN .env"
+      - name: Fetch docker-compose.yml
+        run: gcloud beta compute ssh --zone "europe-west4-c" "github-actions@alt-clients-seed" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/docker-compose.yml >docker-compose.yml"
+      - name: Fetch Caddyfile
+        run: gcloud beta compute ssh --zone "europe-west4-c" "github-actions@alt-clients-seed" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/Caddyfile >Caddyfile"
+      - name: Pull container images
+        run: gcloud beta compute ssh --zone "europe-west4-c" "github-actions@alt-clients-seed" --project "radicle-services" --command="docker-compose --file docker-compose.yml pull"
+      - name: (Re)start services
+        run: gcloud beta compute ssh --zone "europe-west4-c" "github-actions@alt-clients-seed" --project "radicle-services" --command="docker-compose --file docker-compose.yml up --detach"
+
+      - name: Make sure .env file exists
+        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-pine" --project "radicle-services" --command="test -f .env && grep -w RADICLE_DOMAIN .env"
+      - name: Fetch docker-compose.yml
+        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-pine" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.repository }}/${{ github.sha }}/docker-compose.yml >docker-compose.yml"
+      - name: Fetch Caddyfile
+        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-pine" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.repository }}/${{ github.sha }}/Caddyfile >Caddyfile"
+      - name: Pull container images
+        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-pine" --project "radicle-services" --command="docker-compose --file docker-compose.yml pull"
+      - name: (Re)start services
+        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-pine" --project "radicle-services" --command="docker-compose --file docker-compose.yml up --detach"
+
+      - name: Make sure .env file exists
+        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-willow" --project "radicle-services" --command="test -f .env && grep -w RADICLE_DOMAIN .env"
+      - name: Fetch docker-compose.yml
+        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-willow" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.repository }}/${{ github.sha }}/docker-compose.yml >docker-compose.yml"
+      - name: Fetch Caddyfile
+        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-willow" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.repository }}/${{ github.sha }}/Caddyfile >Caddyfile"
+      - name: Pull container images
+        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-willow" --project "radicle-services" --command="docker-compose --file docker-compose.yml pull"
+      - name: (Re)start services
+        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-willow" --project "radicle-services" --command="docker-compose --file docker-compose.yml up --detach"
+
+      - name: Make sure .env file exists
+        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-maple" --project "radicle-services" --command="test -f .env && grep -w RADICLE_DOMAIN .env"
+      - name: Fetch docker-compose.yml
+        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-maple" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.repository }}/${{ github.sha }}/docker-compose.yml >docker-compose.yml"
+      - name: Fetch Caddyfile
+        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-maple" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.repository }}/${{ github.sha }}/Caddyfile >Caddyfile"
+      - name: Pull container images
+        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-maple" --project "radicle-services" --command="docker-compose --file docker-compose.yml pull"
+      - name: (Re)start services
+        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-maple" --project "radicle-services" --command="docker-compose --file docker-compose.yml up --detach"
