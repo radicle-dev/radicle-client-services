@@ -22,7 +22,7 @@ use radicle_daemon::librad::git::identities;
 use radicle_daemon::librad::git::storage::read::ReadOnly;
 use radicle_daemon::librad::git::tracking;
 use radicle_daemon::librad::git::types::{One, Reference, Single};
-use radicle_daemon::{git::types::Namespace, Paths, PeerId, Urn};
+use radicle_daemon::{git::types::Namespace, profile::Profile, Paths, PeerId, Urn};
 use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
 
@@ -34,7 +34,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Clone)]
 pub struct Options {
-    pub root: PathBuf,
+    pub root: Option<PathBuf>,
     pub listen: net::SocketAddr,
     pub tls_cert: Option<PathBuf>,
     pub tls_key: Option<PathBuf>,
@@ -80,7 +80,11 @@ impl Context {
 
 /// Run the HTTP API.
 pub async fn run(options: Options) {
-    let paths = Paths::from_root(options.root).unwrap();
+    let paths = if let Some(ref root) = options.root {
+        Paths::from_root(root).unwrap()
+    } else {
+        Profile::load().unwrap().paths().clone()
+    };
     let storage = ReadOnly::open(&paths).expect("failed to read storage paths");
     let peer_id = storage.peer_id().to_owned();
 

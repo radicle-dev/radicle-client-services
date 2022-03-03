@@ -16,7 +16,7 @@ pub struct Options {
 
     /// radicle root path, for key and git storage
     #[argh(option)]
-    pub root: PathBuf,
+    pub root: Option<PathBuf>,
 
     /// TLS certificate path
     #[argh(option)]
