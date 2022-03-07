@@ -46,53 +46,31 @@ jobs:
     permissions:
       contents: 'read'
       id-token: 'write'
+    strategy:
+      matrix:
+        host: [seed, pine, willow, maple]
+        include:
+        - host: seed
+          zone: europe-west4-c
+        - host: pine
+          zone: europe-north1-a
+        - host: willow
+          zone: europe-north1-a
+        - host: maple
+          zone: europe-north1-a
     steps:
       - id: 'auth'
         uses: 'google-github-actions/auth@v0'
         with:
           workload_identity_provider: 'projects/281042598092/locations/global/workloadIdentityPools/github-actions/providers/google-cloud'
           service_account: 'github-actions@radicle-services.iam.gserviceaccount.com'
-
       - name: Make sure .env file exists
-        run: gcloud beta compute ssh --zone "europe-west4-c" "github-actions@alt-clients-seed" --project "radicle-services" --command="test -f .env && grep -w RADICLE_DOMAIN .env"
+        run: gcloud beta compute ssh --zone ${{ matrix.zone }} "github-actions@alt-clients-${{ matrix.host }}" --project "radicle-services" --command="test -f .env && grep -w RADICLE_DOMAIN .env"
       - name: Fetch docker-compose.yml
-        run: gcloud beta compute ssh --zone "europe-west4-c" "github-actions@alt-clients-seed" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/docker-compose.yml >docker-compose.yml"
+        run: gcloud beta compute ssh --zone ${{ matrix.zone }} "github-actions@alt-clients-${{ matrix.host }}" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/docker-compose.yml >docker-compose.yml"
       - name: Fetch Caddyfile
-        run: gcloud beta compute ssh --zone "europe-west4-c" "github-actions@alt-clients-seed" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/Caddyfile >Caddyfile"
+        run: gcloud beta compute ssh --zone ${{ matrix.zone }} "github-actions@alt-clients-${{ matrix.host }}" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/Caddyfile >Caddyfile"
       - name: Pull container images
-        run: gcloud beta compute ssh --zone "europe-west4-c" "github-actions@alt-clients-seed" --project "radicle-services" --command="docker-compose --file docker-compose.yml pull"
+        run: gcloud beta compute ssh --zone ${{ matrix.zone }} "github-actions@alt-clients-${{ matrix.host }}" --project "radicle-services" --command="docker-compose --file docker-compose.yml pull"
       - name: (Re)start services
-        run: gcloud beta compute ssh --zone "europe-west4-c" "github-actions@alt-clients-seed" --project "radicle-services" --command="docker-compose --file docker-compose.yml up --detach"
-
-      - name: Make sure .env file exists
-        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-pine" --project "radicle-services" --command="test -f .env && grep -w RADICLE_DOMAIN .env"
-      - name: Fetch docker-compose.yml
-        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-pine" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.repository }}/${{ github.sha }}/docker-compose.yml >docker-compose.yml"
-      - name: Fetch Caddyfile
-        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-pine" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.repository }}/${{ github.sha }}/Caddyfile >Caddyfile"
-      - name: Pull container images
-        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-pine" --project "radicle-services" --command="docker-compose --file docker-compose.yml pull"
-      - name: (Re)start services
-        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-pine" --project "radicle-services" --command="docker-compose --file docker-compose.yml up --detach"
-
-      - name: Make sure .env file exists
-        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-willow" --project "radicle-services" --command="test -f .env && grep -w RADICLE_DOMAIN .env"
-      - name: Fetch docker-compose.yml
-        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-willow" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.repository }}/${{ github.sha }}/docker-compose.yml >docker-compose.yml"
-      - name: Fetch Caddyfile
-        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-willow" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.repository }}/${{ github.sha }}/Caddyfile >Caddyfile"
-      - name: Pull container images
-        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-willow" --project "radicle-services" --command="docker-compose --file docker-compose.yml pull"
-      - name: (Re)start services
-        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-willow" --project "radicle-services" --command="docker-compose --file docker-compose.yml up --detach"
-
-      - name: Make sure .env file exists
-        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-maple" --project "radicle-services" --command="test -f .env && grep -w RADICLE_DOMAIN .env"
-      - name: Fetch docker-compose.yml
-        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-maple" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.repository }}/${{ github.sha }}/docker-compose.yml >docker-compose.yml"
-      - name: Fetch Caddyfile
-        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-maple" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.repository }}/${{ github.sha }}/Caddyfile >Caddyfile"
-      - name: Pull container images
-        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-maple" --project "radicle-services" --command="docker-compose --file docker-compose.yml pull"
-      - name: (Re)start services
-        run: gcloud beta compute ssh --zone "europe-north1-a" "github-actions@alt-clients-maple" --project "radicle-services" --command="docker-compose --file docker-compose.yml up --detach"
+        run: gcloud beta compute ssh --zone ${{ matrix.zone }} "github-actions@alt-clients-${{ matrix.host }}" --project "radicle-services" --command="docker-compose --file docker-compose.yml up --detach"
