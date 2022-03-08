@@ -18,11 +18,11 @@ use warp::hyper::StatusCode;
 use warp::reply::Json;
 use warp::{self, filters::BoxedFilter, path, query, Filter, Rejection, Reply};
 
-use radicle_daemon::librad::git::identities;
-use radicle_daemon::librad::git::storage::read::ReadOnly;
-use radicle_daemon::librad::git::tracking;
-use radicle_daemon::librad::git::types::{One, Reference, Single};
-use radicle_daemon::{git::types::Namespace, profile::Profile, Paths, PeerId, Urn};
+use librad::git::identities;
+use librad::git::storage::read::ReadOnly;
+use librad::git::tracking;
+use librad::git::types::{One, Reference, Single};
+use librad::{git::types::Namespace, git::Urn, paths::Paths, profile::Profile, PeerId};
 use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
 
@@ -58,7 +58,7 @@ pub struct Context {
 impl Context {
     /// Populates alias map with unique projects' names and their urns
     async fn populate_aliases(&self, map: &mut HashMap<String, Urn>) -> Result<(), Error> {
-        use radicle_daemon::git::identities::SomeIdentity::Project;
+        use librad::git::identities::SomeIdentity::Project;
 
         let storage = ReadOnly::open(&self.paths).expect("failed to open storage");
         let identities = identities::any::list(&storage)?;
@@ -534,7 +534,7 @@ async fn readme_handler(ctx: Context, project: Urn, sha: One) -> Result<impl Rep
 
 /// List all projects
 async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
-    use radicle_daemon::git::identities::SomeIdentity;
+    use librad::git::identities::SomeIdentity;
 
     let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
     let repo = git::Repository::new(&ctx.paths.git_dir()).map_err(Error::from)?;
@@ -608,7 +608,7 @@ async fn tree_handler(
 
 /// List all projects that delegate is a part of.
 async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl Reply, Rejection> {
-    use radicle_daemon::git::identities::SomeIdentity;
+    use librad::git::identities::SomeIdentity;
 
     let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
     let repo = git::Repository::new(&ctx.paths.git_dir()).map_err(Error::from)?;

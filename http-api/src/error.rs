@@ -18,7 +18,7 @@ pub enum Error {
 
     /// Error related to tracking.
     #[error("tracking: {0}")]
-    Tracking(#[from] radicle_daemon::git::tracking::error::Tracked),
+    Tracking(#[from] librad::git::tracking::error::Tracked),
 
     /// The entity was not found.
     #[error("entity not found")]
@@ -30,7 +30,7 @@ pub enum Error {
 
     /// An error occured with radicle identities.
     #[error(transparent)]
-    Identities(#[from] radicle_daemon::git::identities::Error),
+    Identities(#[from] librad::git::identities::Error),
 
     /// An error occured with radicle surf.
     #[error(transparent)]
@@ -38,11 +38,11 @@ pub enum Error {
 
     /// An error occured with radicle storage.
     #[error(transparent)]
-    Storage(#[from] radicle_daemon::git::storage::Error),
+    Storage(#[from] librad::git::storage::Error),
 
     /// An error occured with initializing read-only storage.
     #[error(transparent)]
-    Init(#[from] radicle_daemon::git::storage::read::error::Init),
+    Init(#[from] librad::git::storage::read::error::Init),
 
     /// An error occured with radicle source.
     #[error(transparent)]

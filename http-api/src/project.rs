@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::convert::TryFrom;
 
 use either::Either;
-use radicle_daemon::{PeerId, Urn};
+use librad::{git::Urn, PeerId};
 use serde::{Deserialize, Serialize};
 
 use crate::error;
@@ -55,10 +55,10 @@ pub struct Metadata {
     pub delegates: Vec<Delegate>,
 }
 
-impl TryFrom<radicle_daemon::Project> for Metadata {
+impl TryFrom<librad::identities::Project> for Metadata {
     type Error = error::Error;
 
-    fn try_from(project: radicle_daemon::Project) -> Result<Self, Self::Error> {
+    fn try_from(project: librad::identities::Project) -> Result<Self, Self::Error> {
         let subject = project.subject();
         let default_branch = subject
             .default_branch

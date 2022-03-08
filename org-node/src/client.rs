@@ -87,7 +87,7 @@ pub enum Error {
     #[error("Join handle error: {0}")]
     TaskJoin(#[from] tokio::task::JoinError),
     #[error(transparent)]
-    RefStorage(#[from] Box<radicle_daemon::git::refs::stored::Error>),
+    RefStorage(#[from] Box<librad::git::refs::stored::Error>),
 }
 
 impl From<fetcher::Info> for Error {

@@ -234,7 +234,7 @@ version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6d7b9decdf35d8908a7e3ef02f64c5e9b1695e230154c0e8de3969142d9b94c"
 dependencies = [
- "futures 0.3.18",
+ "futures",
  "pharos",
  "rustc_version",
 ]
@@ -1713,16 +1713,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fs2"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
-dependencies = [
- "libc",
- "winapi 0.3.9",
-]
-
-[[package]]
 name = "fsevent"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1762,12 +1752,6 @@ name = "funty"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fed34cd105917e91daa4da6b3728c47b068749d6a62c59811f06ed2ac71d9da7"
-
-[[package]]
-name = "futures"
-version = "0.1.31"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a471a38ef8ed83cd6e40aa59c1ffe17db6855c18e3604d9c4ed8c08ebc28678"
 
 [[package]]
 name = "futures"
@@ -1867,7 +1851,6 @@ version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41d22213122356472061ac0f1ab2cee28d2bac8491410fd68c2af53d1cedb83e"
 dependencies = [
- "futures 0.1.31",
  "futures-channel",
  "futures-core",
  "futures-io",
@@ -1887,7 +1870,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce54d63f8b0c75023ed920d46fd71d0cbbb830b0ee012726b5b4f506fb6dea5b"
 dependencies = [
  "bytes 0.5.6",
- "futures 0.3.18",
+ "futures",
  "memchr",
  "pin-project 0.4.28",
 ]
@@ -2232,7 +2215,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06c5d2f987ee8f6dff3fa1a352058dc59b990e447e4c7846aa7d804971314f7b"
 dependencies = [
  "dashmap",
- "futures 0.3.18",
+ "futures",
  "futures-timer",
  "no-std-compat",
  "nonzero_ext",
@@ -2494,7 +2477,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae8ab7f67bad3240049cb24fb9cb0b4c2c6af4c245840917fbbdededeee91179"
 dependencies = [
  "async-io",
- "futures 0.3.18",
+ "futures",
  "futures-lite",
  "if-addrs",
  "ipnet",
@@ -2734,19 +2717,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kv"
-version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c56bac60e13594bf7a8f12f7d592ece96ab30daa0fcaf533dfba2815838fc8e"
-dependencies = [
- "serde",
- "serde_json",
- "sled",
- "thiserror",
- "toml",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2815,7 +2785,7 @@ dependencies = [
  "deadpool",
  "directories",
  "either",
- "futures 0.3.18",
+ "futures",
  "futures_codec",
  "git-trailers",
  "git2",
@@ -2919,7 +2889,7 @@ version = "0.1.0"
 source = "git+https://github.com/radicle-dev/radicle-link?rev=b51ed772fe4ec2ae4fdb4e95bac0e3271be197c8#b51ed772fe4ec2ae4fdb4e95bac0e3271be197c8"
 dependencies = [
  "blocking",
- "futures 0.3.18",
+ "futures",
  "futures-util",
  "radicle-std-ext",
  "rand 0.8.4",
@@ -3751,7 +3721,7 @@ version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9567389417feee6ce15dd6527a8a1ecac205ef62c2932bcf3d9f6fc5b78b414"
 dependencies = [
- "futures 0.3.18",
+ "futures",
  "rustc_version",
 ]
 
@@ -3997,7 +3967,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c82c0a393b300104f989f3db8b8637c0d11f7a32a9c214560b47849ba8f119aa"
 dependencies = [
  "bytes 1.1.0",
- "futures 0.3.18",
+ "futures",
  "lazy_static",
  "libc",
  "mio 0.7.14",
@@ -4037,29 +4007,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "radicle-daemon"
-version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=b51ed772fe4ec2ae4fdb4e95bac0e3271be197c8#b51ed772fe4ec2ae4fdb4e95bac0e3271be197c8"
-dependencies = [
- "anyhow",
- "async-stream",
- "either",
- "futures 0.3.18",
- "git2",
- "kv",
- "lazy_static",
- "librad",
- "nonempty 0.6.0",
- "radicle-git-ext",
- "radicle-git-helpers",
- "serde",
- "serde_millis",
- "thiserror",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "radicle-data"
 version = "0.1.0"
 source = "git+https://github.com/radicle-dev/radicle-link?rev=b51ed772fe4ec2ae4fdb4e95bac0e3271be197c8#b51ed772fe4ec2ae4fdb4e95bac0e3271be197c8"
@@ -4084,17 +4031,6 @@ dependencies = [
  "radicle-std-ext",
  "serde",
  "thiserror",
-]
-
-[[package]]
-name = "radicle-git-helpers"
-version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=b51ed772fe4ec2ae4fdb4e95bac0e3271be197c8#b51ed772fe4ec2ae4fdb4e95bac0e3271be197c8"
-dependencies = [
- "anyhow",
- "git2",
- "libgit2-sys",
- "librad",
 ]
 
 [[package]]
@@ -4131,7 +4067,7 @@ dependencies = [
  "async-trait",
  "either",
  "git2",
- "radicle-daemon",
+ "librad",
  "radicle-source",
  "serde",
  "serde_json",
@@ -4154,7 +4090,7 @@ dependencies = [
  "chacha20poly1305",
  "cryptovec",
  "ed25519-zebra",
- "futures 0.3.18",
+ "futures",
  "generic-array 0.14.4",
  "lazy_static",
  "rand 0.8.4",
@@ -4188,12 +4124,11 @@ dependencies = [
  "async-trait",
  "either",
  "ethers",
- "futures 0.3.18",
+ "futures",
  "futures-util",
  "git2",
  "librad",
  "outflux",
- "radicle-daemon",
  "rustc-hex",
  "serde",
  "serde_json",
@@ -4813,15 +4748,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_millis"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6e2dc780ca5ee2c369d1d01d100270203c4ff923d2a4264812d723766434d00"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "serde_urlencoded"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4972,22 +4898,6 @@ name = "slab"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9def91fd1e018fe007022791f865d0ccc9b3a0d5001e01aabb8b40e46000afb5"
-
-[[package]]
-name = "sled"
-version = "0.34.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f96b4737c2ce5987354855aed3797279def4ebf734436c6aa4552cf8e169935"
-dependencies = [
- "crc32fast",
- "crossbeam-epoch",
- "crossbeam-utils",
- "fs2",
- "fxhash",
- "libc",
- "log",
- "parking_lot",
-]
 
 [[package]]
 name = "smallvec"
@@ -5187,7 +5097,7 @@ dependencies = [
  "byteorder",
  "cryptovec",
  "data-encoding",
- "futures 0.3.18",
+ "futures",
  "log",
  "thiserror",
  "thrussh-encoding",
@@ -5438,7 +5348,7 @@ source = "git+https://github.com/radicle-dev/tracing-stackdriver.git#f161dad5e37
 dependencies = [
  "Inflector",
  "chrono",
- "futures 0.3.18",
+ "futures",
  "serde",
  "serde_json",
  "thiserror",
@@ -5800,7 +5710,7 @@ version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be0ecb0db480561e9a7642b5d3e4187c128914e58aa84330b9493e3eb68c5e7f"
 dependencies = [
- "futures 0.3.18",
+ "futures",
  "js-sys",
  "parking_lot",
  "pin-utils",
@@ -5935,7 +5845,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47ca1ab42f5afed7fc332b22b6e932ca5414b209465412c8cdf0ad23bc0de645"
 dependencies = [
  "async_io_stream",
- "futures 0.3.18",
+ "futures",
  "js-sys",
  "pharos",
  "rustc_version",
