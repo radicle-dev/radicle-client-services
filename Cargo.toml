@@ -1,7 +1,6 @@
 [workspace]
 members = [
   "http-api",
-  "org-node",
   "git-server",
   "service-init",
   "shared",
