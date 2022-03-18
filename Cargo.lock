@@ -3258,9 +3258,9 @@ dependencies = [
 [[package]]
 name = "radicle-source"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2ad89d5aa67082ccc468593b7068c889f511c3a0c29f80820663a4338a8884f"
+source = "git+https://github.com/radicle-dev/radicle-surf?rev=74b5fa5f620c21a0586050557329f915f795a34b#74b5fa5f620c21a0586050557329f915f795a34b"
 dependencies = [
+ "base64",
  "git2",
  "lazy_static",
  "log",
@@ -3279,9 +3279,9 @@ source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-03-01#a
 [[package]]
 name = "radicle-surf"
 version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dee7cb599e34be7a7f9a552023d6e00091bdf14fc003bd076df7ac060a0a59bd"
+source = "git+https://github.com/radicle-dev/radicle-surf?rev=74b5fa5f620c21a0586050557329f915f795a34b#74b5fa5f620c21a0586050557329f915f795a34b"
 dependencies = [
+ "anyhow",
  "either",
  "flate2",
  "git2",
