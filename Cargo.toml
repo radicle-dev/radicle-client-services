@@ -8,10 +8,11 @@ members = [
 
 [patch.crates-io.librad]
 git = "https://github.com/radicle-dev/radicle-link"
-rev = "b51ed772fe4ec2ae4fdb4e95bac0e3271be197c8"
+tag = "cycle/2022-03-01"
 
-# These patches are the same as those listed in
-# https://github.com/radicle-dev/radicle-link/blob/master/Cargo.toml
+[patch.crates-io.git-ref-format]
+git = "https://github.com/radicle-dev/radicle-link"
+tag = "cycle/2022-03-01"
 
 [patch.crates-io.thrussh-encoding]
 git = "https://github.com/FintanH/thrussh.git"

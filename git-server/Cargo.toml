@@ -26,6 +26,7 @@ either = { version = "1.6" }
 flate2 = { version = "1.0" }
 fastrand = { version = "1.5" }
 git2 = { version = "0.13" }
+git-ref-format = { version = "0" }
 http = { version = "0.2" }
 librad = { version = "0" }
 shared = { path = "../shared", default-features = false }

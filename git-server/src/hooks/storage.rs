@@ -4,9 +4,10 @@ use librad::git::tracking::git::odb::Read as _;
 use librad::git::tracking::git::refdb;
 use librad::git::tracking::reference::RefName;
 use librad::git::tracking::Config;
-use librad::git_ext::RefspecPattern;
 use librad::git_ext::{is_not_found_err, Oid, RefLike};
 use librad::paths::Paths;
+
+use git_ref_format::{refspec, RefString};
 
 use std::convert::Infallible;
 
@@ -85,7 +86,7 @@ impl<'a> refdb::Read<'a> for Storage {
 
     fn references(
         &'a self,
-        _spec: &RefspecPattern,
+        _spec: impl AsRef<refspec::PatternStr>,
     ) -> Result<Self::References, Self::ReferencesError> {
         unimplemented!()
     }
@@ -203,7 +204,7 @@ impl refdb::Write for Storage {
                                 source: err,
                             })
                     };
-                    match self.reference(&name)? {
+                    match self.reference(&RefString::from(&name))? {
                         Some(r) => reject_or_update(
                             previous
                                 .guard(r.target().map(Oid::from).as_ref(), set)?
@@ -228,7 +229,7 @@ impl refdb::Write for Storage {
                             source: err,
                         })
                     };
-                    match self.reference(&name)? {
+                    match self.reference(&RefString::from(&name))? {
                         Some(r) => reject_or_update(
                             previous
                                 .guard(r.target().map(Oid::from).as_ref(), delete)?
