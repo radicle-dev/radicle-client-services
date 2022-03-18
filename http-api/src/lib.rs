@@ -537,7 +537,7 @@ async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
     use librad::git::identities::SomeIdentity;
 
     let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
-    let repo = git::Repository::new(&ctx.paths.git_dir()).map_err(Error::from)?;
+    let repo = git2::Repository::open_bare(&ctx.paths.git_dir()).map_err(Error::from)?;
     let projects = identities::any::list(&storage)
         .map_err(Error::from)?
         .filter_map(|res| {
@@ -611,7 +611,7 @@ async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl 
     use librad::git::identities::SomeIdentity;
 
     let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
-    let repo = git::Repository::new(&ctx.paths.git_dir()).map_err(Error::from)?;
+    let repo = git2::Repository::open_bare(&ctx.paths.git_dir()).map_err(Error::from)?;
     let projects = identities::any::list(&storage)
         .map_err(Error::from)?
         .filter_map(|res| {
@@ -673,7 +673,7 @@ where
 }
 
 fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
-    let repo = git::Repository::new(paths.git_dir())?;
+    let repo = git2::Repository::open_bare(paths.git_dir())?;
     let storage = ReadOnly::open(&paths)?;
     let project = identities::project::get(&storage, &urn)?.ok_or(Error::NotFound)?;
     let meta: project::Metadata = project.try_into()?;
@@ -685,16 +685,17 @@ fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
 }
 
 fn get_head_commit(
-    repo: &git::Repository,
+    repo: &git2::Repository,
     urn: &Urn,
     default_branch: &str,
     delegates: &[project::Delegate],
 ) -> Result<git::Commit, Error> {
-    let namespace = git::namespace::Namespace::try_from(urn.encode_id().as_str())?;
-    let result =
-        git::Browser::new_with_namespace(repo, &namespace, git::Branch::local(default_branch));
+    let namespace = Namespace::try_from(urn).map_err(|_| Error::MissingNamespace)?;
+    let branch = One::try_from(default_branch).map_err(|_| Error::MissingDefaultBranch)?;
+    let local = Reference::head(namespace.clone(), None, branch.clone()).to_string();
+    let result = repo.find_reference(&local);
 
-    let browser = match result {
+    let head = match result {
         Ok(b) => b,
         Err(_) => {
             tracing::debug!("No local head, falling back to project delegates");
@@ -716,21 +717,18 @@ fn get_head_commit(
                     }
                 }
             }?;
+            let remote = Reference::head(namespace, *resolved_default_delegate, branch).to_string();
 
-            git::Browser::new_with_namespace(
-                repo,
-                &namespace,
-                git::Branch::remote(
-                    &format!("heads/{}", default_branch),
-                    &resolved_default_delegate.to_string(),
-                ),
-            )
-            .map_err(|_| Error::NoHead("history lookup failed"))?
+            repo.find_reference(&remote)
+                .map_err(|_| Error::NoHead("history lookup failed"))?
         }
     };
-    let history = browser.get();
+    let oid = head
+        .target()
+        .ok_or(Error::NoHead("head target not found"))?;
+    let commit = repo.find_commit(oid)?.try_into()?;
 
-    Ok(history.first().to_owned())
+    Ok(commit)
 }
 
 fn remote_branch(branch_name: &str, peer_id: &PeerId) -> git::Branch {
@@ -740,4 +738,43 @@ fn remote_branch(branch_name: &str, peer_id: &PeerId) -> git::Branch {
         &format!("heads/{}", branch_name),
         &peer_id.default_encoding(),
     )
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_local_head() {
+        use std::convert::TryFrom;
+
+        let branch = String::from("master");
+        let branch_ref = One::try_from(branch.as_str()).unwrap();
+        let urn = Urn::try_from_id("hnrkfbrd7y9674d8ow8uioki16fniwcyoz67y").unwrap();
+        let namespace = Namespace::try_from(urn).unwrap();
+        let local = Reference::head(namespace, None, branch_ref);
+
+        assert_eq!(
+            local.to_string(),
+            "refs/namespaces/hnrkfbrd7y9674d8ow8uioki16fniwcyoz67y/refs/heads/master"
+        );
+    }
+
+    #[test]
+    fn test_remote_head() {
+        use std::convert::TryFrom;
+
+        let branch = String::from("master");
+        let branch_ref = One::try_from(branch.as_str()).unwrap();
+        let urn = Urn::try_from_id("hnrkfbrd7y9674d8ow8uioki16fniwcyoz67y").unwrap();
+        let namespace = Namespace::try_from(urn).unwrap();
+        let peer =
+            PeerId::from_str("hyypw8z5g7tbui9ceh6tng58i1qk696isjnzix9fq9g41fzgjgqk8g").unwrap();
+        let remote = Reference::head(namespace, peer, branch_ref);
+
+        assert_eq!(
+            remote.to_string(),
+            "refs/namespaces/hnrkfbrd7y9674d8ow8uioki16fniwcyoz67y/refs/remotes/hyypw8z5g7tbui9ceh6tng58i1qk696isjnzix9fq9g41fzgjgqk8g/heads/master"
+        );
+    }
 }
