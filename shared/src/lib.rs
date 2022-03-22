@@ -1,4 +1,5 @@
 pub mod identity;
+pub mod keys;
 pub mod signer;
 
 mod logging;

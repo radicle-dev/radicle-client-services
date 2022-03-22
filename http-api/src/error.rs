@@ -40,6 +40,10 @@ pub enum Error {
     #[error(transparent)]
     Storage(#[from] librad::git::storage::Error),
 
+    /// An error occured with radicle storage.
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+
     /// An error occured with initializing read-only storage.
     #[error(transparent)]
     Init(#[from] librad::git::storage::read::error::Init),

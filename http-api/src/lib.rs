@@ -1,17 +1,20 @@
 #![allow(clippy::if_same_then_else)]
+mod commit;
 mod error;
 mod project;
 
 use std::collections::HashMap;
 use std::convert::TryFrom as _;
 use std::convert::TryInto as _;
+use std::io::{BufRead, BufReader};
 use std::net;
 use std::path::PathBuf;
+use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
 use serde_json::json;
+use shared::keys;
 use tokio::sync::RwLock;
 use warp::hyper::StatusCode;
 use warp::reply::Json;
@@ -27,6 +30,7 @@ use radicle_source::surf::vcs::git;
 
 use crate::project::Info;
 
+use commit::{Commit, CommitContext, CommitsQueryString, Committer, Peer, Person};
 use error::Error;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -40,21 +44,12 @@ pub struct Options {
     pub theme: String,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "kebab-case")]
-struct CommitsQueryString {
-    parent: Option<String>,
-    since: Option<i64>,
-    until: Option<i64>,
-    page: Option<usize>,
-    per_page: Option<usize>,
-}
-
 #[derive(Debug, Clone)]
 pub struct Context {
     paths: Paths,
     theme: String,
     aliases: Arc<RwLock<HashMap<String, Urn>>>,
+    peer_keys: Arc<RwLock<HashMap<String, (PeerId, Person)>>>,
 }
 
 impl Context {
@@ -78,6 +73,36 @@ impl Context {
 
         Ok(())
     }
+
+    /// Populate a map between ssh fingerprints and their peer identities
+    fn populate_fingerprints(
+        &self,
+        map: &mut HashMap<String, (PeerId, Person)>,
+    ) -> Result<(), Error> {
+        use librad::git::identities::SomeIdentity;
+
+        let storage = ReadOnly::open(&self.paths).map_err(Error::from)?;
+        let identities = identities::any::list(&storage)?;
+        for identity in identities.flatten() {
+            if let SomeIdentity::Person(person) = identity {
+                for pk in person.delegations().iter() {
+                    let peer_id = &PeerId::from(*pk);
+                    let fp = keys::to_ssh_fingerprint(peer_id).expect("Conversion cannot fail");
+
+                    if let std::collections::hash_map::Entry::Vacant(e) = map.entry(fp) {
+                        e.insert((
+                            *peer_id,
+                            Person {
+                                name: person.subject().name.to_string(),
+                            },
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Run the HTTP API.
@@ -94,6 +119,7 @@ pub async fn run(options: Options) {
         paths,
         aliases: Default::default(),
         theme: options.theme,
+        peer_keys: Default::default(),
     };
 
     let v1 = warp::path("v1");
@@ -375,7 +401,7 @@ async fn remotes_handler(ctx: Context, urn: Urn) -> Result<impl Reply, Rejection
 
                     return Ok(json!({
                         "id": peer,
-                        "name": person.subject().name.to_string(),
+                        "person": { "name": person.subject().name.to_string() },
                         "delegate": delegate
                     }));
                 }
@@ -433,12 +459,12 @@ async fn history_handler(
         per_page,
     } = qs;
 
+    let info = project_info(project.to_owned(), ctx.paths.to_owned())?;
+
     let (sha, fallback_to_head) = match parent {
         Some(commit) => (commit, false),
         None => {
-            let meta = project_info(project.to_owned(), ctx.paths.to_owned())?;
-
-            if let Some(head) = meta.head {
+            if let Some(head) = info.head {
                 (head.to_string(), true)
             } else {
                 return Err(Error::NoHead("project head is not set").into());
@@ -446,53 +472,76 @@ async fn history_handler(
         }
     };
 
+    let mut fingerprints = ctx.peer_keys.write().await;
+    ctx.populate_fingerprints(&mut fingerprints)?;
+
     let reference = Reference::head(
-        Namespace::from(project),
+        Namespace::from(project.to_owned()),
         None,
         One::from_str(&sha).map_err(|_| Error::NotFound)?,
     );
 
-    let commits = browse(reference, ctx.paths, |browser| {
-        let mut result = radicle_source::commits::<PeerId>(browser, None)?;
-
-        let page = page.unwrap_or(0);
-
-        // If a pagination is defined, we do not want to paginate the commits, and we return all of them in the first page.
-        let per_page = if per_page.is_none() && (since.is_some() || until.is_some()) {
-            result.headers.len()
-        } else {
-            per_page.unwrap_or(30)
-        };
-
-        let headers = result
-            .headers
-            .iter()
-            .filter(|q| {
-                if let (Some(since), Some(until)) = (since, until) {
-                    q.committer_time.seconds() >= since && q.committer_time.seconds() < until
-                } else if let Some(since) = since {
-                    q.committer_time.seconds() >= since
-                } else if let Some(until) = until {
-                    q.committer_time.seconds() < until
-                } else {
-                    // If neither `since` nor `until` are specified, we include the commit.
-                    true
-                }
-            })
-            .skip(page * per_page)
-            .take(per_page)
-            .cloned()
-            .collect();
-
-        result.headers = headers;
-        // Since the headers filtering can alter the amount of commits we have to recalculate it here.
-        result.stats.commits = result.headers.len();
-
-        Ok(result)
+    let mut commits = browse(reference, ctx.paths.to_owned(), |browser| {
+        radicle_source::commits::<PeerId>(browser, None)
     })
     .await?;
+
+    let page = page.unwrap_or(0);
+
+    // If a pagination is defined, we do not want to paginate the commits, and we return all of them on the first page.
+    let per_page = if per_page.is_none() && (since.is_some() || until.is_some()) {
+        commits.headers.len()
+    } else {
+        per_page.unwrap_or(30)
+    };
+
+    let headers = commits
+        .headers
+        .iter()
+        .filter(|q| {
+            if let (Some(since), Some(until)) = (since, until) {
+                q.committer_time.seconds() >= since && q.committer_time.seconds() < until
+            } else if let Some(since) = since {
+                q.committer_time.seconds() >= since
+            } else if let Some(until) = until {
+                q.committer_time.seconds() < until
+            } else {
+                // If neither `since` nor `until` are specified, we include the commit.
+                true
+            }
+        })
+        .skip(page * per_page)
+        .take(per_page)
+        .map(|header| {
+            let id = commit_ssh_fingerprint(ctx.clone(), &header.sha1.to_string())?;
+            let mut committer: Option<Committer> = None;
+
+            if let Some(id) = id {
+                committer = fingerprints.get(&id).map(|(id, person)| {
+                    let delegate = info.meta.delegates.iter().any(|d| d.contains(&id.clone()));
+
+                    Committer {
+                        peer: Peer {
+                            id: id.to_string(),
+                            person: person.clone(),
+                            delegate,
+                        },
+                    }
+                });
+            };
+
+            Ok(Commit {
+                header: header.clone(),
+                context: CommitContext { committer },
+            })
+        })
+        .collect::<Result<Vec<Commit>, Error>>()?;
+
+    // Since the headers filtering can alter the amount of commits we have to recalculate it here.
+    commits.stats.commits = headers.len();
+
     let response = json!({
-        "headers": &commits.headers,
+        "headers": &headers,
         "stats": &commits.stats,
     });
 
@@ -754,6 +803,27 @@ fn remote_branch(branch_name: &str, peer_id: &PeerId) -> git::Branch {
         &format!("heads/{}", branch_name),
         &peer_id.default_encoding(),
     )
+}
+
+fn commit_ssh_fingerprint(ctx: Context, sha1: &str) -> std::io::Result<Option<String>> {
+    let output = Command::new("git")
+        .current_dir(ctx.paths.git_dir()) // We need to place the command execution in the git dir
+        .args(["show", sha1, "--pretty=%GF", "--raw"])
+        .output()?;
+
+    let string = BufReader::new(output.stdout.as_slice())
+        .lines()
+        .next()
+        .transpose()?;
+
+    // We only return a fingerprint if it's not an empty string
+    if let Some(s) = string {
+        if !s.is_empty() {
+            return Ok(Some(s));
+        }
+    }
+
+    Ok(None)
 }
 
 #[cfg(test)]
