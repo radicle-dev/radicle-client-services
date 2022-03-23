@@ -10,7 +10,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use radicle_source::commit::Header;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::RwLock;
@@ -42,10 +41,13 @@ pub struct Options {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "kebab-case")]
 struct CommitsQueryString {
     parent: Option<String>,
     since: Option<i64>,
     until: Option<i64>,
+    page: Option<usize>,
+    per_page: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -427,6 +429,8 @@ async fn history_handler(
         since,
         until,
         parent,
+        page,
+        per_page,
     } = qs;
 
     let (sha, fallback_to_head) = match parent {
@@ -450,7 +454,11 @@ async fn history_handler(
 
     let commits = browse(reference, ctx.paths, |browser| {
         let mut result = radicle_source::commits::<PeerId>(browser, None)?;
-        let headers: Vec<Header> = result
+
+        let page = page.unwrap_or(0);
+        let per_page = per_page.unwrap_or(30);
+
+        let headers = result
             .headers
             .iter()
             .filter(|q| {
@@ -465,6 +473,8 @@ async fn history_handler(
                     true
                 }
             })
+            .skip(page * per_page)
+            .take(per_page)
             .cloned()
             .collect();
 
