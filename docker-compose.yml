@@ -18,7 +18,7 @@ services:
       - git-server
   git-server:
     image: gcr.io/radicle-services/git-server:latest
-    entrypoint: /usr/local/bin/radicle-git-server.sh --git-receive-pack
+    entrypoint: /usr/local/bin/radicle-git-server.sh --git-receive-pack $GIT_SERVER_ENV_SPECIFIC_OPTS
     build:
       dockerfile: ./git-server/Dockerfile
       context: .
