@@ -31,6 +31,10 @@ services:
     restart: unless-stopped
     networks:
       - radicle-services
+    deploy:
+      resources:
+        limits:
+          memory: 6gb
   caddy:
     image: caddy:2.4.5
     ports:
