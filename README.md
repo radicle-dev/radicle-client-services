@@ -156,22 +156,3 @@ Finally, pull the containers and start the services:
     docker-compose pull
     docker-compose up --detach
 
-### GCP Deployment
-
-In order to deploy on GCP, you will need to decrypt the .env file that contains
-additional required environment variables encrypted with
-[sops](https://github.com/mozilla/sops):
-
-    sops --decrypt --in-place --input-type dotenv --output-type dotenv --gcp-kms projects/radicle-services/locations/global/keyRings/sops/cryptoKeys/sops-key .env
-
-#### Radicle root directory ownership
-
-You are encouraged to set the `RADICLE_SEED_USER` environment variable to a
-user *id* (eg. `1000`) that should own the `git` and identity files in the
-Radicle root folder specified by `--root`. To use the current user as the owner
-of this data, run:
-
-    export RADICLE_SEED_USER=$(id --user)
-
-Or set the appropriate value in the `.env` file. Note that usernames are not
-allowed.
