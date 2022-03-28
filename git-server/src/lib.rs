@@ -138,6 +138,20 @@ impl Context {
         Ok(())
     }
 
+    /// Disables the automatic git garbage collector.
+    ///
+    /// The GC operates across namespaces, which mean it may pack objects from different projects
+    /// together. This is not only useless, but the process can be very memory intensive. Until
+    /// a better solution is found, we disable the automatic GC.
+    pub fn disable_gc(&self) -> Result<(), Error> {
+        let field = "gc.auto";
+        let value = "0";
+
+        self.set_root_git_config(field, value)?;
+
+        Ok(())
+    }
+
     /// Enables users to submit a signed push: `push --signed`
     ///
     /// "You should set the certNonceSeed setting to some randomly generated long string that should
@@ -175,7 +189,7 @@ impl Context {
         Ok(())
     }
 
-    /// Updates the git config in the root project.
+    /// Updates the git config in the monorepo.
     pub fn set_root_git_config(&self, field: &str, value: &str) -> Result<(), Error> {
         let path = self.paths.git_dir().join("config");
 
@@ -289,6 +303,9 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
     }
     if let Err(e) = ctx.disable_signers_file() {
         bail!("Failed to set signers file config: {:?}", e);
+    }
+    if let Err(e) = ctx.disable_gc() {
+        bail!("Failed to disable gc: {:?}", e);
     }
 
     let peer_id = path::param::<PeerId>()
