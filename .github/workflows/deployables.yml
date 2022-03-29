@@ -64,8 +64,8 @@ jobs:
         with:
           workload_identity_provider: 'projects/281042598092/locations/global/workloadIdentityPools/github-actions/providers/google-cloud'
           service_account: 'github-actions@radicle-services.iam.gserviceaccount.com'
-      - name: Make sure .env file exists
-        run: gcloud beta compute ssh --zone ${{ matrix.zone }} "github-actions@alt-clients-${{ matrix.host }}" --project "radicle-services" --command="test -f .env && grep -w RADICLE_DOMAIN .env"
+      - name: Fetch host .env file
+        run: gcloud beta compute ssh --zone ${{ matrix.zone }} "github-actions@alt-clients-${{ matrix.host }}" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/.env.${{ matrix.host }} >.env"
       - name: Fetch docker-compose.yml
         run: gcloud beta compute ssh --zone ${{ matrix.zone }} "github-actions@alt-clients-${{ matrix.host }}" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/docker-compose.yml >docker-compose.yml"
       - name: Fetch Caddyfile
