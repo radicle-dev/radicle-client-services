@@ -1,7 +1,7 @@
 version: "3.7"
 services:
   http-api:
-    image: gcr.io/radicle-services/http-api:latest
+    image: gcr.io/radicle-services/http-api:${RADICLE_IMAGE_TAG:-latest}
     build:
       dockerfile: ./http-api/Dockerfile
       context: .
@@ -17,7 +17,7 @@ services:
     depends_on:
       - git-server
   git-server:
-    image: gcr.io/radicle-services/git-server:latest
+    image: gcr.io/radicle-services/git-server:${RADICLE_IMAGE_TAG:-latest}
     entrypoint: /usr/local/bin/radicle-git-server.sh --git-receive-pack $RADICLE_GIT_SERVER_OPTS
     build:
       dockerfile: ./git-server/Dockerfile
