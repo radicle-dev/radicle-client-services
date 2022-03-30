@@ -456,7 +456,13 @@ async fn history_handler(
         let mut result = radicle_source::commits::<PeerId>(browser, None)?;
 
         let page = page.unwrap_or(0);
-        let per_page = per_page.unwrap_or(30);
+
+        // If a pagination is defined, we do not want to paginate the commits, and we return all of them in the first page.
+        let per_page = if per_page.is_none() && (since.is_some() || until.is_some()) {
+            result.headers.len()
+        } else {
+            per_page.unwrap_or(30)
+        };
 
         let headers = result
             .headers
