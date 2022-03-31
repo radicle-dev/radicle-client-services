@@ -139,12 +139,16 @@ impl PostReceive {
         if let Some(default_branch) = &self.env.default_branch {
             let suffix = format!("heads/{}", default_branch);
 
-            for (refname, _, _) in self.updates.iter() {
+            for (refname, from, _) in self.updates.iter() {
                 let (peer_id, rest) = crate::parse_ref(refname)?;
 
-                println!("Updating ref for {}: {}", peer_id, rest);
+                if from.is_zero() {
+                    println!("Deleted ref {} for {}", rest, peer_id);
+                } else {
+                    println!("Updated ref {} for {}", rest, peer_id);
+                }
 
-                // Only delegates can update refs.
+                // Only delegates can update HEAD.
                 if !self.delegates.contains(&peer_id) {
                     continue;
                 }
@@ -152,7 +156,7 @@ impl PostReceive {
                 if rest != suffix {
                     continue;
                 }
-                println!("Ref update to default branch detected, setting HEAD...");
+                println!("Update to default branch detected, setting HEAD...");
 
                 // TODO: This should only update when a quorum is reached between delegates.
                 // For a single delegate, we can just always allow it.
