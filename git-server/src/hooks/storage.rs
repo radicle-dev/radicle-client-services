@@ -30,7 +30,7 @@ impl AsRef<librad::git::storage::ReadOnly> for Storage {
 
 impl Storage {
     pub fn open(paths: &Paths) -> Result<Self, Error> {
-        let backend = git2::Repository::open(paths.git_dir())?;
+        let backend = git2::Repository::open_bare(paths.git_dir())?;
         let ro = librad::git::storage::ReadOnly::open(paths)?;
 
         Ok(Self {
