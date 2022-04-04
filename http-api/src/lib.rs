@@ -6,6 +6,7 @@ mod project;
 use std::collections::HashMap;
 use std::convert::TryFrom as _;
 use std::convert::TryInto as _;
+use std::io;
 use std::io::{BufRead, BufReader};
 use std::net;
 use std::path::PathBuf;
@@ -805,11 +806,18 @@ fn remote_branch(branch_name: &str, peer_id: &PeerId) -> git::Branch {
     )
 }
 
-fn commit_ssh_fingerprint(ctx: Context, sha1: &str) -> std::io::Result<Option<String>> {
+fn commit_ssh_fingerprint(ctx: Context, sha1: &str) -> io::Result<Option<String>> {
     let output = Command::new("git")
         .current_dir(ctx.paths.git_dir()) // We need to place the command execution in the git dir
         .args(["show", sha1, "--pretty=%GF", "--raw"])
         .output()?;
+
+    if !output.status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            String::from_utf8_lossy(&output.stderr),
+        ));
+    }
 
     let string = BufReader::new(output.stdout.as_slice())
         .lines()
