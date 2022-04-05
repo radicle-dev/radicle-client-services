@@ -806,23 +806,28 @@ fn remote_branch(branch_name: &str, peer_id: &PeerId) -> git::Branch {
     )
 }
 
-fn commit_ssh_fingerprint(ctx: Context, sha1: &str) -> io::Result<Option<String>> {
+fn commit_ssh_fingerprint(ctx: Context, sha1: &str) -> Result<Option<String>, Error> {
     let output = Command::new("git")
         .current_dir(ctx.paths.git_dir()) // We need to place the command execution in the git dir
         .args(["show", sha1, "--pretty=%GF", "--raw"])
-        .output()?;
+        .output()
+        .map_err(|e| Error::Io("'git' command failed", e))?;
 
     if !output.status.success() {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            String::from_utf8_lossy(&output.stderr),
+        return Err(Error::Io(
+            "'git' command failed",
+            io::Error::new(
+                io::ErrorKind::Other,
+                String::from_utf8_lossy(&output.stderr),
+            ),
         ));
     }
 
     let string = BufReader::new(output.stdout.as_slice())
         .lines()
         .next()
-        .transpose()?;
+        .transpose()
+        .map_err(|e| Error::Io("'git' command output couldn't be read", e))?;
 
     // We only return a fingerprint if it's not an empty string
     if let Some(s) = string {
