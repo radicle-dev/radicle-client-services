@@ -482,6 +482,7 @@ async fn history_handler(
         parent,
         page,
         per_page,
+        verified,
     } = qs;
 
     let (sha, fallback_to_head) = match parent {
@@ -536,9 +537,13 @@ async fn history_handler(
         .skip(page * per_page)
         .take(per_page)
         .map(|header| {
-            let fp = ctx.commit_ssh_fingerprint(&header.sha1.to_string())?;
-            let committer = if let (Some(fps), Some(fp)) = (fingerprints, fp) {
-                fps.get(&fp).cloned().map(|peer| Committer { peer })
+            let committer = if verified.unwrap_or_default() {
+                let fp = ctx.commit_ssh_fingerprint(&header.sha1.to_string())?;
+                if let (Some(fps), Some(fp)) = (fingerprints, fp) {
+                    fps.get(&fp).cloned().map(|peer| Committer { peer })
+                } else {
+                    None
+                }
             } else {
                 None
             };

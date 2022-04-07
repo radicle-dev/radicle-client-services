@@ -10,6 +10,7 @@ pub struct CommitsQueryString {
     pub until: Option<i64>,
     pub page: Option<usize>,
     pub per_page: Option<usize>,
+    pub verified: Option<bool>,
 }
 
 #[derive(Serialize)]
