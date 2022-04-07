@@ -435,11 +435,11 @@ async fn history_handler(
         per_page,
     } = qs;
 
-    let info = project_info(project.to_owned(), ctx.paths.to_owned())?;
-
     let (sha, fallback_to_head) = match parent {
         Some(commit) => (commit, false),
         None => {
+            let info = project_info(project.to_owned(), ctx.paths.to_owned())?;
+
             if let Some(head) = info.head {
                 (head.to_string(), true)
             } else {
@@ -450,8 +450,6 @@ async fn history_handler(
 
     let mut projects = ctx.projects.write().await;
     ctx.populate_fingerprints(&mut projects)?;
-
-    let fingerprints = projects.get(&project);
 
     let reference = Reference::head(
         Namespace::from(project.to_owned()),
@@ -464,15 +462,15 @@ async fn history_handler(
     })
     .await?;
 
-    let page = page.unwrap_or(0);
-
     // If a pagination is defined, we do not want to paginate the commits, and we return all of them on the first page.
+    let page = page.unwrap_or(0);
     let per_page = if per_page.is_none() && (since.is_some() || until.is_some()) {
         commits.headers.len()
     } else {
         per_page.unwrap_or(30)
     };
 
+    let fingerprints = projects.get(&project);
     let headers = commits
         .headers
         .iter()
