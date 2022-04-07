@@ -1,3 +1,4 @@
+use librad::PeerId;
 use radicle_source::commit::Header;
 use serde::{Deserialize, Serialize};
 
@@ -34,7 +35,7 @@ pub struct Committer {
 
 #[derive(Serialize, Debug, Clone)]
 pub struct Peer {
-    pub id: String,
-    pub person: Person,
+    pub id: PeerId,
+    pub person: Option<Person>,
     pub delegate: bool,
 }

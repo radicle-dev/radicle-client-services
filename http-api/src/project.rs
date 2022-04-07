@@ -39,6 +39,53 @@ impl Delegate {
     }
 }
 
+use super::commit::Peer;
+use super::commit::Person;
+use super::Error;
+use librad::git::identities;
+use librad::git::storage::ReadOnly;
+use librad::git::tracking;
+use librad::git::types::Namespace;
+use librad::git::types::Reference;
+
+pub fn tracked<S: AsRef<ReadOnly>>(meta: &Metadata, storage: &S) -> Result<Vec<Peer>, Error> {
+    let tracked =
+        tracking::tracked(storage.as_ref(), Some(&meta.urn)).map_err(|_| Error::NotFound)?;
+    let result = tracked
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(Error::from)?;
+
+    let result = result
+        .into_iter()
+        .filter_map(|t| t.peer_id())
+        .map(|id| -> Peer {
+            let delegate = meta.delegates.iter().any(|d| d.contains(&id));
+
+            if let Ok(delegate_urn) = Urn::try_from(Reference::rad_self(
+                Namespace::from(meta.urn.clone()),
+                Some(id),
+            )) {
+                if let Ok(Some(person)) = identities::person::get(&storage, &delegate_urn) {
+                    return Peer {
+                        id,
+                        person: Some(Person {
+                            name: person.subject().name.to_string(),
+                        }),
+                        delegate,
+                    };
+                }
+            }
+            Peer {
+                id,
+                person: None,
+                delegate,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    Ok(result)
+}
+
 /// Project metadata.
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

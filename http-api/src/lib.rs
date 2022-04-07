@@ -3,8 +3,9 @@ mod commit;
 mod error;
 mod project;
 
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::convert::TryFrom as _;
+use std::convert::TryFrom;
 use std::convert::TryInto as _;
 use std::io;
 use std::io::{BufRead, BufReader};
@@ -23,7 +24,7 @@ use warp::{self, filters::BoxedFilter, path, query, Filter, Rejection, Reply};
 
 use librad::git::identities;
 use librad::git::storage::read::ReadOnly;
-use librad::git::tracking;
+
 use librad::git::types::{One, Reference, Single};
 use librad::{git::types::Namespace, git::Urn, paths::Paths, profile::Profile, PeerId};
 use radicle_source::surf::file_system::Path;
@@ -31,7 +32,7 @@ use radicle_source::surf::vcs::git;
 
 use crate::project::Info;
 
-use commit::{Commit, CommitContext, CommitsQueryString, Committer, Peer, Person};
+use commit::{Commit, CommitContext, CommitsQueryString, Committer, Peer};
 use error::Error;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -45,12 +46,17 @@ pub struct Options {
     pub theme: String,
 }
 
+/// SSH Key fingerprint.
+type Fingerprint = String;
+/// Mapping between fingerprints and users.
+type Fingerprints = HashMap<Fingerprint, Peer>;
+
 #[derive(Debug, Clone)]
 pub struct Context {
     paths: Paths,
     theme: String,
     aliases: Arc<RwLock<HashMap<String, Urn>>>,
-    peer_keys: Arc<RwLock<HashMap<String, (PeerId, Person)>>>,
+    projects: Arc<RwLock<HashMap<Urn, Fingerprints>>>,
 }
 
 impl Context {
@@ -66,7 +72,7 @@ impl Context {
                 let urn = project.urn();
                 let name = (&project.payload().subject.name).to_string();
 
-                if let std::collections::hash_map::Entry::Vacant(e) = map.entry(name.clone()) {
+                if let Entry::Vacant(e) = map.entry(name.clone()) {
                     e.insert(urn);
                 }
             }
@@ -76,28 +82,21 @@ impl Context {
     }
 
     /// Populate a map between ssh fingerprints and their peer identities
-    fn populate_fingerprints(
-        &self,
-        map: &mut HashMap<String, (PeerId, Person)>,
-    ) -> Result<(), Error> {
+    fn populate_fingerprints(&self, map: &mut HashMap<Urn, Fingerprints>) -> Result<(), Error> {
         use librad::git::identities::SomeIdentity;
 
         let storage = ReadOnly::open(&self.paths).map_err(Error::from)?;
         let identities = identities::any::list(&storage)?;
-        for identity in identities.flatten() {
-            if let SomeIdentity::Person(person) = identity {
-                for pk in person.delegations().iter() {
-                    let peer_id = &PeerId::from(*pk);
-                    let fp = keys::to_ssh_fingerprint(peer_id).expect("Conversion cannot fail");
 
-                    if let std::collections::hash_map::Entry::Vacant(e) = map.entry(fp) {
-                        e.insert((
-                            *peer_id,
-                            Person {
-                                name: person.subject().name.to_string(),
-                            },
-                        ));
-                    }
+        for identity in identities.flatten() {
+            if let SomeIdentity::Project(project) = identity {
+                let meta = project::Metadata::try_from(project)?;
+                let fingerprints = map.entry(meta.urn.clone()).or_default();
+                let tracked = project::tracked(&meta, &storage)?;
+
+                for peer in tracked {
+                    let fp = keys::to_ssh_fingerprint(&peer.id).expect("Conversion cannot fail");
+                    fingerprints.insert(fp, peer);
                 }
             }
         }
@@ -118,9 +117,9 @@ pub async fn run(options: Options) {
 
     let ctx = Context {
         paths,
-        aliases: Default::default(),
         theme: options.theme,
-        peer_keys: Default::default(),
+        aliases: Default::default(),
+        projects: Default::default(),
     };
 
     let v1 = warp::path("v1");
@@ -385,31 +384,7 @@ async fn remotes_handler(ctx: Context, urn: Urn) -> Result<impl Reply, Rejection
         .map_err(Error::Identities)?
         .ok_or(Error::NotFound)?;
     let meta: project::Metadata = project.try_into()?;
-    let tracked = tracking::tracked(&storage, Some(&urn)).map_err(|_| Error::NotFound)?;
-    let result = tracked
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(Error::from)?;
-    let response = result
-        .into_iter()
-        .filter_map(|t| t.peer_id())
-        .map(|peer| -> Result<serde_json::Value, Rejection> {
-            if let Ok(delegate_urn) = Urn::try_from(Reference::rad_self(
-                Namespace::from(urn.clone()),
-                Some(peer),
-            )) {
-                if let Ok(Some(person)) = identities::person::get(&storage, &delegate_urn) {
-                    let delegate = meta.delegates.iter().any(|d| d.contains(&peer));
-
-                    return Ok(json!({
-                        "id": peer,
-                        "person": { "name": person.subject().name.to_string() },
-                        "delegate": delegate
-                    }));
-                }
-            }
-            Ok(json!({ "id": peer }))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let response = project::tracked(&meta, &storage)?;
 
     Ok(warp::reply::json(&response))
 }
@@ -473,8 +448,10 @@ async fn history_handler(
         }
     };
 
-    let mut fingerprints = ctx.peer_keys.write().await;
-    ctx.populate_fingerprints(&mut fingerprints)?;
+    let mut projects = ctx.projects.write().await;
+    ctx.populate_fingerprints(&mut projects)?;
+
+    let fingerprints = projects.get(&project);
 
     let reference = Reference::head(
         Namespace::from(project.to_owned()),
@@ -514,21 +491,11 @@ async fn history_handler(
         .skip(page * per_page)
         .take(per_page)
         .map(|header| {
-            let id = commit_ssh_fingerprint(ctx.clone(), &header.sha1.to_string())?;
-            let mut committer: Option<Committer> = None;
-
-            if let Some(id) = id {
-                committer = fingerprints.get(&id).map(|(id, person)| {
-                    let delegate = info.meta.delegates.iter().any(|d| d.contains(&id.clone()));
-
-                    Committer {
-                        peer: Peer {
-                            id: id.to_string(),
-                            person: person.clone(),
-                            delegate,
-                        },
-                    }
-                });
+            let fp = commit_ssh_fingerprint(ctx.clone(), &header.sha1.to_string())?;
+            let committer = if let (Some(fps), Some(fp)) = (fingerprints, fp) {
+                fps.get(&fp).cloned().map(|peer| Committer { peer })
+            } else {
+                None
             };
 
             Ok(Commit {
