@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time;
 
 use serde_json::json;
 use shared::keys;
@@ -122,14 +123,15 @@ pub async fn run(options: Options) {
         projects: Default::default(),
     };
 
-    let v1 = warp::path("v1");
+    // Spawn task to run periodic jobs.
+    tokio::spawn(periodic(ctx.clone(), time::Duration::from_secs(20)));
 
+    // Setup routing.
+    let v1 = warp::path("v1");
     let peer = path("peer")
         .and(warp::get().and(path::end()))
         .and_then(move || peer_handler(peer_id));
-
     let projects = path("projects").and(filters(ctx.clone()));
-
     let delegates = path("delegates").and(
         warp::get()
             .map(move || ctx.clone())
@@ -138,7 +140,6 @@ pub async fn run(options: Options) {
             .and(path::end())
             .and_then(delegates_projects_handler),
     );
-
     let routes = path::end()
         .and_then(root_handler)
         .or(v1.and(peer))
@@ -159,6 +160,20 @@ pub async fn run(options: Options) {
             .await
     } else {
         server.run(options.listen).await
+    }
+}
+
+/// Runs periodic jobs at regular intervals.
+async fn periodic(ctx: Context, interval: time::Duration) {
+    let mut timer = tokio::time::interval(interval);
+
+    loop {
+        timer.tick().await; // Returns immediately the first time.
+
+        let mut projects = ctx.projects.write().await;
+        if let Err(err) = ctx.populate_fingerprints(&mut projects) {
+            tracing::error!("Failed to populate project fingerprints: {}", err);
+        }
     }
 }
 
@@ -448,9 +463,6 @@ async fn history_handler(
         }
     };
 
-    let mut projects = ctx.projects.write().await;
-    ctx.populate_fingerprints(&mut projects)?;
-
     let reference = Reference::head(
         Namespace::from(project.to_owned()),
         None,
@@ -470,6 +482,7 @@ async fn history_handler(
         per_page.unwrap_or(30)
     };
 
+    let projects = ctx.projects.read().await;
     let fingerprints = projects.get(&project);
     let headers = commits
         .headers
