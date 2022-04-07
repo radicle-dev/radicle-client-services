@@ -33,7 +33,7 @@ use radicle_source::surf::vcs::git;
 
 use crate::project::Info;
 
-use commit::{Commit, CommitContext, CommitsQueryString, Committer, Peer};
+use commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Committer, Peer};
 use error::Error;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -548,12 +548,12 @@ async fn history_handler(
                 None
             };
 
-            Ok(Commit {
+            Ok(CommitTeaser {
                 header: header.clone(),
                 context: CommitContext { committer },
             })
         })
-        .collect::<Result<Vec<Commit>, Error>>()?;
+        .collect::<Result<Vec<CommitTeaser>, Error>>()?;
 
     // Since the headers filtering can alter the amount of commits we have to recalculate it here.
     commits.stats.commits = headers.len();
@@ -577,13 +577,29 @@ async fn history_handler(
 }
 
 async fn commit_handler(ctx: Context, project: Urn, sha: One) -> Result<impl Reply, Rejection> {
-    let reference = Reference::head(Namespace::from(project), None, sha.to_owned());
-    let commit = browse(reference, ctx.paths, |browser| {
+    let reference = Reference::head(Namespace::from(project.clone()), None, sha.to_owned());
+    let commit = browse(reference, ctx.paths.clone(), |browser| {
         let oid = browser.oid(&sha)?;
         radicle_source::commit(browser, oid)
     })
     .await?;
-    let response = json!(&commit);
+
+    let projects = ctx.projects.read().await;
+    let fingerprints = projects.get(&project);
+    let fp = ctx.commit_ssh_fingerprint(&commit.header.sha1.to_string())?;
+    let committer = if let (Some(fps), Some(fp)) = (fingerprints, fp) {
+        fps.get(&fp).cloned().map(|peer| Committer { peer })
+    } else {
+        None
+    };
+
+    let response = Commit {
+        header: commit.header,
+        diff: commit.diff,
+        stats: commit.stats,
+        branches: commit.branches,
+        context: CommitContext { committer },
+    };
 
     Ok(warp::reply::json(&response))
 }

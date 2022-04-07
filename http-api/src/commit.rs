@@ -14,8 +14,17 @@ pub struct CommitsQueryString {
 }
 
 #[derive(Serialize)]
+pub struct CommitTeaser {
+    pub header: Header,
+    pub context: CommitContext,
+}
+
+#[derive(Serialize)]
 pub struct Commit {
     pub header: Header,
+    pub stats: radicle_source::commit::Stats,
+    pub diff: radicle_surf::diff::Diff,
+    pub branches: Vec<radicle_source::Branch>,
     pub context: CommitContext,
 }
 

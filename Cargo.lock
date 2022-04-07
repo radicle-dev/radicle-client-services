@@ -3197,6 +3197,7 @@ dependencies = [
  "git2",
  "librad",
  "radicle-source",
+ "radicle-surf",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -3257,8 +3258,9 @@ dependencies = [
 
 [[package]]
 name = "radicle-source"
-version = "0.2.1"
-source = "git+https://github.com/radicle-dev/radicle-surf?rev=74b5fa5f620c21a0586050557329f915f795a34b#74b5fa5f620c21a0586050557329f915f795a34b"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e045aa402aaf7809b6d9887f90451d9e1dbe60ba029d076f7626be68488f2a3"
 dependencies = [
  "base64",
  "git2",
@@ -3278,8 +3280,9 @@ source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-03-01#a
 
 [[package]]
 name = "radicle-surf"
-version = "0.6.1"
-source = "git+https://github.com/radicle-dev/radicle-surf?rev=74b5fa5f620c21a0586050557329f915f795a34b#74b5fa5f620c21a0586050557329f915f795a34b"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1516a996d3e9254cace5331556ee5b340f921dc3f354b1f72352dc0542a74bee"
 dependencies = [
  "anyhow",
  "either",
