@@ -104,6 +104,40 @@ impl Context {
 
         Ok(())
     }
+
+    /// From a commit hash, return the signer's fingerprint, if any.
+    fn commit_ssh_fingerprint(&self, sha1: &str) -> Result<Option<String>, Error> {
+        let output = Command::new("git")
+            .current_dir(self.paths.git_dir()) // We need to place the command execution in the git dir
+            .args(["show", sha1, "--pretty=%GF", "--raw"])
+            .output()
+            .map_err(|e| Error::Io("'git' command failed", e))?;
+
+        if !output.status.success() {
+            return Err(Error::Io(
+                "'git' command failed",
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    String::from_utf8_lossy(&output.stderr),
+                ),
+            ));
+        }
+
+        let string = BufReader::new(output.stdout.as_slice())
+            .lines()
+            .next()
+            .transpose()
+            .map_err(|e| Error::Io("'git' command output couldn't be read", e))?;
+
+        // We only return a fingerprint if it's not an empty string
+        if let Some(s) = string {
+            if !s.is_empty() {
+                return Ok(Some(s));
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 /// Run the HTTP API.
@@ -502,7 +536,7 @@ async fn history_handler(
         .skip(page * per_page)
         .take(per_page)
         .map(|header| {
-            let fp = commit_ssh_fingerprint(ctx.clone(), &header.sha1.to_string())?;
+            let fp = ctx.commit_ssh_fingerprint(&header.sha1.to_string())?;
             let committer = if let (Some(fps), Some(fp)) = (fingerprints, fp) {
                 fps.get(&fp).cloned().map(|peer| Committer { peer })
             } else {
@@ -782,39 +816,6 @@ fn remote_branch(branch_name: &str, peer_id: &PeerId) -> git::Branch {
         &format!("heads/{}", branch_name),
         &peer_id.default_encoding(),
     )
-}
-
-fn commit_ssh_fingerprint(ctx: Context, sha1: &str) -> Result<Option<String>, Error> {
-    let output = Command::new("git")
-        .current_dir(ctx.paths.git_dir()) // We need to place the command execution in the git dir
-        .args(["show", sha1, "--pretty=%GF", "--raw"])
-        .output()
-        .map_err(|e| Error::Io("'git' command failed", e))?;
-
-    if !output.status.success() {
-        return Err(Error::Io(
-            "'git' command failed",
-            io::Error::new(
-                io::ErrorKind::Other,
-                String::from_utf8_lossy(&output.stderr),
-            ),
-        ));
-    }
-
-    let string = BufReader::new(output.stdout.as_slice())
-        .lines()
-        .next()
-        .transpose()
-        .map_err(|e| Error::Io("'git' command output couldn't be read", e))?;
-
-    // We only return a fingerprint if it's not an empty string
-    if let Some(s) = string {
-        if !s.is_empty() {
-            return Ok(Some(s));
-        }
-    }
-
-    Ok(None)
 }
 
 #[cfg(test)]
