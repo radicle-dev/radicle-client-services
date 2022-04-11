@@ -15,6 +15,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 serde_urlencoded = { version = "0.7.0" }
 radicle-source = { version = "0.3.0", features = ["syntax"] }
 radicle-surf = { version = "0.7.0", features = ["serialize"] }
+siwe = "0.2"
 thiserror = { version = "1" }
 git2 = { version = "0.13", default-features = false, features = [] }
 tokio = { version = "1.2", features = ["macros", "rt", "sync"] }
@@ -23,6 +24,9 @@ either = { version = "1.6" }
 tracing = "0.1"
 tracing-subscriber = "0.2"
 async-trait = "0.1"
+ethers-core = "0.6.3"
+fastrand = "1.7.0"
+chrono = { version = "0.4.19", features = ["serde"] }
 
 [features]
 gcp = ["shared/gcp"]

@@ -28,29 +28,45 @@ pub enum Error {
     #[error("could not resolve head: {0}")]
     NoHead(&'static str),
 
-    /// An error occured with radicle identities.
+    /// An error occurred during an authentication process.
+    #[error("could not authenticate: {0}")]
+    Auth(&'static str),
+
+    /// An error occurred while verifying the siwe message.
+    #[error(transparent)]
+    SiweVerificationError(#[from] siwe::VerificationError),
+
+    /// An error occurred while parsing the siwe message.
+    #[error(transparent)]
+    SiweParseError(#[from] siwe::ParseError),
+
+    /// An error occurred with radicle identities.
     #[error(transparent)]
     Identities(#[from] librad::git::identities::Error),
 
-    /// An error occured with radicle surf.
+    /// An error occurred with radicle surf.
     #[error(transparent)]
     Surf(#[from] surf::git::error::Error),
 
-    /// An error occured with radicle storage.
+    /// An error occurred with radicle storage.
     #[error(transparent)]
     Storage(#[from] librad::git::storage::Error),
 
-    /// An error occured with radicle storage.
+    /// An error occurred with radicle storage.
     #[error("{0}: {1}")]
     Io(&'static str, std::io::Error),
 
-    /// An error occured with initializing read-only storage.
+    /// An error occurred with initializing read-only storage.
     #[error(transparent)]
     Init(#[from] librad::git::storage::read::error::Init),
 
-    /// An error occured with radicle source.
+    /// An error occurred with radicle source.
     #[error(transparent)]
     Source(#[from] radicle_source::error::Error),
+
+    /// An error occurred with env variables.
+    #[error(transparent)]
+    VarError(#[from] std::env::VarError),
 }
 
 impl warp::reject::Reject for Error {}

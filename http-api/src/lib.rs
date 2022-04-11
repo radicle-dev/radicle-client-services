@@ -1,4 +1,5 @@
 #![allow(clippy::if_same_then_else)]
+mod auth;
 mod commit;
 mod error;
 mod project;
@@ -7,8 +8,10 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::convert::TryInto as _;
+use std::env;
 use std::io;
 use std::io::{BufRead, BufReader};
+use std::iter::repeat_with;
 use std::net;
 use std::path::PathBuf;
 use std::process::Command;
@@ -16,12 +19,15 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time;
 
+use chrono::{DateTime, Utc};
+use ethers_core::utils::hex;
 use serde_json::json;
 use shared::keys;
+use siwe::Message;
 use tokio::sync::RwLock;
 use warp::hyper::StatusCode;
 use warp::reply::Json;
-use warp::{self, filters::BoxedFilter, path, query, Filter, Rejection, Reply};
+use warp::{self, filters::BoxedFilter, host::Authority, path, query, Filter, Rejection, Reply};
 
 use librad::git::identities;
 use librad::git::storage::read::ReadOnly;
@@ -31,12 +37,16 @@ use librad::{git::types::Namespace, git::Urn, paths::Paths, profile::Profile, Pe
 use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
 
+use crate::auth::{AuthRequest, AuthState, Session};
 use crate::project::Info;
 
 use commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Committer, Peer};
 use error::Error;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const POPULATE_FINGERPRINTS_INTERVAL: time::Duration = time::Duration::from_secs(20);
+pub const CLEANUP_SESSIONS_INTERVAL: time::Duration = time::Duration::from_secs(60);
+pub const UNAUTHORIZED_SESSIONS_EXPIRATION: time::Duration = time::Duration::from_secs(60);
 
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -51,13 +61,16 @@ pub struct Options {
 type Fingerprint = String;
 /// Mapping between fingerprints and users.
 type Fingerprints = HashMap<Fingerprint, Peer>;
+/// Identifier for sessions
+type SessionId = String;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Context {
     paths: Paths,
     theme: String,
     aliases: Arc<RwLock<HashMap<String, Urn>>>,
     projects: Arc<RwLock<HashMap<Urn, Fingerprints>>>,
+    sessions: Arc<RwLock<HashMap<SessionId, AuthState>>>,
 }
 
 impl Context {
@@ -82,7 +95,37 @@ impl Context {
         Ok(())
     }
 
-    /// Populate a map between ssh fingerprints and their peer identities
+    fn cleanup_sessions(&self, map: &mut HashMap<SessionId, AuthState>) -> Result<(), Error> {
+        let mut to_remove: Vec<SessionId> = Vec::new();
+
+        for (key, value) in map.iter() {
+            let current_time = Utc::now();
+            match value {
+                AuthState::Authorized(auth) => {
+                    if let Some(exp_time) = auth.expiration_time {
+                        if current_time >= exp_time {
+                            to_remove.push(key.clone());
+                        }
+                    }
+                }
+                AuthState::Unauthorized {
+                    expiration_time, ..
+                } => {
+                    if current_time >= *expiration_time {
+                        to_remove.push(key.clone())
+                    }
+                }
+            }
+        }
+
+        for key in to_remove {
+            map.remove(&key);
+        }
+
+        Ok(())
+    }
+
+    /// Populate a map between SSH fingerprints and their peer identities
     fn populate_fingerprints(&self, map: &mut HashMap<Urn, Fingerprints>) -> Result<(), Error> {
         use librad::git::identities::SomeIdentity;
 
@@ -155,17 +198,24 @@ pub async fn run(options: Options) {
         theme: options.theme,
         aliases: Default::default(),
         projects: Default::default(),
+        sessions: Default::default(),
     };
 
-    // Spawn task to run periodic jobs.
-    tokio::spawn(periodic(ctx.clone(), time::Duration::from_secs(20)));
+    // Populate fingerprints
+    tokio::spawn(populate_fingerprints_job(
+        ctx.clone(),
+        POPULATE_FINGERPRINTS_INTERVAL,
+    ));
+    // Cleanup sessions
+    tokio::spawn(cleanup_sessions_job(ctx.clone(), CLEANUP_SESSIONS_INTERVAL));
 
     // Setup routing.
     let v1 = warp::path("v1");
     let peer = path("peer")
         .and(warp::get().and(path::end()))
         .and_then(move || peer_handler(peer_id));
-    let projects = path("projects").and(filters(ctx.clone()));
+    let projects = path("projects").and(project_filters(ctx.clone()));
+    let sessions = path("sessions").and(session_filters(ctx.clone()));
     let delegates = path("delegates").and(
         warp::get()
             .map(move || ctx.clone())
@@ -179,8 +229,14 @@ pub async fn run(options: Options) {
         .or(v1.and(peer))
         .or(v1.and(projects))
         .or(v1.and(delegates))
+        .or(v1.and(sessions))
         .recover(recover)
-        .with(warp::cors().allow_any_origin())
+        .with(
+            warp::cors()
+                .allow_any_origin()
+                .allow_methods(["GET", "POST", "PUT"])
+                .allow_headers(["content-type", "authorization"]),
+        )
         .with(warp::log("http::api"));
 
     let server = warp::serve(routes);
@@ -197,8 +253,20 @@ pub async fn run(options: Options) {
     }
 }
 
-/// Runs periodic jobs at regular intervals.
-async fn periodic(ctx: Context, interval: time::Duration) {
+async fn cleanup_sessions_job(ctx: Context, interval: time::Duration) {
+    let mut timer = tokio::time::interval(interval);
+
+    loop {
+        timer.tick().await; // Returns immediately the first time.
+
+        let mut sessions = ctx.sessions.write().await;
+        if let Err(err) = ctx.cleanup_sessions(&mut sessions) {
+            tracing::error!("Failed to cleanup sessions: {}", err);
+        }
+    }
+}
+
+async fn populate_fingerprints_job(ctx: Context, interval: time::Duration) {
     let mut timer = tokio::time::interval(interval);
 
     loop {
@@ -211,15 +279,6 @@ async fn periodic(ctx: Context, interval: time::Duration) {
     }
 }
 
-/// Return the peer id for the node identity.
-/// `GET /v1/peer`
-async fn peer_handler(peer_id: PeerId) -> Result<impl warp::Reply, warp::Rejection> {
-    let response = json!({
-        "id": peer_id.to_string(),
-    });
-    Ok(warp::reply::json(&response))
-}
-
 async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible> {
     let (status, msg) = if err.is_not_found() {
         (StatusCode::NOT_FOUND, None)
@@ -227,6 +286,12 @@ async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible>
         (StatusCode::NOT_FOUND, None)
     } else if let Some(Error::NoHead(msg)) = err.find::<Error>() {
         (StatusCode::NOT_FOUND, Some(*msg))
+    } else if let Some(Error::Auth(msg)) = err.find::<Error>() {
+        (StatusCode::BAD_REQUEST, Some(*msg))
+    } else if let Some(Error::SiweParseError(_)) = err.find::<Error>() {
+        (StatusCode::BAD_REQUEST, None)
+    } else if let Some(Error::SiweVerificationError(_)) = err.find::<Error>() {
+        (StatusCode::BAD_REQUEST, None)
     } else if let Some(Error::Git(e)) = err.find::<Error>() {
         (StatusCode::INTERNAL_SERVER_ERROR, Some(e.message()))
     } else {
@@ -247,8 +312,15 @@ async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible>
         .body(body.to_string()))
 }
 
+fn session_filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
+    session_create_filter(ctx.clone())
+        .or(session_signin_filter(ctx.clone()))
+        .or(session_get_filter(ctx))
+        .boxed()
+}
+
 /// Combination of all source filters.
-fn filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
+fn project_filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
     project_root_filter(ctx.clone())
         .or(commit_filter(ctx.clone()))
         .or(history_filter(ctx.clone()))
@@ -379,6 +451,39 @@ fn tree_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Reject
         .and_then(tree_handler)
 }
 
+/// `POST /sessions`
+fn session_create_filter(
+    ctx: Context,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::post()
+        .map(move || ctx.clone())
+        .and(path::end())
+        .and_then(session_create_handler)
+}
+
+/// `PUT /sessions/:session-id`
+fn session_signin_filter(
+    ctx: Context,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::put()
+        .map(move || ctx.clone())
+        .and(path::param::<String>())
+        .and(path::end())
+        .and(warp::body::json())
+        .and_then(session_signin_handler)
+}
+
+/// `GET /sessions/:session-id`
+fn session_get_filter(
+    ctx: Context,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::get()
+        .map(move || ctx.clone())
+        .and(path::param::<String>())
+        .and(path::end())
+        .and_then(session_get_handler)
+}
+
 async fn root_handler() -> Result<impl Reply, Rejection> {
     let response = json!({
         "message": "Welcome!",
@@ -404,6 +509,91 @@ async fn root_handler() -> Result<impl Reply, Rejection> {
         ]
     });
     Ok(warp::reply::json(&response))
+}
+
+/// Return the peer id for the node identity.
+/// `GET /v1/peer`
+async fn peer_handler(peer_id: PeerId) -> Result<impl warp::Reply, warp::Rejection> {
+    let response = json!({
+        "id": peer_id.to_string(),
+    });
+    Ok(warp::reply::json(&response))
+}
+
+/// `GET /v1/sessions/:session-id`
+async fn session_get_handler(
+    ctx: Context,
+    id: String,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    let sessions = ctx.sessions.read().await;
+    let session = sessions.get(&id).ok_or(Error::NotFound)?;
+
+    match session {
+        AuthState::Authorized(session) => {
+            Ok(warp::reply::json(&json!({ "id": id, "session": session })))
+        }
+        AuthState::Unauthorized {
+            nonce,
+            expiration_time,
+        } => Ok(warp::reply::json(
+            &json!({ "id": id, "nonce": nonce, "expirationTime": expiration_time }),
+        )),
+    }
+}
+
+/// `POST /v1/sessions`
+async fn session_create_handler(ctx: Context) -> Result<impl warp::Reply, warp::Rejection> {
+    let expiration_time =
+        Utc::now() + chrono::Duration::from_std(UNAUTHORIZED_SESSIONS_EXPIRATION).unwrap();
+    let mut sessions = ctx.sessions.write().await;
+    let (session_id, nonce) = create_session(&mut sessions, expiration_time);
+
+    let response = json!({ "id": session_id, "nonce": nonce });
+
+    Ok(warp::reply::json(&response))
+}
+
+/// `PUT /v1/sessions/:session_id`
+async fn session_signin_handler(
+    ctx: Context,
+    id: String,
+    request: AuthRequest,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    // Get unauthenticated session data, return early if not found
+    let mut sessions = ctx.sessions.write().await;
+    let session = sessions.get(&id).ok_or(Error::NotFound)?;
+
+    if let AuthState::Unauthorized { nonce, .. } = session {
+        let message = Message::from_str(request.message.as_str()).map_err(Error::from)?;
+
+        let host = env::var("RADICLE_DOMAIN").map_err(Error::from)?;
+
+        // Validate nonce
+        if *nonce != message.nonce {
+            return Err(Error::Auth("Invalid nonce").into());
+        }
+
+        // Verify that domain is the correct one
+        let authority = Authority::from_str(&host).map_err(|_| Error::Auth("Invalid host"))?;
+        if authority != message.domain {
+            return Err(Error::Auth("Invalid domain").into());
+        }
+
+        // Verifies the following:
+        // - AuthRequest sig matches the address passed in the AuthRequest message.
+        // - expirationTime is not in the past.
+        // - notBefore time is in the future.
+        message
+            .verify(request.signature.into())
+            .map_err(Error::from)?;
+
+        let session: Session = message.try_into()?;
+        sessions.insert(id.clone(), AuthState::Authorized(session.clone()));
+
+        return Ok(warp::reply::json(&json!({ "id": id, "session": session })));
+    }
+
+    Err(Error::Auth("Session already authorized").into())
 }
 
 async fn blob_handler(
@@ -769,6 +959,26 @@ where
     let mut browser = git::Browser::new_with_namespace(&repo, &namespace, revision)?;
 
     Ok(callback(&mut browser)?)
+}
+
+fn create_session(
+    map: &mut HashMap<String, AuthState>,
+    expiration_time: DateTime<Utc>,
+) -> (String, String) {
+    let nonce = siwe::nonce::generate_nonce();
+
+    // We generate a value from the RNG for the session id
+    let rng = fastrand::Rng::new();
+    let id = hex::encode(repeat_with(|| rng.u8(..)).take(32).collect::<Vec<u8>>());
+
+    let auth_state = AuthState::Unauthorized {
+        nonce: nonce.clone(),
+        expiration_time,
+    };
+
+    map.insert(id.clone(), auth_state);
+
+    (id, nonce)
 }
 
 fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {

@@ -1,3 +1,6 @@
 /target
 errors.err
 store.json
+
+# Mac OS
+.DS_Store
