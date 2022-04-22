@@ -1,6 +1,7 @@
 #![allow(clippy::if_same_then_else)]
 mod commit;
 mod error;
+mod patch;
 mod project;
 
 use std::collections::hash_map::Entry;
@@ -27,7 +28,10 @@ use librad::git::identities;
 use librad::git::storage::read::ReadOnly;
 
 use librad::git::types::{One, Reference, Single};
-use librad::{git::types::Namespace, git::Urn, paths::Paths, profile::Profile, PeerId};
+use librad::{
+    git::refs::Refs, git::storage::ReadOnlyStorage, git::types::Namespace, git::Urn, paths::Paths,
+    profile::Profile, PeerId,
+};
 use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
 
@@ -35,6 +39,7 @@ use crate::project::Info;
 
 use commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Committer, Peer};
 use error::Error;
+use patch::Metadata;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -255,6 +260,7 @@ fn filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
         .or(project_urn_filter(ctx.clone()))
         .or(project_alias_filter(ctx.clone()))
         .or(tree_filter(ctx.clone()))
+        .or(patches_filter(ctx.clone()))
         .or(remotes_filter(ctx.clone()))
         .or(remote_filter(ctx.clone()))
         .or(blob_filter(ctx.clone()))
@@ -298,6 +304,16 @@ fn remote_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Reje
         .and(path::param::<PeerId>())
         .and(path::end())
         .and_then(remote_handler)
+}
+
+/// `GET /:project/patches`
+fn patches_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::get()
+        .map(move || ctx.clone())
+        .and(path::param::<Urn>())
+        .and(path("patches"))
+        .and(path::end())
+        .and_then(patches_handler)
 }
 
 /// `GET /:project/commits?from=<sha>`
@@ -425,6 +441,41 @@ async fn blob_handler(
     .await?;
 
     Ok(warp::reply::json(&blob))
+}
+
+async fn patches_handler(ctx: Context, urn: Urn) -> Result<impl Reply, Rejection> {
+    let mut patches: Vec<Metadata> = Vec::new();
+    let repo = git2::Repository::open_bare(ctx.paths.git_dir()).map_err(Error::from)?;
+    let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
+    let info = project_info(urn.clone(), ctx.paths)?;
+    let peers = project::tracked(&info.meta, &storage)?;
+
+    for peer in peers {
+        if let Ok(refs) = Refs::load(&storage, &urn, peer.id) {
+            let blobs = match refs {
+                Some(refs) => refs.tags().collect(),
+                None => vec![],
+            };
+            for blob in blobs {
+                // TODO: Remove this unwrap
+                let object = storage.find_object(blob.1).map_err(Error::from)?.unwrap();
+                let tag = object.peel_to_tag().map_err(Error::from)?;
+                let merge_base = repo
+                    .merge_base(info.head.unwrap(), tag.target_id())
+                    .map_err(Error::from)?;
+
+                patches.push(Metadata {
+                    id: tag.name().unwrap().to_string(),
+                    peer: peer.clone(),
+                    message: Some(tag.message().unwrap().to_string()),
+                    commit: tag.target_id().to_string(),
+                    merge_base: Some(merge_base.to_string()),
+                });
+            }
+        }
+    }
+
+    Ok(warp::reply::json(&patches))
 }
 
 async fn remotes_handler(ctx: Context, urn: Urn) -> Result<impl Reply, Rejection> {

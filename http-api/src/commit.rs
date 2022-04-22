@@ -2,7 +2,7 @@ use librad::PeerId;
 use radicle_source::commit::Header;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 #[serde(rename_all = "kebab-case")]
 pub struct CommitsQueryString {
     pub parent: Option<String>,
@@ -28,22 +28,22 @@ pub struct Commit {
     pub context: CommitContext,
 }
 
-#[derive(Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct CommitContext {
     pub committer: Option<Committer>,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Person {
     pub name: String,
 }
 
-#[derive(Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct Committer {
     pub peer: Peer,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Peer {
     pub id: PeerId,
     pub person: Option<Person>,
