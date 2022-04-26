@@ -450,27 +450,29 @@ async fn patches_handler(ctx: Context, urn: Urn) -> Result<impl Reply, Rejection
     let info = project_info(urn.clone(), ctx.paths)?;
     let peers = project::tracked(&info.meta, &storage)?;
 
+    // Iterating over all tracked peers, to get all possible patches
     for peer in peers {
         if let Ok(refs) = Refs::load(&storage, &urn, peer.id) {
             let blobs = match refs {
                 Some(refs) => refs.tags().collect(),
                 None => vec![],
             };
+            // Iterate over all refs, and return eventual tags aka patches
             for blob in blobs {
-                // TODO: Remove this unwrap
-                let object = storage.find_object(blob.1).map_err(Error::from)?.unwrap();
-                let tag = object.peel_to_tag().map_err(Error::from)?;
-                let merge_base = repo
-                    .merge_base(info.head.unwrap(), tag.target_id())
-                    .map_err(Error::from)?;
+                if let Some(object) = storage.find_object(blob.1).map_err(Error::from)? {
+                    let tag = object.peel_to_tag().map_err(Error::from)?;
+                    let merge_base = repo
+                        .merge_base(info.head.unwrap(), tag.target_id())
+                        .map_err(Error::from)?;
 
-                patches.push(Metadata {
-                    id: tag.name().unwrap().to_string(),
-                    peer: peer.clone(),
-                    message: Some(tag.message().unwrap().to_string()),
-                    commit: tag.target_id().to_string(),
-                    merge_base: Some(merge_base.to_string()),
-                });
+                    patches.push(Metadata {
+                        id: tag.name().unwrap().to_string(),
+                        peer: peer.clone(),
+                        message: Some(tag.message().unwrap().to_string()),
+                        commit: tag.target_id().to_string(),
+                        merge_base: Some(merge_base.to_string()),
+                    });
+                }
             }
         }
     }
