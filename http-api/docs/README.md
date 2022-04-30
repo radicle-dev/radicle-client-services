@@ -4,8 +4,6 @@ This document describes the endpoints for the radicle-client-services/http-api.
 
 #### Contents
 
-- [API documentation](#api-documentation)
-      - [Contents](#contents)
   - [1. Overview](#1-overview)
   - [2. Authentication](#2-authentication)
   - [3. Resources](#3-resources)
