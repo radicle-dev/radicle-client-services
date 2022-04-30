@@ -20,3 +20,13 @@ This route creates an unauthorized session and returns the generated nonce and s
     "nonce": "AiUFrcN5dQI"
 }
 ```
+
+## Failed Response
+
+In general all session API errors return a `401 Unauthorized` code.
+
+### Possible error messages :
+
+**Not able to create session**
+
+There was an error in the `create_error` function

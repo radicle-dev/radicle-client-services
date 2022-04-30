@@ -38,3 +38,17 @@ This route returns the generated nonce and session id.
   }
 }
 ```
+
+## Failed Response
+
+In general all session API errors return a `401 Unauthorized` code.
+
+### Possible error messages :
+
+**Not authorized** :
+
+The found session is not yet authorized
+
+**Session not found**
+
+The requested session id is non existant

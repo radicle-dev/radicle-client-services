@@ -39,3 +39,50 @@ This route returns the generated nonce and session id.
   }
 }
 ```
+
+## Failed Response
+
+In general all session API errors return a `401 Unauthorized` code.
+
+### Possible error messages :
+
+**Not able to parse Siwe message**
+
+The passed Siwe message was not valid or was not properly formatted
+
+**RADICLE_DOMAIN is not set**
+
+Env variable RADICLE_DOMAIN was not found
+
+**Siwe statement not found**
+
+The message was missing the SIWE statement
+
+**Invalid nonce**
+
+The nonce passed did not match with the nonce generated during session creation
+
+**Siwe statement does not start with RADICLE_DOMAIN**
+
+The SIWE statement has to start with the defined RADICLE_DOMAIN
+
+**Invalid domain**
+
+The passed domain does not match RADICLE_DOMAIN
+
+**Not able to decode signature**
+
+The signature passed does not match the Ethereum address or is not a valid signature
+
+**Not able to verify Siwe message**
+
+The verification of the SIWE message, expiration date, not before date, etc. was not successfully verified.
+
+**Session already authorized**
+
+The session to be authorized has already been authorized before
+
+**Session not found**
+
+The looked up session was not found
+
