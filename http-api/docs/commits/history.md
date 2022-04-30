@@ -8,14 +8,14 @@ Show the commit history off a specific project
 
 **Params** :
 
-| Parameter    | Type    | Required?  | Description                                     |
-| -------------|---------|------------|-------------------------------------------------|
-| `parent`     | string  |            |                                                 |
-| `since`      | string  |            |                                                 |
-| `until`      | string  |            |                                                 |
-| `page`       | string  |            |                                                 |
-| `per_page`   | string  |            |                                                 |
-| `verified`   | boolean |            |                                                 |
+| Parameter    | Type    | Required?  | Description                                                          |
+| -------------|---------|------------|----------------------------------------------------------------------|
+| `parent`     | string  |            | Commit hash from where the revwalk should begin                      |
+| `since`      | string  |            | Date ISO string since when commits should be listed                  |
+| `until`      | string  |            | Date ISO string until when commits should be included in the listing |
+| `page`       | string  |            | Which page should be shown                                           |
+| `per_page`   | string  |            | How many commits per page should be fetched                          |
+| `verified`   | boolean |            | If the commit signature should be verified against the peer keys for all queried commits |
 
 ## Success Response
 
