@@ -24,6 +24,10 @@ pub enum Error {
     #[error("entity not found")]
     NotFound,
 
+    /// Failed to parse byte data into string.
+    #[error("not valid utf8")]
+    Utf8Error,
+
     /// No local head found and unable to resolve from delegates.
     #[error("could not resolve head: {0}")]
     NoHead(&'static str),

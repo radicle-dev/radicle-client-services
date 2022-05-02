@@ -461,6 +461,14 @@ async fn patches_handler(ctx: Context, urn: Urn) -> Result<impl Reply, Rejection
             for blob in blobs {
                 if let Some(object) = storage.find_object(blob.1).map_err(Error::from)? {
                     let tag = object.peel_to_tag().map_err(Error::from)?;
+                    // Only match tags that have a valid utf8 name that starts with patches/
+                    if !tag
+                        .name()
+                        .ok_or(Error::Utf8Error)?
+                        .starts_with("patches/")
+                    {
+                        continue;
+                    }
                     let merge_base = repo
                         .merge_base(info.head.unwrap(), tag.target_id())
                         .map_err(Error::from)?;
