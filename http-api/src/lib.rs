@@ -461,12 +461,8 @@ async fn patches_handler(ctx: Context, urn: Urn) -> Result<impl Reply, Rejection
             for blob in blobs {
                 if let Some(object) = storage.find_object(blob.1).map_err(Error::from)? {
                     let tag = object.peel_to_tag().map_err(Error::from)?;
-                    // Only match tags that have a valid utf8 name that starts with patches/
-                    if !tag
-                        .name()
-                        .ok_or(Error::Utf8Error)?
-                        .starts_with("patches/")
-                    {
+                    // Only match tags that have a valid utf8 name that starts with `patches/`
+                    if !tag.name().ok_or(Error::Utf8Error)?.starts_with("patches/") {
                         continue;
                     }
                     let merge_base = repo
@@ -474,9 +470,9 @@ async fn patches_handler(ctx: Context, urn: Urn) -> Result<impl Reply, Rejection
                         .map_err(Error::from)?;
 
                     patches.push(Metadata {
-                        id: tag.name().unwrap().to_string(),
+                        id: tag.name().ok_or(Error::Utf8Error)?.to_string(),
                         peer: peer.clone(),
-                        message: Some(tag.message().unwrap().to_string()),
+                        message: tag.message().ok_or(Error::Utf8Error)?.to_string(),
                         commit: tag.target_id().to_string(),
                         merge_base: Some(merge_base.to_string()),
                     });
