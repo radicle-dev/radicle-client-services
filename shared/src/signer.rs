@@ -1,5 +1,6 @@
 use std::io;
 
+use librad::crypto::keystore;
 use librad::crypto::keystore::sign::ed25519;
 use librad::{PeerId, SecStr, SecretKey};
 
@@ -45,5 +46,14 @@ impl ed25519::Signer for Signer {
 
     async fn sign(&self, data: &[u8]) -> Result<ed25519::Signature, Self::Error> {
         <SecretKey as ed25519::Signer>::sign(&self.key, data).await
+    }
+}
+
+impl librad::Signer for Signer {
+    fn sign_blocking(
+        &self,
+        data: &[u8],
+    ) -> Result<keystore::sign::Signature, <Self as keystore::sign::Signer>::Error> {
+        self.key.sign_blocking(data)
     }
 }

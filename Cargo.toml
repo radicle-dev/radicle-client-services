@@ -8,15 +8,35 @@ members = [
 
 [patch.crates-io.librad]
 git = "https://github.com/radicle-dev/radicle-link"
-tag = "cycle/2022-03-01"
+rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+
+[patch.crates-io.lnk-clib]
+git = "https://github.com/radicle-dev/radicle-link"
+rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+
+[patch.crates-io.lnk-identities]
+git = "https://github.com/radicle-dev/radicle-link"
+rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+
+[patch.crates-io.radicle-git-ext]
+git = "https://github.com/radicle-dev/radicle-link"
+rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+
+[patch.crates-io.lnk-profile]
+git = "https://github.com/radicle-dev/radicle-link"
+rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
 
 [patch.crates-io.git-ref-format]
 git = "https://github.com/radicle-dev/radicle-link"
-tag = "cycle/2022-03-01"
+rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
 
-[patch.crates-io.thrussh-encoding]
-git = "https://github.com/FintanH/thrussh.git"
-branch = "generic-agent"
+[patch.crates-io.radicle-common]
+git = "https://github.com/radicle-dev/radicle-cli"
+rev = "d929740ca125df3b49d34dd54b621aebecc34548"
+
+[patch.crates-io.automerge]
+git = "https://github.com/automerge/automerge-rs"
+rev = "291557a019acac283e54ea31a9fad81ed65736ab"
 
 [profile.release]
 debug = true
