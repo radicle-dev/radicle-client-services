@@ -5,7 +5,16 @@ use either::Either;
 use librad::{git::Urn, PeerId};
 use serde::{Deserialize, Serialize};
 
+use librad::git::identities;
+use librad::git::storage::ReadOnly;
+use librad::git::tracking;
+use librad::git::types::Namespace;
+use librad::git::types::Reference;
+
+use crate::commit::Peer;
+use crate::commit::Person;
 use crate::error;
+use crate::Error;
 
 /// Project info.
 #[derive(Serialize)]
@@ -38,15 +47,6 @@ impl Delegate {
         }
     }
 }
-
-use super::commit::Peer;
-use super::commit::Person;
-use super::Error;
-use librad::git::identities;
-use librad::git::storage::ReadOnly;
-use librad::git::tracking;
-use librad::git::types::Namespace;
-use librad::git::types::Reference;
 
 pub fn tracked<S: AsRef<ReadOnly>>(meta: &Metadata, storage: &S) -> Result<Vec<Peer>, Error> {
     let tracked =
