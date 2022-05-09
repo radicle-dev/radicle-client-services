@@ -4861,7 +4861,7 @@ dependencies = [
 [[package]]
 name = "radicle-common"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-cli?rev=5fd43a5c9a3c40010c209335565961d017a6cdeb#5fd43a5c9a3c40010c209335565961d017a6cdeb"
+source = "git+https://github.com/radicle-dev/radicle-cli?rev=da6d2c688a612b7c5010d77940eec9458aa3ddb9#da6d2c688a612b7c5010d77940eec9458aa3ddb9"
 dependencies = [
  "anyhow",
  "async-trait",

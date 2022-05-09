@@ -10,6 +10,20 @@ use radicle_common::person;
 use crate::error::Error;
 use crate::Context;
 
+/// A collaborative object that includes its id.
+#[derive(serde::Serialize)]
+struct Cob<T: serde::Serialize> {
+    id: ObjectId,
+    #[serde(flatten)]
+    inner: T,
+}
+
+impl<T: serde::Serialize> Cob<T> {
+    pub fn new(id: ObjectId, inner: T) -> Self {
+        Self { id, inner }
+    }
+}
+
 /// `GET /:project/issues`
 pub fn issues_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
@@ -36,7 +50,12 @@ async fn issues_handler(ctx: Context, project: Urn) -> Result<impl Reply, Reject
     let storage = ctx.storage().await?;
     let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
     let issues = issue::Issues::new(whoami, &ctx.paths, &storage).map_err(Error::Issues)?;
-    let all = issues.all(&project).map_err(Error::Issues)?;
+    let all: Vec<_> = issues
+        .all(&project)
+        .map_err(Error::Issues)?
+        .into_iter()
+        .map(|(id, issue)| Cob::new(id, issue))
+        .collect();
 
     Ok(warp::reply::json(&all))
 }
@@ -55,5 +74,5 @@ async fn issue_handler(
         .map_err(Error::Issues)?
         .ok_or(Error::NotFound)?;
 
-    Ok(warp::reply::json(&issue))
+    Ok(warp::reply::json(&Cob::new(issue_id, issue)))
 }
