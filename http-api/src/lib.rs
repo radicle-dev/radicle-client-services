@@ -40,6 +40,8 @@ use librad::git::types::{One, Reference, Single};
 use librad::{git::types::Namespace, git::Urn, paths::Paths, profile::Profile, PeerId};
 
 use radicle_common::keys;
+use radicle_common::profile;
+use radicle_common::profile::LnkHome;
 use radicle_common::signer::ToSigner;
 use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
@@ -234,22 +236,32 @@ impl Context {
 }
 
 /// Run the HTTP API.
-pub async fn run(options: Options) {
-    let profile = if let Some(ref root) = options.root {
-        Profile::from_root(root, None).unwrap()
+pub async fn run(options: Options) -> anyhow::Result<()> {
+    let home = if let Some(root) = options.root {
+        LnkHome::Root(root)
     } else {
-        Profile::load().unwrap()
+        LnkHome::default()
     };
 
-    let signer = if let Ok(sock) = keys::ssh_auth_sock() {
-        sock.to_signer(&profile).unwrap()
-    } else if let Some(pass) = options.passphrase {
-        keys::load_secret_key(&profile, pass.into())
-            .unwrap()
-            .to_signer(&profile)
-            .unwrap()
+    // If a profile isn't found, create one.
+    let profile = if let Some(profile) = Profile::active(&home)? {
+        profile
+    } else if let Some(ref pass) = options.passphrase {
+        let pwhash = keys::pwhash(pass.clone().into());
+        let (profile, _) = profile::create(home, pwhash)?;
+
+        profile
     } else {
-        panic!("No signer");
+        anyhow::bail!("No active profile and no passphrase supplied");
+    };
+
+    // Get the signer, either from the passphrase and secret key, or from ssh-agent.
+    let signer = if let Some(pass) = options.passphrase {
+        keys::load_secret_key(&profile, pass.into())?.to_signer(&profile)?
+    } else if let Ok(sock) = keys::ssh_auth_sock() {
+        sock.to_signer(&profile)?
+    } else {
+        anyhow::bail!("No signer found: ssh-agent isn't running, and no passphrase was supplied");
     };
 
     let paths = profile.paths();
@@ -302,10 +314,11 @@ pub async fn run(options: Options) {
             .cert_path(cert)
             .key_path(key)
             .run(options.listen)
-            .await
+            .await;
     } else {
-        server.run(options.listen).await
+        server.run(options.listen).await;
     }
+    Ok(())
 }
 
 async fn cleanup_sessions_job(ctx: Context, interval: time::Duration) {

@@ -1,5 +1,6 @@
 use std::net;
 use std::path::PathBuf;
+use std::process;
 
 use radicle_http_api as api;
 
@@ -65,5 +66,11 @@ async fn main() {
     shared::init_logger(options.log_format);
     tracing::info!("version {}-{}", env!("CARGO_PKG_VERSION"), env!("GIT_HEAD"));
 
-    api::run(options.into()).await;
+    match api::run(options.into()).await {
+        Ok(()) => {}
+        Err(err) => {
+            tracing::error!("{:#}", err);
+            process::exit(1);
+        }
+    }
 }
