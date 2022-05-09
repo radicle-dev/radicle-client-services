@@ -2,6 +2,7 @@
 mod auth;
 mod commit;
 mod error;
+mod issues;
 mod project;
 
 use std::collections::hash_map::Entry;
@@ -22,18 +23,24 @@ use std::time;
 use chrono::{DateTime, Utc};
 use ethers_core::utils::hex;
 use serde_json::json;
-use shared::keys;
 use siwe::Message;
 use tokio::sync::RwLock;
 use warp::hyper::StatusCode;
 use warp::reply::Json;
 use warp::{self, filters::BoxedFilter, host::Authority, path, query, Filter, Rejection, Reply};
 
+use librad::crypto::keystore::pinentry::SecUtf8;
 use librad::git::identities;
-use librad::git::storage::read::ReadOnly;
-
+use librad::git::identities::SomeIdentity;
+use librad::git::storage;
+use librad::git::storage::pool::{InitError, Initialised};
+use librad::git::storage::Pool;
+use librad::git::storage::Storage;
 use librad::git::types::{One, Reference, Single};
 use librad::{git::types::Namespace, git::Urn, paths::Paths, profile::Profile, PeerId};
+
+use radicle_common::keys;
+use radicle_common::signer::ToSigner;
 use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
 
@@ -42,15 +49,18 @@ use crate::project::Info;
 
 use commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Committer, Peer};
 use error::Error;
+use issues::{issue_filter, issues_filter};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const POPULATE_FINGERPRINTS_INTERVAL: time::Duration = time::Duration::from_secs(20);
 pub const CLEANUP_SESSIONS_INTERVAL: time::Duration = time::Duration::from_secs(60);
 pub const UNAUTHORIZED_SESSIONS_EXPIRATION: time::Duration = time::Duration::from_secs(60);
+pub const STORAGE_POOL_SIZE: usize = 3;
 
 #[derive(Debug, Clone)]
 pub struct Options {
     pub root: Option<PathBuf>,
+    pub passphrase: Option<String>,
     pub listen: net::SocketAddr,
     pub tls_cert: Option<PathBuf>,
     pub tls_key: Option<PathBuf>,
@@ -68,18 +78,26 @@ type SessionId = String;
 pub struct Context {
     paths: Paths,
     theme: String,
+    pool: Pool<Storage>,
     aliases: Arc<RwLock<HashMap<String, Urn>>>,
     projects: Arc<RwLock<HashMap<Urn, Fingerprints>>>,
     sessions: Arc<RwLock<HashMap<SessionId, AuthState>>>,
 }
 
 impl Context {
+    async fn storage(&self) -> Result<deadpool::managed::Object<Storage, InitError>, Error> {
+        self.pool
+            .get()
+            .await
+            .map_err(|e| Error::Pool(e.to_string()))
+    }
+
     /// Populates alias map with unique projects' names and their urns
     async fn populate_aliases(&self, map: &mut HashMap<String, Urn>) -> Result<(), Error> {
         use librad::git::identities::SomeIdentity::Project;
 
-        let storage = ReadOnly::open(&self.paths).expect("failed to open storage");
-        let identities = identities::any::list(&storage)?;
+        let storage = self.storage().await?;
+        let identities = identities::any::list(storage.read_only())?;
 
         for identity in identities.flatten() {
             if let Project(project) = identity {
@@ -126,17 +144,18 @@ impl Context {
     }
 
     /// Populate a map between SSH fingerprints and their peer identities
-    fn populate_fingerprints(&self, map: &mut HashMap<Urn, Fingerprints>) -> Result<(), Error> {
-        use librad::git::identities::SomeIdentity;
-
-        let storage = ReadOnly::open(&self.paths).map_err(Error::from)?;
-        let identities = identities::any::list(&storage)?;
+    async fn populate_fingerprints(
+        &self,
+        map: &mut HashMap<Urn, Fingerprints>,
+    ) -> Result<(), Error> {
+        let storage = self.storage().await?;
+        let identities = identities::any::list(storage.read_only())?;
 
         for identity in identities.flatten() {
             if let SomeIdentity::Project(project) = identity {
                 let meta = project::Metadata::try_from(project)?;
                 let fingerprints = map.entry(meta.urn.clone()).or_default();
-                let tracked = project::tracked(&meta, &storage)?;
+                let tracked = project::tracked(&meta, storage.read_only())?;
 
                 for peer in tracked {
                     let fp = keys::to_ssh_fingerprint(&peer.id).expect("Conversion cannot fail");
@@ -181,20 +200,50 @@ impl Context {
 
         Ok(None)
     }
+
+    async fn project_info(&self, urn: Urn) -> Result<Info, Error> {
+        let repo = git2::Repository::open_bare(self.paths.git_dir())?;
+        let storage = self.storage().await?;
+        let project = identities::project::get(&*storage, &urn)?.ok_or(Error::NotFound)?;
+        let meta: project::Metadata = project.try_into()?;
+        let head = get_head_commit(&repo, &urn, &meta.default_branch, &meta.delegates)
+            .map(|h| h.id)
+            .ok();
+
+        Ok(Info { head, meta })
+    }
 }
 
 /// Run the HTTP API.
 pub async fn run(options: Options) {
-    let paths = if let Some(ref root) = options.root {
-        Paths::from_root(root).unwrap()
+    let profile = if let Some(ref root) = options.root {
+        Profile::from_root(root, None).unwrap()
     } else {
-        Profile::load().unwrap().paths().clone()
+        Profile::load().unwrap()
     };
-    let storage = ReadOnly::open(&paths).expect("failed to read storage paths");
+
+    let signer = if let Ok(sock) = keys::ssh_auth_sock() {
+        sock.to_signer(&profile).unwrap()
+    } else if let Some(pass) = options.passphrase {
+        keys::load_secret_key(&profile, SecUtf8::from(pass))
+            .unwrap()
+            .to_signer(&profile)
+            .unwrap()
+    } else {
+        panic!("No signer");
+    };
+
+    let paths = profile.paths();
+    let storage = Storage::open(paths, signer.clone()).expect("failed to read storage paths");
     let peer_id = storage.peer_id().to_owned();
+    let pool = storage::Pool::new(
+        storage::pool::ReadWriteConfig::new(paths.clone(), signer, Initialised::no()),
+        STORAGE_POOL_SIZE,
+    );
 
     let ctx = Context {
-        paths,
+        paths: paths.clone(),
+        pool,
         theme: options.theme,
         aliases: Default::default(),
         projects: Default::default(),
@@ -273,7 +322,7 @@ async fn populate_fingerprints_job(ctx: Context, interval: time::Duration) {
         timer.tick().await; // Returns immediately the first time.
 
         let mut projects = ctx.projects.write().await;
-        if let Err(err) = ctx.populate_fingerprints(&mut projects) {
+        if let Err(err) = ctx.populate_fingerprints(&mut projects).await {
             tracing::error!("Failed to populate project fingerprints: {}", err);
         }
     }
@@ -319,7 +368,7 @@ fn session_filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
         .boxed()
 }
 
-/// Combination of all source filters.
+/// Combination of all project filters.
 fn project_filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
     project_root_filter(ctx.clone())
         .or(commit_filter(ctx.clone()))
@@ -330,7 +379,9 @@ fn project_filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
         .or(remotes_filter(ctx.clone()))
         .or(remote_filter(ctx.clone()))
         .or(blob_filter(ctx.clone()))
-        .or(readme_filter(ctx))
+        .or(readme_filter(ctx.clone()))
+        .or(issue_filter(ctx.clone()))
+        .or(issues_filter(ctx))
         .boxed()
 }
 
@@ -618,12 +669,12 @@ async fn blob_handler(
 }
 
 async fn remotes_handler(ctx: Context, urn: Urn) -> Result<impl Reply, Rejection> {
-    let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
-    let project = identities::project::get(&storage, &urn)
+    let storage = ctx.storage().await?;
+    let project = identities::project::get(storage.read_only(), &urn)
         .map_err(Error::Identities)?
         .ok_or(Error::NotFound)?;
     let meta: project::Metadata = project.try_into()?;
-    let response = project::tracked(&meta, &storage)?;
+    let response = project::tracked(&meta, storage.read_only())?;
 
     Ok(warp::reply::json(&response))
 }
@@ -678,7 +729,7 @@ async fn history_handler(
     let (sha, fallback_to_head) = match parent {
         Some(commit) => (commit, false),
         None => {
-            let info = project_info(project.to_owned(), ctx.paths.to_owned())?;
+            let info = ctx.project_info(project.to_owned()).await?;
 
             if let Some(head) = info.head {
                 (head.to_string(), true)
@@ -823,11 +874,9 @@ async fn readme_handler(ctx: Context, project: Urn, sha: One) -> Result<impl Rep
 
 /// List all projects
 async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
-    use librad::git::identities::SomeIdentity;
-
-    let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
+    let storage = ctx.storage().await?;
     let repo = git2::Repository::open_bare(&ctx.paths.git_dir()).map_err(Error::from)?;
-    let projects = identities::any::list(&storage)
+    let projects = identities::any::list(storage.read_only())
         .map_err(Error::from)?
         .filter_map(|res| {
             res.map(|id| match id {
@@ -851,7 +900,7 @@ async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
 }
 
 async fn project_urn_handler(ctx: Context, urn: Urn) -> Result<Json, Rejection> {
-    let info = project_info(urn, ctx.paths)?;
+    let info = ctx.project_info(urn).await?;
 
     Ok(warp::reply::json(&info))
 }
@@ -897,11 +946,9 @@ async fn tree_handler(
 
 /// List all projects that delegate is a part of.
 async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl Reply, Rejection> {
-    use librad::git::identities::SomeIdentity;
-
-    let storage = ReadOnly::open(&ctx.paths).map_err(Error::from)?;
+    let storage = ctx.storage().await?;
     let repo = git2::Repository::open_bare(&ctx.paths.git_dir()).map_err(Error::from)?;
-    let projects = identities::any::list(&storage)
+    let projects = identities::any::list(storage.read_only())
         .map_err(Error::from)?
         .filter_map(|res| {
             res.map(|id| match id {
@@ -979,18 +1026,6 @@ fn create_session(
     map.insert(id.clone(), auth_state);
 
     (id, nonce)
-}
-
-fn project_info(urn: Urn, paths: Paths) -> Result<Info, Error> {
-    let repo = git2::Repository::open_bare(paths.git_dir())?;
-    let storage = ReadOnly::open(&paths)?;
-    let project = identities::project::get(&storage, &urn)?.ok_or(Error::NotFound)?;
-    let meta: project::Metadata = project.try_into()?;
-    let head = get_head_commit(&repo, &urn, &meta.default_branch, &meta.delegates)
-        .map(|h| h.id)
-        .ok();
-
-    Ok(Info { head, meta })
 }
 
 fn get_head_commit(

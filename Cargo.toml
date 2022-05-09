@@ -32,7 +32,7 @@ rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
 
 [patch.crates-io.radicle-common]
 git = "https://github.com/radicle-dev/radicle-cli"
-rev = "d929740ca125df3b49d34dd54b621aebecc34548"
+rev = "bb1ad50c00424d34f27c37fc606aa37a8e0de90d"
 
 [patch.crates-io.automerge]
 git = "https://github.com/automerge/automerge-rs"

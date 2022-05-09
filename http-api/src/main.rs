@@ -18,6 +18,10 @@ pub struct Options {
     #[argh(option)]
     pub root: Option<PathBuf>,
 
+    /// radicle encrypted key passphrase
+    #[argh(option)]
+    pub passphrase: Option<String>,
+
     /// TLS certificate path
     #[argh(option)]
     pub tls_cert: Option<PathBuf>,
@@ -45,6 +49,7 @@ impl From<Options> for api::Options {
     fn from(other: Options) -> Self {
         Self {
             root: other.root,
+            passphrase: other.passphrase,
             tls_cert: other.tls_cert,
             tls_key: other.tls_key,
             listen: other.listen,

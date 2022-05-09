@@ -52,6 +52,14 @@ pub enum Error {
     #[error(transparent)]
     Storage(#[from] librad::git::storage::Error),
 
+    /// An error occurred with the storage pool.
+    #[error("{0}")]
+    Pool(String),
+
+    /// An error occurred with the issues storage.
+    #[error(transparent)]
+    Issues(#[from] radicle_common::cobs::issue::Error),
+
     /// An error occurred with radicle storage.
     #[error("{0}: {1}")]
     Io(&'static str, std::io::Error),
