@@ -29,7 +29,6 @@ use warp::hyper::StatusCode;
 use warp::reply::Json;
 use warp::{self, filters::BoxedFilter, host::Authority, path, query, Filter, Rejection, Reply};
 
-use librad::crypto::keystore::pinentry::SecUtf8;
 use librad::crypto::BoxedSigner;
 use librad::git::identities;
 use librad::git::identities::SomeIdentity;
@@ -245,7 +244,7 @@ pub async fn run(options: Options) {
     let signer = if let Ok(sock) = keys::ssh_auth_sock() {
         sock.to_signer(&profile).unwrap()
     } else if let Some(pass) = options.passphrase {
-        keys::load_secret_key(&profile, SecUtf8::from(pass))
+        keys::load_secret_key(&profile, pass.into())
             .unwrap()
             .to_signer(&profile)
             .unwrap()
