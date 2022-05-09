@@ -30,6 +30,7 @@ use warp::reply::Json;
 use warp::{self, filters::BoxedFilter, host::Authority, path, query, Filter, Rejection, Reply};
 
 use librad::crypto::keystore::pinentry::SecUtf8;
+use librad::crypto::BoxedSigner;
 use librad::git::identities;
 use librad::git::identities::SomeIdentity;
 use librad::git::storage;
@@ -79,12 +80,31 @@ pub struct Context {
     paths: Paths,
     theme: String,
     pool: Pool<Storage>,
+    peer_id: PeerId,
     aliases: Arc<RwLock<HashMap<String, Urn>>>,
     projects: Arc<RwLock<HashMap<Urn, Fingerprints>>>,
     sessions: Arc<RwLock<HashMap<SessionId, AuthState>>>,
 }
 
 impl Context {
+    fn new(paths: Paths, signer: BoxedSigner, theme: String) -> Self {
+        let peer_id = signer.peer_id();
+        let pool = storage::Pool::new(
+            storage::pool::ReadWriteConfig::new(paths.clone(), signer, Initialised::no()),
+            STORAGE_POOL_SIZE,
+        );
+
+        Self {
+            paths,
+            pool,
+            theme,
+            peer_id,
+            aliases: Default::default(),
+            projects: Default::default(),
+            sessions: Default::default(),
+        }
+    }
+
     async fn storage(&self) -> Result<deadpool::managed::Object<Storage, InitError>, Error> {
         self.pool
             .get()
@@ -234,21 +254,8 @@ pub async fn run(options: Options) {
     };
 
     let paths = profile.paths();
-    let storage = Storage::open(paths, signer.clone()).expect("failed to read storage paths");
-    let peer_id = storage.peer_id().to_owned();
-    let pool = storage::Pool::new(
-        storage::pool::ReadWriteConfig::new(paths.clone(), signer, Initialised::no()),
-        STORAGE_POOL_SIZE,
-    );
-
-    let ctx = Context {
-        paths: paths.clone(),
-        pool,
-        theme: options.theme,
-        aliases: Default::default(),
-        projects: Default::default(),
-        sessions: Default::default(),
-    };
+    let ctx = Context::new(paths.clone(), signer, options.theme);
+    let peer_id = ctx.peer_id;
 
     // Populate fingerprints
     tokio::spawn(populate_fingerprints_job(
