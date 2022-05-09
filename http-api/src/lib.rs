@@ -223,10 +223,11 @@ impl Context {
     }
 
     async fn project_info(&self, urn: Urn) -> Result<Info, Error> {
-        let repo = git2::Repository::open_bare(self.paths.git_dir())?;
         let storage = self.storage().await?;
         let project = identities::project::get(&*storage, &urn)?.ok_or(Error::NotFound)?;
         let meta: project::Metadata = project.try_into()?;
+
+        let repo = git2::Repository::open_bare(self.paths.git_dir())?;
         let head = get_head_commit(&repo, &urn, &meta.default_branch, &meta.delegates)
             .map(|h| h.id)
             .ok();
@@ -254,6 +255,7 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
     } else {
         anyhow::bail!("No active profile and no passphrase supplied");
     };
+    tracing::info!("Profile {} loaded...", profile.id());
 
     // Get the signer, either from the passphrase and secret key, or from ssh-agent.
     let signer = if let Some(pass) = options.passphrase {

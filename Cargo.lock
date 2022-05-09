@@ -4962,6 +4962,7 @@ dependencies = [
  "fastrand",
  "git2",
  "librad",
+ "lnk-identities",
  "radicle-common",
  "radicle-source",
  "radicle-surf",

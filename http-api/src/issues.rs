@@ -5,6 +5,7 @@ use librad::collaborative_objects::ObjectId;
 use librad::git::Urn;
 
 use radicle_common::cobs::issue;
+use radicle_common::person;
 
 use crate::error::Error;
 use crate::Context;
@@ -31,8 +32,9 @@ pub fn issue_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = R
 }
 
 async fn issues_handler(ctx: Context, project: Urn) -> Result<impl Reply, Rejection> {
+    // TODO: Handle non-existing project.
     let storage = ctx.storage().await?;
-    let whoami = radicle_common::person::local(&*storage).unwrap();
+    let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
     let issues = issue::Issues::new(whoami, &ctx.paths, &storage).map_err(Error::Issues)?;
     let all = issues.all(&project).map_err(Error::Issues)?;
 
@@ -44,8 +46,9 @@ async fn issue_handler(
     project: Urn,
     issue_id: ObjectId,
 ) -> Result<impl Reply, Rejection> {
+    // TODO: Handle non-existing project.
     let storage = ctx.storage().await?;
-    let whoami = radicle_common::person::local(&*storage).unwrap();
+    let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
     let issues = issue::Issues::new(whoami, &ctx.paths, &storage).map_err(Error::Issues)?;
     let issue = issues
         .get(&project, &issue_id)

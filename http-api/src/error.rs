@@ -20,6 +20,10 @@ pub enum Error {
     #[error("tracking: {0}")]
     Tracking(#[from] librad::git::tracking::error::Tracked),
 
+    /// Error relating to local identities.
+    #[error(transparent)]
+    LocalIdentity(#[from] lnk_identities::local::Error),
+
     /// The entity was not found.
     #[error("entity not found")]
     NotFound,

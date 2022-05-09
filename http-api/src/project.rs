@@ -87,7 +87,7 @@ pub fn tracked<S: AsRef<ReadOnly>>(meta: &Metadata, storage: &S) -> Result<Vec<P
 }
 
 /// Project metadata.
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Metadata {
     /// Project urn.
