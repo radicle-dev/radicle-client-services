@@ -1,6 +1,7 @@
-use librad::PeerId;
-use radicle_source::commit::Header;
 use serde::{Deserialize, Serialize};
+
+use radicle_common::project::PeerInfo;
+use radicle_source::commit::Header;
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "kebab-case")]
@@ -33,19 +34,7 @@ pub struct CommitContext {
     pub committer: Option<Committer>,
 }
 
-#[derive(Serialize, Debug, Clone)]
-pub struct Person {
-    pub name: String,
-}
-
 #[derive(Serialize)]
 pub struct Committer {
-    pub peer: Peer,
-}
-
-#[derive(Serialize, Debug, Clone)]
-pub struct Peer {
-    pub id: PeerId,
-    pub person: Option<Person>,
-    pub delegate: bool,
+    pub peer: PeerInfo,
 }

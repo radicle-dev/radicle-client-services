@@ -60,6 +60,10 @@ pub enum Error {
     #[error("{0}")]
     Pool(String),
 
+    /// An error occurred with a project.
+    #[error(transparent)]
+    Project(#[from] radicle_common::project::Error),
+
     /// An error occurred with the issues storage.
     #[error(transparent)]
     Issues(#[from] radicle_common::cobs::issue::Error),

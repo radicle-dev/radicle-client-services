@@ -47,9 +47,9 @@ use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
 
 use crate::auth::{AuthRequest, AuthState, Session};
-use crate::project::Info;
+use crate::project::{Info, PeerInfo};
 
-use commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Committer, Peer};
+use commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Committer};
 use error::Error;
 use issues::{issue_filter, issues_filter};
 
@@ -72,7 +72,7 @@ pub struct Options {
 /// SSH Key fingerprint.
 type Fingerprint = String;
 /// Mapping between fingerprints and users.
-type Fingerprints = HashMap<Fingerprint, Peer>;
+type Fingerprints = HashMap<Fingerprint, PeerInfo>;
 /// Identifier for sessions
 type SessionId = String;
 
@@ -694,7 +694,7 @@ async fn remotes_handler(ctx: Context, urn: Urn) -> Result<impl Reply, Rejection
     let project = identities::project::get(storage.read_only(), &urn)
         .map_err(Error::Identities)?
         .ok_or(Error::NotFound)?;
-    let meta: project::Metadata = project.try_into()?;
+    let meta: project::Metadata = project.try_into().map_err(Error::Project)?;
     let response = project::tracked(&meta, storage.read_only())?;
 
     Ok(warp::reply::json(&response))
