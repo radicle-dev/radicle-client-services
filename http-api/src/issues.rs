@@ -1,7 +1,6 @@
 use warp::{self, path, Filter, Rejection, Reply};
 
 use librad::collaborative_objects::ObjectId;
-
 use librad::git::Urn;
 
 use radicle_common::cobs::issue;

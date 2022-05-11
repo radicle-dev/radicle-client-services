@@ -3,6 +3,7 @@ mod auth;
 mod commit;
 mod error;
 mod issues;
+mod patches;
 mod project;
 
 use std::collections::hash_map::Entry;
@@ -52,6 +53,7 @@ use crate::project::{Info, PeerInfo};
 use commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Committer};
 use error::Error;
 use issues::{issue_filter, issues_filter};
+use patches::patches_filter;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const POPULATE_FINGERPRINTS_INTERVAL: time::Duration = time::Duration::from_secs(20);
@@ -401,6 +403,7 @@ fn project_filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
         .or(remote_filter(ctx.clone()))
         .or(blob_filter(ctx.clone()))
         .or(readme_filter(ctx.clone()))
+        .or(patches_filter(ctx.clone()))
         .or(issue_filter(ctx.clone()))
         .or(issues_filter(ctx))
         .boxed()

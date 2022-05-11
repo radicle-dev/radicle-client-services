@@ -68,6 +68,10 @@ pub enum Error {
     #[error(transparent)]
     Issues(#[from] radicle_common::cobs::issue::Error),
 
+    /// An error occurred with the patches storage.
+    #[error(transparent)]
+    Patches(#[from] radicle_common::patch::Error),
+
     /// An error occurred with radicle storage.
     #[error("{0}: {1}")]
     Io(&'static str, std::io::Error),
