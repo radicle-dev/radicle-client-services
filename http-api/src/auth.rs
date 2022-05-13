@@ -35,7 +35,7 @@ pub enum AuthState {
 pub struct Session {
     pub domain: String,
     pub address: H160,
-    pub statement: String,
+    pub statement: Option<String>,
     pub uri: String,
     pub version: u64,
     pub chain_id: u64,
@@ -49,12 +49,10 @@ impl TryFrom<siwe::Message> for Session {
     type Error = Error;
 
     fn try_from(message: siwe::Message) -> Result<Session, Error> {
-        let statement = message.statement.ok_or(Error::Auth("No statement found"))?;
-
         Ok(Session {
             domain: message.domain.host().to_string(),
             address: H160(message.address),
-            statement,
+            statement: None,
             uri: message.uri.to_string(),
             version: message.version as u64,
             chain_id: message.chain_id,
