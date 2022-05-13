@@ -357,15 +357,20 @@ async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible>
     } else if let Some(Error::NotFound) = err.find::<Error>() {
         (StatusCode::NOT_FOUND, None)
     } else if let Some(Error::NoHead(msg)) = err.find::<Error>() {
-        (StatusCode::NOT_FOUND, Some(*msg))
+        (StatusCode::NOT_FOUND, Some(msg.to_string()))
     } else if let Some(Error::Auth(msg)) = err.find::<Error>() {
-        (StatusCode::BAD_REQUEST, Some(*msg))
+        (StatusCode::BAD_REQUEST, Some(msg.to_string()))
     } else if let Some(Error::SiweParseError(_)) = err.find::<Error>() {
         (StatusCode::BAD_REQUEST, None)
     } else if let Some(Error::SiweVerificationError(_)) = err.find::<Error>() {
         (StatusCode::BAD_REQUEST, None)
+    } else if let Some(err) = err.find::<warp::filters::body::BodyDeserializeError>() {
+        (StatusCode::BAD_REQUEST, Some(err.to_string()))
     } else if let Some(Error::Git(e)) = err.find::<Error>() {
-        (StatusCode::INTERNAL_SERVER_ERROR, Some(e.message()))
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Some(e.message().to_owned()),
+        )
     } else {
         // Log the non-standard errors.
         tracing::error!("Error: {:?}", err);
@@ -373,7 +378,7 @@ async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible>
         (StatusCode::INTERNAL_SERVER_ERROR, None)
     };
     let body = json!({
-        "error": msg.or_else(||status.canonical_reason()),
+        "error": msg.or_else(|| status.canonical_reason().map(|r| r.to_string())),
         "code": status.as_u16()
     });
 
