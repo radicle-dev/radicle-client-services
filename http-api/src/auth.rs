@@ -1,4 +1,5 @@
 use std::convert::TryFrom;
+use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use ethers_core::types::{Signature, H160};
@@ -9,7 +10,16 @@ use crate::error::Error;
 #[derive(Deserialize, Serialize)]
 pub struct AuthRequest {
     pub message: String,
+    #[serde(deserialize_with = "deserialize_signature")]
     pub signature: Signature,
+}
+
+fn deserialize_signature<'de, D>(deserializer: D) -> Result<Signature, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    let buf = String::deserialize(deserializer)?;
+    Signature::from_str(&buf).map_err(serde::de::Error::custom)
 }
 
 pub enum AuthState {
@@ -55,5 +65,18 @@ impl TryFrom<siwe::Message> for Session {
                 .map(|x| x.as_ref().with_timezone(&Utc)),
             resources: message.resources.iter().map(|r| r.to_string()).collect(),
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_auth_request_de() {
+        let json = serde_json::json!({
+            "message": "Hello World!",
+            "signature": "20096c6ed2bcccb88c9cafbbbbda7a5a3cff6d0ca318c07faa58464083ca40a92f899fbeb26a4c763a7004b13fd0f1ba6c321d4e3a023e30f63c40d4154b99a41c"
+        });
+
+        let _req: super::AuthRequest = serde_json::from_value(json).unwrap();
     }
 }
