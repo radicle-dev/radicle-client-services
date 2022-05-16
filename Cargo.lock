@@ -4104,9 +4104,6 @@ name = "nonempty"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9e591e719385e6ebaeb5ce5d3887f7d5676fceca6411d1925ccc95745f3d6f7"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "nonzero_ext"
@@ -4861,7 +4858,7 @@ dependencies = [
 [[package]]
 name = "radicle-common"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-cli?rev=bb9e33dc4ff27d1259fc016cd96bd70f703aadc6#bb9e33dc4ff27d1259fc016cd96bd70f703aadc6"
+source = "git+https://github.com/radicle-dev/radicle-cli?rev=2748d732138a443ce7df66ab2f0fab9bb9d99d89#2748d732138a443ce7df66ab2f0fab9bb9d99d89"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4881,7 +4878,6 @@ dependencies = [
  "lnk-identities",
  "lnk-profile",
  "log",
- "nonempty 0.7.0",
  "radicle-git-ext",
  "serde",
  "serde_json",
