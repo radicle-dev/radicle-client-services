@@ -32,6 +32,7 @@ pub enum AuthState {
 
 // We copy the implementation of siwe::Message here to derive Serialization and Debug
 #[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Session {
     pub domain: String,
     pub address: H160,
