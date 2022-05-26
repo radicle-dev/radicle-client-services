@@ -24,7 +24,6 @@ use librad::git::storage::Pool;
 use librad::git::{self, Urn};
 use librad::identities::SomeIdentity;
 use librad::paths::Paths;
-use librad::profile::Profile;
 use librad::PeerId;
 use tokio::sync::RwLock;
 use warp::hyper::StatusCode;
@@ -41,6 +40,7 @@ pub const POST_RECEIVE_OK_HOOK: &str = "post-receive-ok";
 #[derive(Debug, Clone)]
 pub struct Options {
     pub root: Option<PathBuf>,
+    pub passphrase: Option<String>,
     pub listen: net::SocketAddr,
     pub tls_cert: Option<PathBuf>,
     pub tls_key: Option<PathBuf>,
@@ -62,13 +62,9 @@ pub struct Context {
 }
 
 impl Context {
-    fn from(options: &Options) -> Result<Self, Error> {
-        let paths = if let Some(root) = &options.root {
-            Paths::from_root(root)?
-        } else {
-            Profile::load()?.paths().clone()
-        };
-
+    fn from(options: &Options) -> anyhow::Result<Self> {
+        let (profile, _) = shared::profile(options.root.clone(), options.passphrase.clone())?;
+        let paths = profile.paths();
         let pool = git::storage::Pool::new(
             git::storage::pool::ReadConfig::new(paths.clone()),
             STORAGE_POOL_SIZE,
@@ -80,7 +76,7 @@ impl Context {
         tracing::debug!("Git root path set to: {:?}", git_root);
 
         Ok(Context {
-            paths,
+            paths: paths.clone(),
             root: options.root.clone().map(|p| p.canonicalize()).transpose()?,
             git_receive_pack: options.git_receive_pack,
             git_receive_hook,

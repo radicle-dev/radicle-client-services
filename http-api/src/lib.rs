@@ -38,12 +38,9 @@ use librad::git::storage::pool::{InitError, Initialised};
 use librad::git::storage::Pool;
 use librad::git::storage::Storage;
 use librad::git::types::{One, Reference, Single};
-use librad::{git::types::Namespace, git::Urn, paths::Paths, profile::Profile, PeerId};
+use librad::{git::types::Namespace, git::Urn, paths::Paths, PeerId};
 
 use radicle_common::keys;
-use radicle_common::profile;
-use radicle_common::profile::LnkHome;
-use radicle_common::signer::ToSigner;
 use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
 
@@ -240,34 +237,7 @@ impl Context {
 
 /// Run the HTTP API.
 pub async fn run(options: Options) -> anyhow::Result<()> {
-    let home = if let Some(root) = options.root {
-        LnkHome::Root(root)
-    } else {
-        LnkHome::default()
-    };
-
-    // If a profile isn't found, create one.
-    let profile = if let Some(profile) = Profile::active(&home)? {
-        profile
-    } else if let Some(ref pass) = options.passphrase {
-        let pwhash = keys::pwhash(pass.clone().into());
-        let (profile, _) = profile::create(home, pwhash)?;
-
-        profile
-    } else {
-        anyhow::bail!("No active profile and no passphrase supplied");
-    };
-    tracing::info!("Profile {} loaded...", profile.id());
-
-    // Get the signer, either from the passphrase and secret key, or from ssh-agent.
-    let signer = if let Some(pass) = options.passphrase {
-        keys::load_secret_key(&profile, pass.into())?.to_signer(&profile)?
-    } else if let Ok(sock) = keys::ssh_auth_sock() {
-        sock.to_signer(&profile)?
-    } else {
-        anyhow::bail!("No signer found: ssh-agent isn't running, and no passphrase was supplied");
-    };
-
+    let (profile, signer) = shared::profile(options.root, options.passphrase)?;
     let paths = profile.paths();
     let ctx = Context::new(paths.clone(), signer, options.theme);
     let peer_id = ctx.peer_id;
