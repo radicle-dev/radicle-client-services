@@ -166,8 +166,8 @@ pub struct ReceivePackEnv {
     pub default_branch: Option<String>,
 
     /// root directory where `git` directory is found.
-    #[envconfig(from = "RADICLE_STORAGE_ROOT")]
-    pub storage_root: Option<String>,
+    #[envconfig(from = "RADICLE_ROOT")]
+    pub root: Option<String>,
 
     /// namespace of the target repository.
     #[envconfig(from = "GIT_NAMESPACE")]

@@ -237,7 +237,7 @@ impl Context {
 
 /// Run the HTTP API.
 pub async fn run(options: Options) -> anyhow::Result<()> {
-    let (profile, signer) = shared::profile(options.root, options.passphrase)?;
+    let (_, profile, signer) = shared::profile(options.root, options.passphrase)?;
     let paths = profile.paths();
     let ctx = Context::new(paths.clone(), signer, options.theme);
     let peer_id = ctx.peer_id;

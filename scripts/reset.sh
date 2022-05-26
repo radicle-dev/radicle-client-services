@@ -7,7 +7,9 @@ confirm() {
   esac
 }
 
-export LNK_HOME=${1:-root}
+unset SSH_AGENT_PID
+unset SSH_AUTH_SOCK
+export RAD_HOME=${1:-root}
 
 ### Delete old identity ###
 
@@ -33,6 +35,6 @@ echo "Initialized $(rad path)"
 MONOREPO=$(rad path)
 
 set -x
-cp target/debug/{pre,post}-receive $MONOREPO/hooks
+cp target/release/{pre,post}-receive $MONOREPO/hooks
 cp scripts/post-receive-ok $MONOREPO/hooks
 cp authorized-keys $MONOREPO/

@@ -10,6 +10,7 @@
 use std::io::prelude::*;
 use std::io::{stdin, ErrorKind, Write};
 use std::os::unix::net::UnixStream;
+use std::path::Path;
 use std::str;
 use std::str::FromStr;
 
@@ -73,8 +74,8 @@ impl PostReceive {
 
         let env = ReceivePackEnv::init_from_env()?;
         let urn = Urn::try_from_id(&env.git_namespace).map_err(|_| Error::InvalidId)?;
-        let paths = if let Some(root) = &env.storage_root {
-            Paths::from_root(root)?
+        let paths = if let Some(root) = &env.root {
+            Profile::from_root(Path::new(root), None)?.paths().clone()
         } else {
             Profile::load()?.paths().clone()
         };

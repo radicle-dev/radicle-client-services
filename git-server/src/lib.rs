@@ -24,6 +24,7 @@ use librad::git::storage::Pool;
 use librad::git::{self, Urn};
 use librad::identities::SomeIdentity;
 use librad::paths::Paths;
+use librad::profile::LnkHome;
 use librad::PeerId;
 use tokio::sync::RwLock;
 use warp::hyper::StatusCode;
@@ -52,7 +53,7 @@ pub struct Options {
 #[derive(Clone)]
 pub struct Context {
     paths: Paths,
-    root: Option<PathBuf>,
+    root: LnkHome,
     git_receive_pack: bool,
     cert_nonce_seed: Option<String>,
     git_receive_hook: PathBuf,
@@ -63,7 +64,7 @@ pub struct Context {
 
 impl Context {
     fn from(options: &Options) -> anyhow::Result<Self> {
-        let (profile, _) = shared::profile(options.root.clone(), options.passphrase.clone())?;
+        let (root, profile, _) = shared::profile(options.root.clone(), options.passphrase.clone())?;
         let paths = profile.paths();
         let pool = git::storage::Pool::new(
             git::storage::pool::ReadConfig::new(paths.clone()),
@@ -77,7 +78,7 @@ impl Context {
 
         Ok(Context {
             paths: paths.clone(),
-            root: options.root.clone().map(|p| p.canonicalize()).transpose()?,
+            root,
             git_receive_pack: options.git_receive_pack,
             git_receive_hook,
             cert_nonce_seed: options.cert_nonce_seed.clone(),
@@ -465,8 +466,8 @@ async fn git(
     if let Some(default_branch) = default_branch {
         cmd.env("RADICLE_DEFAULT_BRANCH", default_branch);
     }
-    if let Some(root) = ctx.root {
-        cmd.env("RADICLE_STORAGE_ROOT", &root);
+    if let LnkHome::Root(root) = &ctx.root {
+        cmd.env("RADICLE_ROOT", root);
     }
 
     cmd.env("RADICLE_RECEIVE_HOOK", &ctx.git_receive_hook);

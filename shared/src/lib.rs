@@ -16,9 +16,9 @@ use radicle_common::signer::ToSigner;
 pub fn profile(
     root: Option<PathBuf>,
     passphrase: Option<String>,
-) -> anyhow::Result<(Profile, BoxedSigner)> {
+) -> anyhow::Result<(LnkHome, Profile, BoxedSigner)> {
     let home = if let Some(root) = root {
-        LnkHome::Root(root)
+        LnkHome::Root(root.canonicalize()?)
     } else {
         LnkHome::default()
     };
@@ -28,7 +28,7 @@ pub fn profile(
         profile
     } else if let Some(ref pass) = passphrase {
         let pwhash = keys::pwhash(pass.clone().into());
-        let (profile, _) = profile::create(home, pwhash)?;
+        let (profile, _) = profile::create(home.clone(), pwhash)?;
 
         profile
     } else {
@@ -45,5 +45,5 @@ pub fn profile(
         anyhow::bail!("No signer found: ssh-agent isn't running, and no passphrase was supplied");
     };
 
-    Ok((profile, signer))
+    Ok((home, profile, signer))
 }
