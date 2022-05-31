@@ -11,12 +11,9 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::convert::TryInto as _;
 use std::env;
-use std::io;
-use std::io::{BufRead, BufReader};
 use std::iter::repeat_with;
 use std::net;
 use std::path::PathBuf;
-use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time;
@@ -189,36 +186,8 @@ impl Context {
 
     /// From a commit hash, return the signer's fingerprint, if any.
     fn commit_ssh_fingerprint(&self, sha1: &str) -> Result<Option<String>, Error> {
-        let output = Command::new("git")
-            .current_dir(self.paths.git_dir()) // We need to place the command execution in the git dir
-            .args(["show", sha1, "--pretty=%GF", "--raw"])
-            .output()
-            .map_err(|e| Error::Io("'git' command failed", e))?;
-
-        if !output.status.success() {
-            return Err(Error::Io(
-                "'git' command failed",
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    String::from_utf8_lossy(&output.stderr),
-                ),
-            ));
-        }
-
-        let string = BufReader::new(output.stdout.as_slice())
-            .lines()
-            .next()
-            .transpose()
-            .map_err(|e| Error::Io("'git' command output couldn't be read", e))?;
-
-        // We only return a fingerprint if it's not an empty string
-        if let Some(s) = string {
-            if !s.is_empty() {
-                return Ok(Some(s));
-            }
-        }
-
-        Ok(None)
+        radicle_common::git::commit_ssh_fingerprint(self.paths.git_dir(), sha1)
+            .map_err(|e| Error::Io("failed to get commit's ssh fingerprint", e))
     }
 
     async fn project_info(&self, urn: Urn) -> Result<Info, Error> {
