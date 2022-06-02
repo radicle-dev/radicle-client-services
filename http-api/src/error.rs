@@ -87,6 +87,10 @@ pub enum Error {
     /// An error occurred with env variables.
     #[error(transparent)]
     VarError(#[from] std::env::VarError),
+
+    /// An error occurred during the identity resolving.
+    #[error(transparent)]
+    IdentityResolveError(#[from] radicle_common::cobs::ResolveError),
 }
 
 impl warp::reject::Reject for Error {}

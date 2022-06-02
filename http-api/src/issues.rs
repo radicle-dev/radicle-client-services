@@ -53,7 +53,16 @@ async fn issues_handler(ctx: Context, project: Urn) -> Result<impl Reply, Reject
         .all(&project)
         .map_err(Error::Issues)?
         .into_iter()
-        .map(|(id, issue)| Cob::new(id, issue))
+        .map(|(id, mut issue)| {
+            if let Err(e) = issue
+                .resolve(storage.as_ref())
+                .map_err(Error::IdentityResolveError)
+            {
+                tracing::debug!("Failed to resolve issue author: {}", e);
+            }
+
+            Cob::new(id, issue)
+        })
         .collect();
 
     Ok(warp::reply::json(&all))
@@ -68,10 +77,13 @@ async fn issue_handler(
     let storage = ctx.storage().await?;
     let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
     let issues = issue::Issues::new(whoami, &ctx.paths, &storage).map_err(Error::Issues)?;
-    let issue = issues
+    let mut issue = issues
         .get(&project, &issue_id)
         .map_err(Error::Issues)?
         .ok_or(Error::NotFound)?;
+    issue
+        .resolve(storage.as_ref())
+        .map_err(Error::IdentityResolveError)?;
 
     Ok(warp::reply::json(&Cob::new(issue_id, issue)))
 }
