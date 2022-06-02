@@ -330,9 +330,9 @@ async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible>
         (StatusCode::NOT_FOUND, Some(msg.to_string()))
     } else if let Some(Error::Auth(msg)) = err.find::<Error>() {
         (StatusCode::BAD_REQUEST, Some(msg.to_string()))
-    } else if let Some(Error::SiweParseError(e)) = err.find::<Error>() {
+    } else if let Some(Error::SiweParse(e)) = err.find::<Error>() {
         (StatusCode::BAD_REQUEST, Some(e.to_string()))
-    } else if let Some(Error::SiweVerificationError(e)) = err.find::<Error>() {
+    } else if let Some(Error::SiweVerification(e)) = err.find::<Error>() {
         (StatusCode::BAD_REQUEST, Some(e.to_string()))
     } else if let Some(err) = err.find::<warp::filters::body::BodyDeserializeError>() {
         (StatusCode::BAD_REQUEST, Some(err.to_string()))

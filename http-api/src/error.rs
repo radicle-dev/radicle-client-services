@@ -38,11 +38,11 @@ pub enum Error {
 
     /// An error occurred while verifying the siwe message.
     #[error(transparent)]
-    SiweVerificationError(#[from] siwe::VerificationError),
+    SiweVerification(#[from] siwe::VerificationError),
 
     /// An error occurred while parsing the siwe message.
     #[error(transparent)]
-    SiweParseError(#[from] siwe::ParseError),
+    SiweParse(#[from] siwe::ParseError),
 
     /// An error occurred with radicle identities.
     #[error(transparent)]
@@ -86,11 +86,11 @@ pub enum Error {
 
     /// An error occurred with env variables.
     #[error(transparent)]
-    VarError(#[from] std::env::VarError),
+    Env(#[from] std::env::VarError),
 
     /// An error occurred during the identity resolving.
     #[error(transparent)]
-    IdentityResolveError(#[from] radicle_common::cobs::ResolveError),
+    IdentityResolve(#[from] radicle_common::cobs::ResolveError),
 }
 
 impl warp::reject::Reject for Error {}

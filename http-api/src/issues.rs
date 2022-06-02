@@ -56,9 +56,9 @@ async fn issues_handler(ctx: Context, project: Urn) -> Result<impl Reply, Reject
         .map(|(id, mut issue)| {
             if let Err(e) = issue
                 .resolve(storage.as_ref())
-                .map_err(Error::IdentityResolveError)
+                .map_err(Error::IdentityResolve)
             {
-                tracing::debug!("Failed to resolve issue author: {}", e);
+                tracing::warn!("Failed to resolve identities in issue {}: {}", id, e);
             }
 
             Cob::new(id, issue)
@@ -81,9 +81,12 @@ async fn issue_handler(
         .get(&project, &issue_id)
         .map_err(Error::Issues)?
         .ok_or(Error::NotFound)?;
-    issue
+    if let Err(e) = issue
         .resolve(storage.as_ref())
-        .map_err(Error::IdentityResolveError)?;
+        .map_err(Error::IdentityResolve)
+    {
+        tracing::warn!("Failed to resolve identities in issue {}: {}", issue_id, e);
+    }
 
     Ok(warp::reply::json(&Cob::new(issue_id, issue)))
 }
