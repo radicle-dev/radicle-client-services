@@ -130,13 +130,6 @@ pub struct ReceivePackEnv {
     #[envconfig(from = "GIT_PUSH_CERT_NONCE_STATUS")]
     pub cert_nonce_status: Option<String>,
 
-    /// "git push --signed" sent a nonce different from what we asked it to send now,
-    /// but in a different session whose starting time is different by this many seconds from the current session.
-    /// Only meaningful when GIT_PUSH_CERT_NONCE_STATUS says SLOP.
-    /// Also read about receive.certNonceSlop variable in [git-config](https://git-scm.com/docs/git-config).
-    #[envconfig(from = "GIT_PUSH_CERT_NONCE_SLOP")]
-    pub cert_nonce_slop: Option<String>,
-
     /// comma delimited list of SSH key fingerprints authorized for the push.
     #[envconfig(from = "RADICLE_AUTHORIZED_KEYS")]
     pub authorized_keys: Option<String>,

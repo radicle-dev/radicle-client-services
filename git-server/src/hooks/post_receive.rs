@@ -122,6 +122,7 @@ impl PostReceive {
                 let (peer_id, _) = crate::parse_ref(refname)?;
 
                 post_receive.track_identity(Some(peer_id))?;
+                post_receive.update_identity(&repo)?;
                 post_receive.receive_hook()?;
             }
         } else {
@@ -213,18 +214,39 @@ impl PostReceive {
         Ok(oid)
     }
 
-    fn initialize_identity(&mut self, repo: &Repository) -> Result<(), Error> {
-        eprintln!("Verifying identity...");
+    fn update_identity(&mut self, repo: &Repository) -> Result<(), Error> {
+        if let Some(oid) = self.find_identity_update() {
+            eprintln!("Updating identity to {}...", oid);
+            self.set_identity_ref(oid, repo)
+        } else {
+            Ok(())
+        }
+    }
 
-        // Make sure one of the ref updates is initializing `rad/id`.
-        let (_, _, identity_oid) = if let Some(update) = self
+    fn find_identity_update(&self) -> Option<Oid> {
+        if let Some(update) = self
             .updates
             .iter()
             .find(|(refname, _, _)| refname.ends_with(RAD_ID_REF))
         {
-            update
+            let (_, _, identity_oid) = update;
+
+            Some(*identity_oid)
         } else {
-            return Err(Error::PostReceive("identity must be initialized first"));
+            None
+        }
+    }
+
+    fn initialize_identity(&mut self, repo: &Repository) -> Result<(), Error> {
+        eprintln!("Initializing identity...");
+
+        // Make sure one of the ref updates is initializing `rad/id`.
+        let identity_oid = if let Some(oid) = self.find_identity_update() {
+            oid
+        } else {
+            return Err(Error::PostReceive(
+                "identity ref 'rad/id' not found in updates",
+            ));
         };
 
         // When initializing a new identity, We shouldn't be updating anything, we should be
@@ -233,6 +255,10 @@ impl PostReceive {
             return Err(Error::PostReceive("identity old ref already exists"));
         }
 
+        self.set_identity_ref(identity_oid, repo)
+    }
+
+    fn set_identity_ref(&self, identity_oid: Oid, repo: &Repository) -> Result<(), Error> {
         let storage = git::storage::ReadOnly::open(&self.paths)?;
         let lookup = |urn| {
             let refname = git::types::Reference::rad_id(git::types::Namespace::from(urn));
@@ -241,7 +267,7 @@ impl PostReceive {
 
         let identity = storage
             .identities::<identities::SomeIdentity>()
-            .some_identity(*identity_oid)
+            .some_identity(identity_oid)
             .map_err(|_| Error::NamespaceNotFound)?;
 
         // Make sure that the identity we're pushing matches the namespace
@@ -256,13 +282,13 @@ impl PostReceive {
             identities::SomeIdentity::Person(_) => {
                 storage
                     .identities::<git::identities::Person>()
-                    .verify(*identity_oid)
+                    .verify(identity_oid)
                     .map_err(|e| Error::VerifyIdentity(e.to_string()))?;
             }
             identities::SomeIdentity::Project(_) => {
                 storage
                     .identities::<git::identities::Project>()
-                    .verify(*identity_oid, lookup)
+                    .verify(identity_oid, lookup)
                     .map_err(|e| Error::VerifyIdentity(e.to_string()))?;
             }
             _ => {
@@ -270,12 +296,12 @@ impl PostReceive {
             }
         }
 
-        // Set local project identity to point to the verified commit pushed by the user.
+        // Set local identity to point to the verified commit pushed by the user.
         repo.reference(
             &self.namespace_ref(RAD_ID_REF),
-            *identity_oid,
-            false,
-            &format!("set-project-id ({})", self.key_fingerprint),
+            identity_oid,
+            true,
+            &format!("set-id ({})", self.key_fingerprint),
         )?;
 
         Ok(())
