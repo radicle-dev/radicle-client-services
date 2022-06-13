@@ -10,8 +10,7 @@ main () {
     radicle-service-init --root /app/radicle/root --identity /app/radicle/identity
     cp --force /usr/local/bin/pre-receive /app/radicle/root/git/hooks/pre-receive
     cp --force /usr/local/bin/post-receive /app/radicle/root/git/hooks/post-receive
-
-    exec /usr/local/bin/radicle-git-server --root /app/radicle/root "$@"
+    exec /usr/local/bin/radicle-git-server "$@"
 }
 
 main "$@"
