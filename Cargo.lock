@@ -4626,13 +4626,14 @@ dependencies = [
 [[package]]
 name = "radicle-common"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-cli?rev=c0d9117a2891a5df76b4a27e559e09fa083d3911#c0d9117a2891a5df76b4a27e559e09fa083d3911"
+source = "git+https://github.com/radicle-dev/radicle-cli?tag=v0.6.0#aa5e87d911c0033ff8d78077567452b57e680d4c"
 dependencies = [
  "anyhow",
  "async-trait",
  "automerge 0.1.0",
  "base64 0.13.0",
  "byteorder",
+ "chrono",
  "coins-bip32 0.6.0",
  "either",
  "ethers",
@@ -4652,6 +4653,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.2",
  "thiserror",
+ "tokio",
  "ureq",
  "url",
  "walletconnect",
