@@ -17,4 +17,5 @@ RUN echo deb http://deb.debian.org/debian bullseye-backports main contrib non-fr
 RUN apt-get update && apt-get install -y libssl1.1 && apt -t bullseye-backports install --yes git && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/cargo/bin/radicle-http-api /usr/local/bin/radicle-http-api
 WORKDIR /app/radicle
-ENTRYPOINT ["/usr/local/bin/radicle-http-api", "--root", "/app/radicle/root", "--listen", "0.0.0.0:8777"]
+ENTRYPOINT ["/usr/local/bin/radicle-http-api"]
+CMD ["--root", "/app/radicle/root", "--listen", "0.0.0.0:8777"]
