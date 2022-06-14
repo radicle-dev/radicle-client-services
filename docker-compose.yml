@@ -2,6 +2,7 @@ version: "3.7"
 services:
   http-api:
     image: gcr.io/radicle-services/http-api:${RADICLE_IMAGE_TAG:-latest}
+    entrypoint: /usr/local/bin/radicle-http-api --listen 0.0.0.0:8777 --root /app/radicle/root
     build:
       dockerfile: ./http-api/Dockerfile
       context: .
