@@ -20,3 +20,7 @@ branch = "generic-agent"
 
 [profile.release]
 debug = true
+
+[profile.container]
+inherits = "release"
+incremental = false
