@@ -7,10 +7,10 @@ WORKDIR /usr/src/radicle-client-services
 COPY . .
 
 WORKDIR /usr/src/radicle-client-services/git-server
-RUN cargo install --all-features --locked --path .
+RUN cargo install --profile=container --all-features --locked --path .
 
 WORKDIR /usr/src/radicle-client-services/service-init
-RUN cargo install --all-features --locked --path .
+RUN cargo install --profile=container --all-features --locked --path .
 
 # Run
 FROM debian:bullseye-slim@sha256:4c25ffa6ef572cf0d57da8c634769a08ae94529f7de5be5587ec8ce7b9b50f9c

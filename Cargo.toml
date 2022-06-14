@@ -44,3 +44,7 @@ rev = "291557a019acac283e54ea31a9fad81ed65736ab"
 
 [profile.release]
 debug = true
+
+[profile.container]
+inherits = "release"
+incremental = false
