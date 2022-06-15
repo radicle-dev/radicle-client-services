@@ -38,6 +38,7 @@ use librad::git::types::{One, Reference, Single};
 use librad::{git::types::Namespace, git::Urn, paths::Paths, PeerId};
 
 use radicle_common::keys;
+use radicle_common::cobs::{issue, patch};
 use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
 
@@ -47,7 +48,7 @@ use crate::project::{Info, PeerInfo};
 use commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Committer};
 use error::Error;
 use issues::{issue_filter, issues_filter};
-use patches::patches_filter;
+use patches::{patch_filter, patches_filter};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const POPULATE_FINGERPRINTS_INTERVAL: time::Duration = time::Duration::from_secs(20);
@@ -348,6 +349,7 @@ fn project_filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
         .or(blob_filter(ctx.clone()))
         .or(readme_filter(ctx.clone()))
         .or(patches_filter(ctx.clone()))
+        .or(patch_filter(ctx.clone()))
         .or(issue_filter(ctx.clone()))
         .or(issues_filter(ctx))
         .boxed()
