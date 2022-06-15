@@ -37,7 +37,7 @@ use librad::git::storage::Storage;
 use librad::git::types::{One, Reference, Single};
 use librad::{git::types::Namespace, git::Urn, paths::Paths, PeerId};
 
-use radicle_common::keys;
+use radicle_common::{person, keys};
 use radicle_common::cobs::{issue, patch};
 use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
@@ -201,7 +201,14 @@ impl Context {
             .map(|h| h.id)
             .ok();
 
-        Ok(Info { head, meta })
+        let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
+        let issues = issue::Issues::new(whoami.clone(), &self.paths, &storage).map_err(Error::Issues)?;
+        let issues = issues.count(&urn).map_err(Error::Issues)?;
+
+        let patches = patch::Patches::new(whoami, &self.paths, &storage).map_err(Error::Patches)?;
+        let patches = patches.count(&urn).map_err(Error::Patches)?;
+
+        Ok(Info { head, meta, issues, patches })
     }
 }
 
@@ -846,6 +853,9 @@ async fn readme_handler(ctx: Context, project: Urn, sha: One) -> Result<impl Rep
 async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
     let storage = ctx.storage().await?;
     let repo = git2::Repository::open_bare(&ctx.paths.git_dir()).map_err(Error::from)?;
+    let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
+    let issues = issue::Issues::new(whoami.clone(), &ctx.paths, &storage).map_err(Error::Issues)?;
+    let patches = patch::Patches::new(whoami, &ctx.paths, &storage).map_err(Error::Patches)?;
     let projects = identities::any::list(storage.read_only())
         .map_err(Error::from)?
         .filter_map(|res| {
@@ -857,7 +867,10 @@ async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
                             .map(|h| h.id)
                             .ok();
 
-                    Some(Info { meta, head })
+                    let issues = issues.count(&meta.urn).map_err(Error::Issues).ok()?;
+                    let patches = patches.count(&meta.urn).map_err(Error::Patches).ok()?;
+
+                    Some(Info { meta, head, issues, patches })
                 }
                 _ => None,
             })
@@ -918,6 +931,9 @@ async fn tree_handler(
 async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl Reply, Rejection> {
     let storage = ctx.storage().await?;
     let repo = git2::Repository::open_bare(&ctx.paths.git_dir()).map_err(Error::from)?;
+    let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
+    let issues = issue::Issues::new(whoami.clone(), &ctx.paths, &storage).map_err(Error::Issues)?;
+    let patches = patch::Patches::new(whoami, &ctx.paths, &storage).map_err(Error::Patches)?;
     let projects = identities::any::list(storage.read_only())
         .map_err(Error::from)?
         .filter_map(|res| {
@@ -938,7 +954,10 @@ async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl 
                             .map(|h| h.id)
                             .ok();
 
-                    Some(Info { meta, head })
+                    let issues = issues.count(&meta.urn).map_err(Error::Issues).ok()?;
+                    let patches = patches.count(&meta.urn).map_err(Error::Patches).ok()?;
+
+                    Some(Info { meta, head, issues, patches })
                 }
                 _ => None,
             })
