@@ -1,10 +1,15 @@
+use std::convert::TryFrom;
+use std::convert::TryInto;
+
 use warp::{self, path, Filter, Rejection, Reply};
 
 use librad::collaborative_objects::ObjectId;
 use librad::git::Urn;
+use librad::git::identities;
 
 use radicle_common::cobs::patch;
-use radicle_common::person;
+use radicle_common::{person, project};
+use radicle_source::surf::vcs::git;
 
 use crate::error::Error;
 use crate::Context;
@@ -22,6 +27,7 @@ impl<T: serde::Serialize> Cob<T> {
         Self { id, inner }
     }
 }
+
 /// `GET /:project/patches`
 pub fn patches_filter(
     ctx: Context,
@@ -35,9 +41,7 @@ pub fn patches_filter(
 }
 
 /// `GET /:project/patches/:id`
-pub fn patch_filter(
-    ctx: Context,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+pub fn patch_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
         .map(move || ctx.clone())
         .and(path::param::<Urn>())
@@ -70,8 +74,17 @@ async fn patches_handler(ctx: Context, urn: Urn) -> Result<impl Reply, Rejection
     Ok(warp::reply::json(&all))
 }
 
-async fn patch_handler(ctx: Context, urn: Urn, patch_id: ObjectId) -> Result<impl Reply, Rejection> {
+async fn patch_handler(
+    ctx: Context,
+    urn: Urn,
+    patch_id: ObjectId,
+) -> Result<impl Reply, Rejection> {
+    let repo = git::Repository::new(ctx.paths.git_dir()).map_err(Error::from)?;
     let storage = ctx.storage().await?;
+    let project = identities::project::get(storage.as_ref(), &urn)
+        .map_err(Error::Identities)?
+        .ok_or(Error::NotFound)?;
+    let meta: project::Metadata = project.try_into().map_err(Error::Project)?;
     let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
     let patches = patch::Patches::new(whoami, &ctx.paths, &storage).map_err(Error::Patches)?;
     let mut patch = patches
@@ -85,7 +98,18 @@ async fn patch_handler(ctx: Context, urn: Urn, patch_id: ObjectId) -> Result<imp
         tracing::warn!("Failed to resolve identities in patch {}: {}", patch_id, e);
     }
 
+    let mut browser = git::Browser::new_with_namespace(
+        &repo,
+        &git::Namespace::try_from(urn.encode_id().as_str()).map_err(|_| Error::MissingNamespace)?,
+        git::Branch::local(meta.default_branch.as_str())
+    )
+    .map_err(Error::from)?;
 
+    // Iterate over revisions and add changesets to each revision.
+    for revision in patch.revisions.iter_mut() {
+        let commit = radicle_source::commit(&mut browser, *revision.oid).map_err(Error::from)?;
+        revision.changeset = Some(commit.diff);
+    }
 
     Ok(warp::reply::json(&Cob::new(patch_id, patch)))
 }

@@ -22,6 +22,10 @@ rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
 git = "https://github.com/radicle-dev/radicle-link"
 rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
 
+[patch.crates-io.radicle-surf]
+git = "https://github.com/radicle-dev/radicle-surf.git"
+rev = "77b1905ba38fc9c95c01c0ed09d4d495548eacc2"
+
 [patch.crates-io.lnk-profile]
 git = "https://github.com/radicle-dev/radicle-link"
 rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
