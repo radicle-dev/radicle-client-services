@@ -235,7 +235,7 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
             .and_then(delegates_projects_handler),
     );
     let routes = path::end()
-        .and_then(root_handler)
+        .and_then(move || root_handler(peer_id))
         .or(v1.and(peer))
         .or(v1.and(projects))
         .or(v1.and(delegates))
@@ -503,11 +503,12 @@ fn session_get_filter(
         .and_then(session_get_handler)
 }
 
-async fn root_handler() -> Result<impl Reply, Rejection> {
+async fn root_handler(peer_id: PeerId) -> Result<impl Reply, Rejection> {
     let response = json!({
         "message": "Welcome!",
         "service": "radicle-http-api",
         "version": VERSION,
+        "peer": { "id": peer_id },
         "path": "/",
         "links": [
             {
