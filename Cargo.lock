@@ -285,7 +285,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
- "uuid",
+ "uuid 0.8.2",
 ]
 
 [[package]]
@@ -306,7 +306,7 @@ dependencies = [
  "thiserror",
  "tinyvec",
  "tracing",
- "uuid",
+ "uuid 0.8.2",
 ]
 
 [[package]]
@@ -347,7 +347,7 @@ dependencies = [
  "smol_str",
  "thiserror",
  "unicode-segmentation",
- "uuid",
+ "uuid 0.8.2",
 ]
 
 [[package]]
@@ -361,7 +361,7 @@ dependencies = [
  "strum",
  "thiserror",
  "tinyvec",
- "uuid",
+ "uuid 0.8.2",
 ]
 
 [[package]]
@@ -880,7 +880,7 @@ dependencies = [
 [[package]]
 name = "cob"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "automerge 0.0.2",
  "either",
@@ -1523,7 +1523,7 @@ dependencies = [
  "sha2 0.9.9",
  "sha3",
  "thiserror",
- "uuid",
+ "uuid 0.8.2",
 ]
 
 [[package]]
@@ -2319,7 +2319,7 @@ dependencies = [
 [[package]]
 name = "git-ref-format"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "git-ref-format-core",
  "git-ref-format-macro",
@@ -2328,7 +2328,7 @@ dependencies = [
 [[package]]
 name = "git-ref-format-core"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "bstr",
  "minicbor",
@@ -2338,7 +2338,7 @@ dependencies = [
 [[package]]
 name = "git-ref-format-macro"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "git-ref-format-core",
  "proc-macro-error",
@@ -2363,7 +2363,7 @@ dependencies = [
 [[package]]
 name = "git-trailers"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "nom 7.1.1",
  "thiserror",
@@ -2993,7 +2993,7 @@ dependencies = [
  "serde_json",
  "time 0.3.9",
  "url",
- "uuid",
+ "uuid 0.8.2",
 ]
 
 [[package]]
@@ -3108,7 +3108,7 @@ dependencies = [
 [[package]]
 name = "librad"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "async-lock",
  "async-stream",
@@ -3140,6 +3140,7 @@ dependencies = [
  "link-canonical",
  "link-crypto",
  "link-git",
+ "link-hooks",
  "link-identities",
  "link-replication",
  "link-tracking",
@@ -3181,7 +3182,7 @@ dependencies = [
  "tracing-attributes",
  "typenum",
  "url",
- "uuid",
+ "uuid 0.8.2",
  "webpki 0.21.4",
  "xorf",
 ]
@@ -3237,7 +3238,7 @@ dependencies = [
 [[package]]
 name = "link-async"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "blocking",
  "futures",
@@ -3252,7 +3253,7 @@ dependencies = [
 [[package]]
 name = "link-canonical"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "link-canonical-derive",
  "nom 7.1.1",
@@ -3266,7 +3267,7 @@ dependencies = [
 [[package]]
 name = "link-canonical-derive"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "convert_case",
  "proc-macro2",
@@ -3277,7 +3278,7 @@ dependencies = [
 [[package]]
 name = "link-crypto"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "async-trait",
  "dyn-clone",
@@ -3300,7 +3301,7 @@ dependencies = [
 [[package]]
 name = "link-git"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "arc-swap",
  "async-process",
@@ -3335,9 +3336,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "link-hooks"
+version = "0.1.0"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
+dependencies = [
+ "async-trait",
+ "futures",
+ "link-crypto",
+ "link-identities",
+ "multihash",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "link-identities"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "either",
  "futures-lite",
@@ -3368,7 +3384,7 @@ dependencies = [
 [[package]]
 name = "link-replication"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "async-trait",
  "blocking",
@@ -3390,7 +3406,7 @@ dependencies = [
 [[package]]
 name = "link-tracking"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "cob",
  "either",
@@ -3413,7 +3429,7 @@ checksum = "7fb9b38af92608140b86b693604b9ffcc5824240a484d1ecd4795bacb2fe88f3"
 [[package]]
 name = "lnk-clib"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "async-trait",
  "futures",
@@ -3444,11 +3460,12 @@ dependencies = [
 [[package]]
 name = "lnk-identities"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "anyhow",
  "clap",
  "either",
+ "git-ref-format",
  "git2",
  "lazy_static",
  "libgit2-sys",
@@ -3464,21 +3481,6 @@ dependencies = [
  "thiserror",
  "tracing",
  "url",
-]
-
-[[package]]
-name = "lnk-profile"
-version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
-dependencies = [
- "anyhow",
- "clap",
- "futures-lite",
- "librad",
- "lnk-clib",
- "lnk-thrussh-agent",
- "serde",
- "thiserror",
 ]
 
 [[package]]
@@ -4626,7 +4628,7 @@ dependencies = [
 [[package]]
 name = "radicle-common"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-cli?tag=v0.6.0#aa5e87d911c0033ff8d78077567452b57e680d4c"
+source = "git+https://github.com/radicle-dev/radicle-cli?rev=bda4238767567c85ab935a0185f5f332be6ed5dd#bda4238767567c85ab935a0185f5f332be6ed5dd"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4645,7 +4647,6 @@ dependencies = [
  "librad",
  "lnk-clib",
  "lnk-identities",
- "lnk-profile",
  "log",
  "nonempty 0.7.0",
  "radicle-git-ext",
@@ -4653,9 +4654,11 @@ dependencies = [
  "serde_json",
  "sha2 0.10.2",
  "thiserror",
+ "timeago",
  "tokio",
  "ureq",
  "url",
+ "uuid 1.1.2",
  "walletconnect",
  "zeroize",
 ]
@@ -4663,7 +4666,7 @@ dependencies = [
 [[package]]
 name = "radicle-data"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "minicbor",
  "nonempty 0.7.0",
@@ -4675,7 +4678,7 @@ dependencies = [
 [[package]]
 name = "radicle-git-ext"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "git-ref-format",
  "git2",
@@ -4773,7 +4776,7 @@ dependencies = [
 [[package]]
 name = "radicle-macros"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 dependencies = [
  "proc-macro-error",
  "quote",
@@ -4813,7 +4816,7 @@ dependencies = [
 [[package]]
 name = "radicle-std-ext"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?rev=a9485b78b5c78d252c92f61d990cf34622d1c8f1#a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
 
 [[package]]
 name = "radicle-surf"
@@ -5915,6 +5918,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42657b1a6f4d817cda8e7a0ace261fe0cc946cf3a80314390b22cc61ae080792"
 
 [[package]]
+name = "timeago"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ec32dde57efb15c035ac074118d7f32820451395f28cb0524a01d4e94983b26"
+
+[[package]]
 name = "tiny-keccak"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6344,6 +6353,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "uuid"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd6469f4314d5f1ffec476e05f17cc9a78bc7a27a6a857842170bdf8d6f98d2f"
+dependencies = [
+ "getrandom 0.2.6",
+ "rand 0.8.5",
+ "serde",
+]
+
+[[package]]
 name = "valuable"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6416,7 +6436,7 @@ dependencies = [
  "terminfo",
  "thiserror",
  "url",
- "uuid",
+ "uuid 0.8.2",
  "ws",
  "zeroize",
 ]
@@ -6810,3 +6830,8 @@ dependencies = [
  "syn",
  "synstructure",
 ]
+
+[[patch.unused]]
+name = "lnk-profile"
+version = "0.1.0"
+source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"

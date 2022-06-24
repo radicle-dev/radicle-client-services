@@ -8,35 +8,35 @@ members = [
 
 [patch.crates-io.librad]
 git = "https://github.com/radicle-dev/radicle-link"
-rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+tag = "cycle/2022-06-21"
 
 [patch.crates-io.lnk-clib]
 git = "https://github.com/radicle-dev/radicle-link"
-rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+tag = "cycle/2022-06-21"
 
 [patch.crates-io.lnk-identities]
 git = "https://github.com/radicle-dev/radicle-link"
-rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+tag = "cycle/2022-06-21"
 
 [patch.crates-io.radicle-git-ext]
 git = "https://github.com/radicle-dev/radicle-link"
-rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+tag = "cycle/2022-06-21"
 
 [patch.crates-io.lnk-profile]
 git = "https://github.com/radicle-dev/radicle-link"
-rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+tag = "cycle/2022-06-21"
 
 [patch.crates-io.git-trailers]
 git = "https://github.com/radicle-dev/radicle-link"
-rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+tag = "cycle/2022-06-21"
 
 [patch.crates-io.git-ref-format]
 git = "https://github.com/radicle-dev/radicle-link"
-rev = "a9485b78b5c78d252c92f61d990cf34622d1c8f1"
+tag = "cycle/2022-06-21"
 
 [patch.crates-io.radicle-common]
 git = "https://github.com/radicle-dev/radicle-cli"
-tag = "v0.6.0"
+rev = "bda4238767567c85ab935a0185f5f332be6ed5dd"
 
 [patch.crates-io.automerge]
 git = "https://github.com/automerge/automerge-rs"

@@ -91,6 +91,14 @@ pub enum Error {
     /// An error occurred during the identity resolving.
     #[error(transparent)]
     IdentityResolve(#[from] radicle_common::cobs::ResolveError),
+
+    /// An error occurred with COBs stores
+    #[error(transparent)]
+    Store(#[from] radicle_common::cobs::StoreError),
+
+    /// An anyhow error originated from radicle-common
+    #[error("radicle-common: {0}")]
+    Common(#[from] anyhow::Error),
 }
 
 impl warp::reject::Reject for Error {}

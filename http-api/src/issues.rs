@@ -3,7 +3,7 @@ use warp::{self, path, Filter, Rejection, Reply};
 use librad::collaborative_objects::ObjectId;
 use librad::git::Urn;
 
-use radicle_common::cobs::issue;
+use radicle_common::cobs::{issue, Store};
 use radicle_common::person;
 
 use crate::error::Error;
@@ -48,7 +48,8 @@ async fn issues_handler(ctx: Context, project: Urn) -> Result<impl Reply, Reject
     // TODO: Handle non-existing project.
     let storage = ctx.storage().await?;
     let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
-    let issues = issue::Issues::new(whoami, &ctx.paths, &storage).map_err(Error::Issues)?;
+    let store = Store::new(whoami, &ctx.paths, &storage).map_err(Error::from)?;
+    let issues = issue::IssueStore::new(&store);
     let all: Vec<_> = issues
         .all(&project)
         .map_err(Error::Issues)?
@@ -76,10 +77,11 @@ async fn issue_handler(
     // TODO: Handle non-existing project.
     let storage = ctx.storage().await?;
     let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
-    let issues = issue::Issues::new(whoami, &ctx.paths, &storage).map_err(Error::Issues)?;
+    let store = Store::new(whoami, &ctx.paths, &storage).map_err(Error::from)?;
+    let issues = issue::IssueStore::new(&store);
     let mut issue = issues
         .get(&project, &issue_id)
-        .map_err(Error::Issues)?
+        .map_err(Error::from)?
         .ok_or(Error::NotFound)?;
     if let Err(e) = issue
         .resolve(storage.as_ref())
