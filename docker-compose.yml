@@ -7,7 +7,7 @@ services:
       dockerfile: ./http-api/Dockerfile
       context: .
     volumes:
-      - /var/opt/radicle:/app/radicle:ro
+      - /var/opt/radicle:/app/radicle
     environment:
       RUST_LOG: info
     init: true
