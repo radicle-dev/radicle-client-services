@@ -10,7 +10,7 @@ main () {
         echo "RAD_HOME is unset"
         return 1
     fi
-    rad_profile=$(rad self --profile)
+    rad_profile=$(cat "${RAD_HOME}/active_profile")
     cp --force /usr/local/bin/pre-receive "${RAD_HOME}/${rad_profile}/git/hooks/pre-receive"
     cp --force /usr/local/bin/post-receive "${RAD_HOME}/${rad_profile}/git/hooks/post-receive"
     exec /usr/local/bin/radicle-git-server "$@"
