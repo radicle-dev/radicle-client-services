@@ -10,6 +10,7 @@ services:
       - /var/opt/radicle:/app/radicle
     environment:
       RUST_LOG: info
+      RAD_HOME: /app/radicle
     init: true
     container_name: http-api
     restart: unless-stopped
@@ -26,7 +27,8 @@ services:
     volumes:
       - /var/opt/radicle:/app/radicle
     environment:
-      - RUST_LOG=hyper=warn,debug
+      RUST_LOG: hyper=warn,debug
+      RAD_HOME: /app/radicle
     init: true
     container_name: git-server
     restart: unless-stopped
@@ -46,7 +48,7 @@ services:
     volumes:
       - $PWD/Caddyfile:/etc/caddy/Caddyfile:ro
     environment:
-      - RADICLE_DOMAIN=$RADICLE_DOMAIN
+      RADICLE_DOMAIN: $RADICLE_DOMAIN
     container_name: caddy
     restart: unless-stopped
     networks:
