@@ -2,7 +2,6 @@
 members = [
   "http-api",
   "git-server",
-  "service-init",
   "shared",
 ]
 
@@ -19,10 +18,6 @@ git = "https://github.com/radicle-dev/radicle-link"
 tag = "cycle/2022-06-21"
 
 [patch.crates-io.radicle-git-ext]
-git = "https://github.com/radicle-dev/radicle-link"
-tag = "cycle/2022-06-21"
-
-[patch.crates-io.lnk-profile]
 git = "https://github.com/radicle-dev/radicle-link"
 tag = "cycle/2022-06-21"
 

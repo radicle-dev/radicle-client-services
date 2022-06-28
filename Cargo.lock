@@ -4785,18 +4785,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "radicle-service-init"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "argh",
- "librad",
- "shared",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "radicle-source"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6830,8 +6818,3 @@ dependencies = [
  "syn",
  "synstructure",
 ]
-
-[[patch.unused]]
-name = "lnk-profile"
-version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-link?tag=cycle/2022-06-21#241d5307adbdf5fb79bf2c22a3bbf0e5839ded7c"
