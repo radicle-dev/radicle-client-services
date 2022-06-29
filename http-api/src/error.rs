@@ -70,7 +70,7 @@ pub enum Error {
 
     /// An error occurred with the patches storage.
     #[error(transparent)]
-    Patches(#[from] radicle_common::patch::Error),
+    Patches(#[from] radicle_common::cobs::patch::Error),
 
     /// An error occurred with radicle storage.
     #[error("{0}: {1}")]

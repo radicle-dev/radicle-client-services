@@ -1,12 +1,27 @@
 use warp::{self, path, Filter, Rejection, Reply};
 
+use librad::collaborative_objects::ObjectId;
 use librad::git::Urn;
 
-use radicle_common::patch;
+use radicle_common::cobs::{patch, Store};
+use radicle_common::person;
 
 use crate::error::Error;
-use crate::project;
 use crate::Context;
+
+/// A collaborative object that includes its id.
+#[derive(serde::Serialize)]
+struct Cob<T: serde::Serialize> {
+    id: ObjectId,
+    #[serde(flatten)]
+    inner: T,
+}
+
+impl<T: serde::Serialize> Cob<T> {
+    pub fn new(id: ObjectId, inner: T) -> Self {
+        Self { id, inner }
+    }
+}
 
 /// `GET /:project/patches`
 pub fn patches_filter(
@@ -22,17 +37,24 @@ pub fn patches_filter(
 
 async fn patches_handler(ctx: Context, urn: Urn) -> Result<impl Reply, Rejection> {
     let storage = ctx.storage().await?;
-    let info = ctx.project_info(urn.clone()).await?;
+    let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
+    let store = Store::new(whoami, &ctx.paths, &storage).map_err(Error::from)?;
+    let patches = patch::PatchStore::new(&store);
+    let all: Vec<_> = patches
+        .all(&urn)
+        .map_err(Error::Patches)?
+        .into_iter()
+        .map(|(id, mut patch)| {
+            if let Err(e) = patch
+                .resolve(storage.as_ref())
+                .map_err(Error::IdentityResolve)
+            {
+                tracing::warn!("Failed to resolve identities in patch {}: {}", id, e);
+            }
 
-    // Start off with our own patches, then iterate over peer patches.
-    let mut patches = patch::all(&info.meta, None, storage.read_only()).map_err(Error::Patches)?;
-    let peers = project::tracked(&info.meta, storage.read_only())?;
-    for peer in peers {
-        let all =
-            patch::all(&info.meta, Some(peer), storage.read_only()).map_err(Error::Patches)?;
+            Cob::new(id, patch)
+        })
+        .collect();
 
-        patches.extend(all);
-    }
-
-    Ok(warp::reply::json(&patches))
+    Ok(warp::reply::json(&all))
 }

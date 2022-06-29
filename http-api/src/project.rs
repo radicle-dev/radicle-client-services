@@ -18,6 +18,8 @@ pub struct Info {
     /// branches have been replicated on this node.
     #[serde(with = "option")]
     pub head: Option<git2::Oid>,
+    pub patches: usize,
+    pub issues: usize,
 }
 
 pub fn tracked<S: AsRef<ReadOnly>>(meta: &Metadata, storage: &S) -> Result<Vec<PeerInfo>, Error> {
