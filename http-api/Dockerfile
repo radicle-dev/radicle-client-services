@@ -1,5 +1,5 @@
 # Build
-FROM rust:1.57.0-slim@sha256:43d8c9a7e8f0784372a4c0009b064b9f40051f4f950c7c96b9650ad8b445add4 as build
+FROM rust:1.61.0-slim@sha256:91ab0966aa0d8eff103f42c04e0f4dd0bc628d1330942616a94bbe260f26fe6e as build
 
 RUN apt-get update && apt-get install -y pkg-config libssl-dev git cmake
 
