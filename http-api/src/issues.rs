@@ -1,4 +1,4 @@
-use warp::{self, path, Filter, Rejection, Reply};
+//use warp::{self, path, Filter, Rejection, Reply};
 
 use librad::collaborative_objects::ObjectId;
 use librad::git::Urn;
@@ -23,6 +23,7 @@ impl<T: serde::Serialize> Cob<T> {
     }
 }
 
+/*
 /// `GET /:project/issues`
 pub fn issues_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
@@ -92,3 +93,4 @@ async fn issue_handler(
 
     Ok(warp::reply::json(&Cob::new(issue_id, issue)))
 }
+*/

@@ -1,4 +1,4 @@
-use warp::{self, path, Filter, Rejection, Reply};
+//use warp::{self, path, Filter, Rejection, Reply};
 
 use librad::collaborative_objects::ObjectId;
 use librad::git::Urn;
@@ -23,6 +23,7 @@ impl<T: serde::Serialize> Cob<T> {
     }
 }
 
+/*
 /// `GET /:project/patches`
 pub fn patches_filter(
     ctx: Context,
@@ -58,3 +59,4 @@ async fn patches_handler(ctx: Context, urn: Urn) -> Result<impl Reply, Rejection
 
     Ok(warp::reply::json(&all))
 }
+*/

@@ -20,12 +20,12 @@ use std::time;
 
 use chrono::{DateTime, Utc};
 use ethers_core::utils::hex;
+use hyper::StatusCode;
 use serde_json::json;
 use siwe::Message;
 use tokio::sync::RwLock;
-use warp::hyper::StatusCode;
-use warp::reply::Json;
-use warp::{self, filters::BoxedFilter, host::Authority, path, query, Filter, Rejection, Reply};
+//use warp::reply::Json;
+//use warp::{self, filters::BoxedFilter, host::Authority, path, query, Filter, Rejection, Reply};
 
 use librad::crypto::BoxedSigner;
 use librad::git::identities;
@@ -46,8 +46,8 @@ use crate::project::{Info, PeerInfo};
 
 use commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Committer};
 use error::Error;
-use issues::{issue_filter, issues_filter};
-use patches::patches_filter;
+//use issues::{issue_filter, issues_filter};
+//use patches::patches_filter;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const POPULATE_FINGERPRINTS_INTERVAL: time::Duration = time::Duration::from_secs(20);
@@ -232,6 +232,9 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
     // Cleanup sessions
     tokio::spawn(cleanup_sessions_job(ctx.clone(), CLEANUP_SESSIONS_INTERVAL));
 
+    Ok(())
+
+    /*
     // Setup routing.
     let v1 = warp::path("v1");
     let peer = path("peer")
@@ -275,6 +278,7 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
         server.run(options.listen).await;
     }
     Ok(())
+    */
 }
 
 async fn cleanup_sessions_job(ctx: Context, interval: time::Duration) {
@@ -303,6 +307,7 @@ async fn populate_fingerprints_job(ctx: Context, interval: time::Duration) {
     }
 }
 
+/*
 async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible> {
     let (status, msg) = if err.is_not_found() {
         (StatusCode::NOT_FOUND, None)
@@ -340,7 +345,9 @@ async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible>
         .status(status)
         .body(body.to_string()))
 }
+*/
 
+/*
 fn session_filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
     session_create_filter(ctx.clone())
         .or(session_signin_filter(ctx.clone()))
@@ -985,6 +992,7 @@ async fn delegates_projects_handler(ctx: Context, delegate: Urn) -> Result<impl 
 
     Ok(warp::reply::json(&projects))
 }
+*/
 
 async fn browse<T, F>(reference: Reference<Single>, paths: Paths, callback: F) -> Result<T, Error>
 where
