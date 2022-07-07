@@ -12,7 +12,6 @@ deadpool = "0.7.0"
 librad = { version = "0.1" }
 lnk-identities = { version = "0" }
 shared = { path = "../shared", default-features = false }
-warp = { version = "0.3.1", features = ["tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_urlencoded = { version = "0.7.0" }
@@ -31,6 +30,10 @@ async-trait = "0.1"
 ethers-core = "0.6.3"
 fastrand = "1.7.0"
 chrono = { version = "0.4.19", features = ["serde"] }
+axum = { version = "0.5.3", default-features = false, features = ["json", "headers", "query"] }
+axum-server = { version = "0.3", default-features = false, features = ["tls-rustls"] }
+hyper = { version ="0.14.17", default-features = false, features = ["server"] }
+tower-http = { version = "0.3.0", default-features = false, features = ["trace", "cors"] }
 
 [features]
 gcp = ["shared/gcp"]

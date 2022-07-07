@@ -1,4 +1,9 @@
 #![allow(clippy::large_enum_variant)]
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::Json;
+use serde_json::json;
+
 use radicle_source::surf;
 
 /// Errors that may occur when interacting with [`librad::net::peer::Peer`].
@@ -101,4 +106,30 @@ pub enum Error {
     Common(#[from] anyhow::Error),
 }
 
-impl warp::reject::Reject for Error {}
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        let (status, msg) = match &self {
+            Error::NotFound => (StatusCode::NOT_FOUND, None),
+            Error::NoHead(msg) => (StatusCode::NOT_FOUND, Some(msg.to_string())),
+            Error::Auth(msg) => (StatusCode::BAD_REQUEST, Some(msg.to_string())),
+            Error::SiweParse(msg) => (StatusCode::BAD_REQUEST, Some(msg.to_string())),
+            Error::SiweVerification(msg) => (StatusCode::BAD_REQUEST, Some(msg.to_string())),
+            Error::Git(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Some(e.message().to_owned()),
+            ),
+            _ => {
+                tracing::error!("Error: {:?}", &self);
+
+                (StatusCode::INTERNAL_SERVER_ERROR, None)
+            }
+        };
+
+        let body = Json(json!({
+            "error": msg.or_else(|| status.canonical_reason().map(|r| r.to_string())),
+            "code": status.as_u16()
+        }));
+
+        (status, body).into_response()
+    }
+}
