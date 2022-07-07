@@ -31,7 +31,7 @@ tag = "cycle/2022-06-21"
 
 [patch.crates-io.radicle-common]
 git = "https://github.com/radicle-dev/radicle-cli"
-rev = "bda4238767567c85ab935a0185f5f332be6ed5dd"
+rev = "2d362afef6c1b74610d61e34bd0c9a314d542b5a"
 
 [patch.crates-io.automerge]
 git = "https://github.com/automerge/automerge-rs"

@@ -4628,7 +4628,7 @@ dependencies = [
 [[package]]
 name = "radicle-common"
 version = "0.1.0"
-source = "git+https://github.com/radicle-dev/radicle-cli?rev=bda4238767567c85ab935a0185f5f332be6ed5dd#bda4238767567c85ab935a0185f5f332be6ed5dd"
+source = "git+https://github.com/radicle-dev/radicle-cli?rev=2d362afef6c1b74610d61e34bd0c9a314d542b5a#2d362afef6c1b74610d61e34bd0c9a314d542b5a"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4708,7 +4708,7 @@ dependencies = [
  "hex",
  "http",
  "librad",
- "radicle-source",
+ "radicle-source 0.3.0",
  "sha2 0.9.9",
  "shared",
  "thiserror",
@@ -4734,8 +4734,8 @@ dependencies = [
  "librad",
  "lnk-identities",
  "radicle-common",
- "radicle-source",
- "radicle-surf",
+ "radicle-source 0.4.0",
+ "radicle-surf 0.8.0",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -4795,7 +4795,23 @@ dependencies = [
  "lazy_static",
  "log",
  "nonempty 0.6.0",
- "radicle-surf",
+ "radicle-surf 0.7.0",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "radicle-source"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "577565375e3fd91fce9932f0bad9f52b22b772b0a14825168a7ee2c496144b71"
+dependencies = [
+ "base64 0.13.0",
+ "git2",
+ "lazy_static",
+ "log",
+ "nonempty 0.6.0",
+ "radicle-surf 0.8.0",
  "serde",
  "syntect",
  "thiserror",
@@ -4811,6 +4827,24 @@ name = "radicle-surf"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1516a996d3e9254cace5331556ee5b340f921dc3f354b1f72352dc0542a74bee"
+dependencies = [
+ "anyhow",
+ "either",
+ "flate2",
+ "git2",
+ "nom 6.1.2",
+ "nonempty 0.5.0",
+ "regex",
+ "serde",
+ "tar",
+ "thiserror",
+]
+
+[[package]]
+name = "radicle-surf"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d993c454d89baf57b567786151b8a1cbeac017ae0c2145dd2ceb85450150e7cd"
 dependencies = [
  "anyhow",
  "either",

@@ -47,7 +47,7 @@ use crate::project::{Info, PeerInfo};
 use commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Committer};
 use error::Error;
 use issues::{issue_filter, issues_filter};
-use patches::patches_filter;
+use patches::{patch_filter, patches_filter};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const POPULATE_FINGERPRINTS_INTERVAL: time::Duration = time::Duration::from_secs(20);
@@ -361,6 +361,7 @@ fn project_filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
         .or(blob_filter(ctx.clone()))
         .or(readme_filter(ctx.clone()))
         .or(patches_filter(ctx.clone()))
+        .or(patch_filter(ctx.clone()))
         .or(issue_filter(ctx.clone()))
         .or(issues_filter(ctx))
         .boxed()
@@ -1081,7 +1082,7 @@ fn get_head_commit(
     Ok(commit)
 }
 
-fn remote_branch(branch_name: &str, peer_id: &PeerId) -> git::Branch {
+pub fn remote_branch(branch_name: &str, peer_id: &PeerId) -> git::Branch {
     // NOTE<sebastinez>: We should be able to pass simply a branch name without heads/ and be able to query that later.
     // Needs work on radicle_surf I assume.
     git::Branch::remote(
