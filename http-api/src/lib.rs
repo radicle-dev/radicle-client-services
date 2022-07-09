@@ -362,46 +362,6 @@ async fn populate_fingerprints_job(ctx: Context, interval: time::Duration) {
 }
 
 /*
-async fn recover(err: Rejection) -> Result<impl Reply, std::convert::Infallible> {
-    let (status, msg) = if err.is_not_found() {
-        (StatusCode::NOT_FOUND, None)
-    } else if let Some(Error::NotFound) = err.find::<Error>() {
-        (StatusCode::NOT_FOUND, None)
-    } else if let Some(Error::NoHead(msg)) = err.find::<Error>() {
-        (StatusCode::NOT_FOUND, Some(msg.to_string()))
-    } else if let Some(Error::Auth(msg)) = err.find::<Error>() {
-        (StatusCode::BAD_REQUEST, Some(msg.to_string()))
-    } else if let Some(Error::SiweParse(e)) = err.find::<Error>() {
-        (StatusCode::BAD_REQUEST, Some(e.to_string()))
-    } else if let Some(Error::SiweVerification(e)) = err.find::<Error>() {
-        (StatusCode::BAD_REQUEST, Some(e.to_string()))
-    } else if let Some(err) = err.find::<warp::filters::body::BodyDeserializeError>() {
-        (StatusCode::BAD_REQUEST, Some(err.to_string()))
-    } else if let Some(Error::Git(e)) = err.find::<Error>() {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Some(e.message().to_owned()),
-        )
-    } else {
-        // Log the non-standard errors.
-        tracing::error!("Error: {:?}", err);
-
-        (StatusCode::INTERNAL_SERVER_ERROR, None)
-    };
-    let body = json!({
-        "error": msg.or_else(|| status.canonical_reason().map(|r| r.to_string())),
-        "code": status.as_u16()
-    });
-
-    Ok(warp::http::Response::builder()
-        .header("Content-Type", "application/json")
-        .header("Access-Control-Allow-Origin", "*")
-        .status(status)
-        .body(body.to_string()))
-}
-*/
-
-/*
 fn session_filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
     session_create_filter(ctx.clone())
         .or(session_signin_filter(ctx.clone()))
