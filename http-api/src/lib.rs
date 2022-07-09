@@ -17,15 +17,34 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time;
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use ethers_core::utils::hex;
-use hyper::StatusCode;
-use serde_json::json;
+use hyper::{
+    http::{Request, Response},
+    Body, StatusCode,
+};
 use siwe::Message;
 use tokio::sync::RwLock;
+use tracing::Span;
 //use warp::reply::Json;
 //use warp::{self, filters::BoxedFilter, host::Authority, path, query, Filter, Rejection, Reply};
+
+use axum::{
+    body::BoxBody,
+    http::{
+        header::{AUTHORIZATION, CONTENT_TYPE},
+        Method,
+    },
+    response::{IntoResponse, Json},
+    routing::get,
+    Extension, Router,
+};
+use axum_server::tls_rustls::RustlsConfig;
+use serde_json::{json, Value};
+use tower_http::cors::{self, CorsLayer};
+use tower_http::trace::TraceLayer;
 
 use librad::crypto::BoxedSigner;
 use librad::git::identities;
@@ -231,6 +250,41 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
     ));
     // Cleanup sessions
     tokio::spawn(cleanup_sessions_job(ctx.clone(), CLEANUP_SESSIONS_INTERVAL));
+
+    let app = Router::new()
+        .route("/", get(root_handler))
+        .layer(
+            TraceLayer::new_for_http()
+                .on_request(|request: &Request<Body>, _span: &Span| {
+                    tracing::info!("{} {}", request.method(), request.uri().path())
+                })
+                .on_response(
+                    |response: &Response<BoxBody>, latency: Duration, _span: &Span| {
+                        tracing::info!("latency={:?}", latency)
+                    },
+                ),
+        )
+        .layer(Extension(peer_id))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(cors::Any)
+                .allow_methods([Method::GET, Method::POST, Method::PUT])
+                .allow_headers([CONTENT_TYPE, AUTHORIZATION]),
+        );
+
+    if let (Some(cert), Some(key)) = (options.tls_cert, options.tls_key) {
+        let config = RustlsConfig::from_pem_file(cert, key).await.unwrap();
+
+        axum_server::bind_rustls(options.listen, config)
+            .serve(app.into_make_service())
+            .await
+            .unwrap();
+    } else {
+        axum::Server::bind(&options.listen)
+            .serve(app.into_make_service())
+            .await
+            .unwrap();
+    }
 
     Ok(())
 
@@ -522,8 +576,9 @@ fn session_get_filter(
         .and(path::end())
         .and_then(session_get_handler)
 }
+*/
 
-async fn root_handler(peer_id: PeerId) -> Result<impl Reply, Rejection> {
+async fn root_handler(Extension(peer_id): Extension<PeerId>) -> Json<Value> {
     let response = json!({
         "message": "Welcome!",
         "service": "radicle-http-api",
@@ -548,9 +603,11 @@ async fn root_handler(peer_id: PeerId) -> Result<impl Reply, Rejection> {
             }
         ]
     });
-    Ok(warp::reply::json(&response))
+
+    Json(response)
 }
 
+/*
 /// Return the peer id for the node identity.
 /// `GET /v1/peer`
 async fn peer_handler(peer_id: PeerId) -> Result<impl warp::Reply, warp::Rejection> {

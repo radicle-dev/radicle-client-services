@@ -32,7 +32,9 @@ ethers-core = "0.6.3"
 fastrand = "1.7.0"
 chrono = { version = "0.4.19", features = ["serde"] }
 axum = { version = "0.5.3", features = [ "headers" ] }
+axum-server = { version = "0.3", features = ["tls-rustls"] }
 hyper = { version ="0.14.17", features = ["server"] }
+tower-http = { version = "0.3.0", features = ["trace", "cors"] }
 
 [features]
 gcp = ["shared/gcp"]

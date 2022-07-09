@@ -411,6 +411,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "axum-server"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9cfd9dbe28ebde5c0460067ea27c6f3b1d514b699c4e0a5aab0fb63e452a8a8"
+dependencies = [
+ "arc-swap",
+ "bytes 1.1.0",
+ "futures-util",
+ "http",
+ "http-body",
+ "hyper",
+ "pin-project-lite",
+ "rustls 0.20.6",
+ "rustls-pemfile 0.2.1",
+ "tokio",
+ "tokio-rustls 0.23.4",
+ "tower-service",
+]
+
+[[package]]
 name = "backoff"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4784,6 +4804,7 @@ dependencies = [
  "argh",
  "async-trait",
  "axum",
+ "axum-server",
  "chrono",
  "deadpool",
  "either",
@@ -4803,6 +4824,7 @@ dependencies = [
  "siwe",
  "thiserror",
  "tokio",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
 ]
@@ -5105,7 +5127,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "rustls 0.20.6",
- "rustls-pemfile",
+ "rustls-pemfile 0.3.0",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -5242,6 +5264,15 @@ dependencies = [
  "ring",
  "sct 0.7.0",
  "webpki 0.22.0",
+]
+
+[[package]]
+name = "rustls-pemfile"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5eebeaeb360c87bfb72e84abdb3447159c0eaececf1bef2aecd65a8be949d1c9"
+dependencies = [
+ "base64 0.13.0",
 ]
 
 [[package]]
@@ -6156,6 +6187,7 @@ dependencies = [
  "tower",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
