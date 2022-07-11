@@ -1,4 +1,5 @@
 use crate::auth::{AuthRequest, AuthState, Session};
+use crate::custom_axum::Path;
 use crate::Context;
 use crate::Error;
 
@@ -10,7 +11,6 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use axum::{
-    extract::Path,
     response::IntoResponse,
     routing::{get, post, put},
     Extension, Json, Router,

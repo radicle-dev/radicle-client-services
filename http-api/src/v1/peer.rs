@@ -1,8 +1,9 @@
 use crate::Context;
 
 use axum::{response::IntoResponse, routing::get, Extension, Json, Router};
-use librad::PeerId;
 use serde_json::json;
+
+use librad::PeerId;
 
 pub fn router(ctx: Context) -> Router {
     let peer_id = ctx.peer_id;
