@@ -5,6 +5,7 @@ mod error;
 mod issues;
 mod patches;
 mod project;
+mod v1;
 
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -71,7 +72,6 @@ use error::Error;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const POPULATE_FINGERPRINTS_INTERVAL: time::Duration = time::Duration::from_secs(20);
 pub const CLEANUP_SESSIONS_INTERVAL: time::Duration = time::Duration::from_secs(60);
-pub const UNAUTHORIZED_SESSIONS_EXPIRATION: time::Duration = time::Duration::from_secs(60);
 pub const STORAGE_POOL_SIZE: usize = 3;
 
 #[derive(Debug, Clone)]
@@ -251,8 +251,19 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
     // Cleanup sessions
     tokio::spawn(cleanup_sessions_job(ctx.clone(), CLEANUP_SESSIONS_INTERVAL));
 
-    let app = Router::new()
+    let root_router = Router::new()
         .route("/", get(root_handler))
+        .layer(Extension(peer_id));
+
+    let app = Router::new()
+        .merge(root_router)
+        .merge(v1::router(ctx.clone()))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(cors::Any)
+                .allow_methods([Method::GET, Method::POST, Method::PUT])
+                .allow_headers([CONTENT_TYPE, AUTHORIZATION]),
+        )
         .layer(
             TraceLayer::new_for_http()
                 .on_request(|request: &Request<Body>, _span: &Span| {
@@ -263,13 +274,6 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
                         tracing::info!("latency={:?}", latency)
                     },
                 ),
-        )
-        .layer(Extension(peer_id))
-        .layer(
-            CorsLayer::new()
-                .allow_origin(cors::Any)
-                .allow_methods([Method::GET, Method::POST, Method::PUT])
-                .allow_headers([CONTENT_TYPE, AUTHORIZATION]),
         );
 
     if let (Some(cert), Some(key)) = (options.tls_cert, options.tls_key) {
@@ -362,13 +366,6 @@ async fn populate_fingerprints_job(ctx: Context, interval: time::Duration) {
 }
 
 /*
-fn session_filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
-    session_create_filter(ctx.clone())
-        .or(session_signin_filter(ctx.clone()))
-        .or(session_get_filter(ctx))
-        .boxed()
-}
-
 /// Combination of all project filters.
 fn project_filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
     project_root_filter(ctx.clone())
@@ -503,42 +500,9 @@ fn tree_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Reject
         .and(path::tail())
         .and_then(tree_handler)
 }
-
-/// `POST /sessions`
-fn session_create_filter(
-    ctx: Context,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::post()
-        .map(move || ctx.clone())
-        .and(path::end())
-        .and_then(session_create_handler)
-}
-
-/// `PUT /sessions/:session-id`
-fn session_signin_filter(
-    ctx: Context,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::put()
-        .map(move || ctx.clone())
-        .and(path::param::<String>())
-        .and(path::end())
-        .and(warp::body::json())
-        .and_then(session_signin_handler)
-}
-
-/// `GET /sessions/:session-id`
-fn session_get_filter(
-    ctx: Context,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::get()
-        .map(move || ctx.clone())
-        .and(path::param::<String>())
-        .and(path::end())
-        .and_then(session_get_handler)
-}
 */
 
-async fn root_handler(Extension(peer_id): Extension<PeerId>) -> Json<Value> {
+async fn root_handler(Extension(peer_id): Extension<PeerId>) -> impl IntoResponse {
     let response = json!({
         "message": "Welcome!",
         "service": "radicle-http-api",
@@ -568,91 +532,6 @@ async fn root_handler(Extension(peer_id): Extension<PeerId>) -> Json<Value> {
 }
 
 /*
-/// Return the peer id for the node identity.
-/// `GET /v1/peer`
-async fn peer_handler(peer_id: PeerId) -> Result<impl warp::Reply, warp::Rejection> {
-    let response = json!({
-        "id": peer_id.to_string(),
-    });
-    Ok(warp::reply::json(&response))
-}
-
-/// `GET /v1/sessions/:session-id`
-async fn session_get_handler(
-    ctx: Context,
-    id: String,
-) -> Result<impl warp::Reply, warp::Rejection> {
-    let sessions = ctx.sessions.read().await;
-    let session = sessions.get(&id).ok_or(Error::NotFound)?;
-
-    match session {
-        AuthState::Authorized(session) => {
-            Ok(warp::reply::json(&json!({ "id": id, "session": session })))
-        }
-        AuthState::Unauthorized {
-            nonce,
-            expiration_time,
-        } => Ok(warp::reply::json(
-            &json!({ "id": id, "nonce": nonce, "expirationTime": expiration_time }),
-        )),
-    }
-}
-
-/// `POST /v1/sessions`
-async fn session_create_handler(ctx: Context) -> Result<impl warp::Reply, warp::Rejection> {
-    let expiration_time =
-        Utc::now() + chrono::Duration::from_std(UNAUTHORIZED_SESSIONS_EXPIRATION).unwrap();
-    let mut sessions = ctx.sessions.write().await;
-    let (session_id, nonce) = create_session(&mut sessions, expiration_time);
-
-    let response = json!({ "id": session_id, "nonce": nonce });
-
-    Ok(warp::reply::json(&response))
-}
-
-/// `PUT /v1/sessions/:session_id`
-async fn session_signin_handler(
-    ctx: Context,
-    id: String,
-    request: AuthRequest,
-) -> Result<impl warp::Reply, warp::Rejection> {
-    // Get unauthenticated session data, return early if not found
-    let mut sessions = ctx.sessions.write().await;
-    let session = sessions.get(&id).ok_or(Error::NotFound)?;
-
-    if let AuthState::Unauthorized { nonce, .. } = session {
-        let message = Message::from_str(request.message.as_str()).map_err(Error::from)?;
-
-        let host = env::var("RADICLE_DOMAIN").map_err(Error::from)?;
-
-        // Validate nonce
-        if *nonce != message.nonce {
-            return Err(Error::Auth("Invalid nonce").into());
-        }
-
-        // Verify that domain is the correct one
-        let authority = Authority::from_str(&host).map_err(|_| Error::Auth("Invalid host"))?;
-        if authority != message.domain {
-            return Err(Error::Auth("Invalid domain").into());
-        }
-
-        // Verifies the following:
-        // - AuthRequest sig matches the address passed in the AuthRequest message.
-        // - expirationTime is not in the past.
-        // - notBefore time is in the future.
-        message
-            .verify(request.signature.into())
-            .map_err(Error::from)?;
-
-        let session: Session = message.try_into()?;
-        sessions.insert(id.clone(), AuthState::Authorized(session.clone()));
-
-        return Ok(warp::reply::json(&json!({ "id": id, "session": session })));
-    }
-
-    Err(Error::Auth("Session already authorized").into())
-}
-
 async fn blob_handler(
     ctx: Context,
     project: Urn,
@@ -1037,26 +916,6 @@ where
     let mut browser = git::Browser::new_with_namespace(&repo, &namespace, revision)?;
 
     Ok(callback(&mut browser)?)
-}
-
-fn create_session(
-    map: &mut HashMap<String, AuthState>,
-    expiration_time: DateTime<Utc>,
-) -> (String, String) {
-    let nonce = siwe::nonce::generate_nonce();
-
-    // We generate a value from the RNG for the session id
-    let rng = fastrand::Rng::new();
-    let id = hex::encode(repeat_with(|| rng.u8(..)).take(32).collect::<Vec<u8>>());
-
-    let auth_state = AuthState::Unauthorized {
-        nonce: nonce.clone(),
-        expiration_time,
-    };
-
-    map.insert(id.clone(), auth_state);
-
-    (id, nonce)
 }
 
 fn get_head_commit(
