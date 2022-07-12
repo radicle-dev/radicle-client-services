@@ -164,10 +164,11 @@ fn readme_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Reje
 pub fn router(ctx: Context) -> Router {
     Router::new()
         .route("/projects", get(project_root_handler))
-        .route("/projects/:project/commits/:sha", get(commit_handler))
+        .route("/projects/:project", get(project_alias_or_urn_handler))
+        //.route("/projects/:alias", get(project_alias_handler))
+        //.route("/projects/:project", get(project_urn_handler))
         .route("/projects/:project/commits", get(history_handler))
-        .route("/projects/:project", get(project_urn_handler))
-        .route("/projects/:alias", get(project_alias_handler))
+        .route("/projects/:project/commits/:sha", get(commit_handler))
         .route("/projects/:project/tree/:prefix/*path", get(tree_handler))
         .route("/projects/:project/remotes", get(remotes_handler))
         .route("/projects/:project/remotes/:peer", get(remote_handler))
@@ -351,11 +352,23 @@ async fn history_handler(
 }
 
 /// TODO: Add description.
-/// `GET /projects/:project-urn`
-async fn project_urn_handler(
+/// `GET /projects/{:project-urn,:project-alias}`
+async fn project_alias_or_urn_handler(
     Extension(ctx): Extension<Context>,
-    Path(urn): Path<Urn>,
-) -> Result<Response, Error> {
+    Path(urn_or_alias): Path<String>,
+) -> impl IntoResponse {
+    let urn = Urn::from_str(&urn_or_alias);
+    if let Ok(urn) = urn {
+        project_urn_handler(ctx, urn).await
+    } else {
+        let alias = urn_or_alias;
+        project_alias_handler(ctx, alias).await
+    }
+}
+
+/// TODO: Add description.
+/// `GET /projects/:project-urn`
+async fn project_urn_handler(ctx: Context, urn: Urn) -> Result<Response, Error> {
     let info = ctx.project_info(urn).await?;
 
     Ok::<_, Error>(Json(info).into_response())
@@ -363,10 +376,7 @@ async fn project_urn_handler(
 
 /// TODO: Add description.
 /// `GET /projects/:project-alias`
-async fn project_alias_handler(
-    Extension(ctx): Extension<Context>,
-    Path(alias): Path<String>,
-) -> Result<Response, Error> {
+async fn project_alias_handler(ctx: Context, alias: String) -> Result<Response, Error> {
     let mut aliases = ctx.aliases.write().await;
     if !aliases.contains_key(&alias) {
         // If the alias does not exist, rebuild the cache.
@@ -377,7 +387,7 @@ async fn project_alias_handler(
         .cloned()
         .ok_or_else(|| Error::NotFound)?;
 
-    project_urn_handler(Extension(ctx.clone()), Path(urn)).await
+    project_urn_handler(ctx.clone(), urn).await
 }
 
 /// Fetch a [`radicle_source::Tree`].
