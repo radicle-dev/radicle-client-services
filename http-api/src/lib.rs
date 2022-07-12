@@ -11,9 +11,7 @@ mod v1;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto as _};
-use std::iter::repeat_with;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{self, Duration};
 use std::{env, net};
@@ -25,12 +23,10 @@ use axum::response::{IntoResponse, Json};
 use axum::routing::get;
 use axum::{Extension, Router};
 use axum_server::tls_rustls::RustlsConfig;
-use chrono::{DateTime, Utc};
-use ethers_core::utils::hex;
+use chrono::Utc;
 use hyper::http::{Request, Response};
-use hyper::{Body, StatusCode};
-use serde_json::{json, Value};
-use siwe::Message;
+use hyper::Body;
+use serde_json::json;
 use tokio::sync::RwLock;
 use tower_http::cors::{self, CorsLayer};
 use tower_http::trace::TraceLayer;
@@ -46,16 +42,12 @@ use librad::paths::Paths;
 use librad::PeerId;
 
 use radicle_common::{cobs, keys, person};
-use radicle_source::surf::file_system::Path;
 use radicle_source::surf::vcs::git;
 
-use crate::auth::{AuthRequest, AuthState, Session};
+use crate::auth::AuthState;
 use crate::project::{Info, PeerInfo};
 
-use commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Committer};
 use error::Error;
-//use issues::{issue_filter, issues_filter};
-//use patches::patches_filter;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const POPULATE_FINGERPRINTS_INTERVAL: time::Duration = time::Duration::from_secs(20);
@@ -258,7 +250,7 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
                     tracing::info!("{} {}", request.method(), request.uri().path())
                 })
                 .on_response(
-                    |response: &Response<BoxBody>, latency: Duration, _span: &Span| {
+                    |_response: &Response<BoxBody>, latency: Duration, _span: &Span| {
                         tracing::info!("latency={:?}", latency)
                     },
                 ),
@@ -279,52 +271,6 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
     }
 
     Ok(())
-
-    /*
-    // Setup routing.
-    let v1 = warp::path("v1");
-    let peer = path("peer")
-        .and(warp::get().and(path::end()))
-        .and_then(move || peer_handler(peer_id));
-    let projects = path("projects").and(project_filters(ctx.clone()));
-    let sessions = path("sessions").and(session_filters(ctx.clone()));
-    let delegates = path("delegates").and(
-        warp::get()
-            .map(move || ctx.clone())
-            .and(path::param::<Urn>())
-            .and(path("projects"))
-            .and(path::end())
-            .and_then(delegates_projects_handler),
-    );
-    let routes = path::end()
-        .and_then(move || root_handler(peer_id))
-        .or(v1.and(peer))
-        .or(v1.and(projects))
-        .or(v1.and(delegates))
-        .or(v1.and(sessions))
-        .recover(recover)
-        .with(
-            warp::cors()
-                .allow_any_origin()
-                .allow_methods(["GET", "POST", "PUT"])
-                .allow_headers(["content-type", "authorization"]),
-        )
-        .with(warp::log("http::api"));
-
-    let server = warp::serve(routes);
-
-    if let (Some(cert), Some(key)) = (options.tls_cert, options.tls_key) {
-        server
-            .tls()
-            .cert_path(cert)
-            .key_path(key)
-            .run(options.listen)
-            .await;
-    } else {
-        server.run(options.listen).await;
-    }
-    Ok(())
-    */
 }
 
 async fn cleanup_sessions_job(ctx: Context, interval: time::Duration) {
@@ -352,143 +298,6 @@ async fn populate_fingerprints_job(ctx: Context, interval: time::Duration) {
         }
     }
 }
-
-/*
-/// Combination of all project filters.
-fn project_filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
-    project_root_filter(ctx.clone())
-        .or(commit_filter(ctx.clone()))
-        .or(history_filter(ctx.clone()))
-        .or(project_urn_filter(ctx.clone()))
-        .or(project_alias_filter(ctx.clone()))
-        .or(tree_filter(ctx.clone()))
-        .or(remotes_filter(ctx.clone()))
-        .or(remote_filter(ctx.clone()))
-        .or(blob_filter(ctx.clone()))
-        .or(readme_filter(ctx.clone()))
-        .or(patches_filter(ctx.clone()))
-        .or(issue_filter(ctx.clone()))
-        .or(issues_filter(ctx))
-        .boxed()
-}
-
-/// `GET /:project/blob/:sha/:path`
-fn blob_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    #[derive(serde::Deserialize)]
-    struct Query {
-        highlight: bool,
-    }
-
-    warp::get()
-        .map(move || ctx.clone())
-        .and(path::param::<Urn>())
-        .and(path("blob"))
-        .and(path::param::<One>())
-        .and(warp::query().map(|q: Query| q.highlight))
-        .and(path::tail())
-        .and_then(blob_handler)
-}
-
-/// `GET /:project/remotes`
-fn remotes_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::get()
-        .map(move || ctx.clone())
-        .and(path::param::<Urn>())
-        .and(path("remotes"))
-        .and(path::end())
-        .and_then(remotes_handler)
-}
-
-/// `GET /:project/remotes/:peer`
-fn remote_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::get()
-        .map(move || ctx.clone())
-        .and(path::param::<Urn>())
-        .and(path("remotes"))
-        .and(path::param::<PeerId>())
-        .and(path::end())
-        .and_then(remote_handler)
-}
-
-/// `GET /:project/commits?from=<sha>`
-fn history_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::get()
-        .map(move || ctx.clone())
-        .and(path::param::<Urn>())
-        .and(path("commits"))
-        .and(query::<CommitsQueryString>())
-        .and(path::end())
-        .and_then(history_handler)
-}
-
-/// `GET /:project/commits/:sha`
-fn commit_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::get()
-        .map(move || ctx.clone())
-        .and(path::param::<Urn>())
-        .and(path("commits"))
-        .and(path::param::<One>())
-        .and(path::end())
-        .and_then(commit_handler)
-}
-
-/// `GET /:project/readme/:sha`
-fn readme_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::get()
-        .map(move || ctx.clone())
-        .and(path::param::<Urn>())
-        .and(path("readme"))
-        .and(path::param::<One>())
-        .and(path::end())
-        .and_then(readme_handler)
-}
-
-/// `GET /`
-fn project_root_filter(
-    ctx: Context,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::get()
-        .map(move || ctx.clone())
-        .and(path::end())
-        .and_then(project_root_handler)
-        .boxed()
-}
-
-/// `GET /:project-urn`
-fn project_urn_filter(
-    ctx: Context,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::get()
-        .map(move || ctx.clone())
-        .and(path::param::<Urn>())
-        .and(path::end())
-        .and_then(project_urn_handler)
-        .boxed()
-}
-
-/// `GET /:project-alias`
-fn project_alias_filter(
-    ctx: Context,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::get()
-        .map(move || ctx.clone())
-        .and(path::param::<String>())
-        .and(path::end())
-        .and_then(project_alias_handler)
-        .boxed()
-}
-
-/// `GET /:project/tree/:prefix`
-fn tree_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::get()
-        .map(move || ctx.clone())
-        .and(path::param::<Urn>())
-        .and(path("tree"))
-        .and(path::param::<One>())
-        .and(path::tail())
-        .and_then(tree_handler)
-}
-*/
 
 async fn root_handler(Extension(peer_id): Extension<PeerId>) -> impl IntoResponse {
     let response = json!({
@@ -519,317 +328,7 @@ async fn root_handler(Extension(peer_id): Extension<PeerId>) -> impl IntoRespons
     Json(response)
 }
 
-/*
-async fn blob_handler(
-    ctx: Context,
-    project: Urn,
-    sha: One,
-    highlight: bool,
-    path: warp::filters::path::Tail,
-) -> Result<impl Reply, Rejection> {
-    let theme = if highlight {
-        Some(ctx.theme.as_str())
-    } else {
-        None
-    };
-    let reference = Reference::head(Namespace::from(project), None, sha);
-    let blob = browse(reference, ctx.paths, |browser| {
-        radicle_source::blob::highlighting::blob::<PeerId>(browser, None, path.as_str(), theme)
-    })
-    .await?;
-
-    Ok(warp::reply::json(&blob))
-}
-
-async fn remotes_handler(ctx: Context, urn: Urn) -> Result<impl Reply, Rejection> {
-    let storage = ctx.storage().await?;
-    let project = identities::project::get(storage.read_only(), &urn)
-        .map_err(Error::Identities)?
-        .ok_or(Error::NotFound)?;
-    let meta: project::Metadata = project.try_into().map_err(Error::Project)?;
-    let response = project::tracked(&meta, storage.read_only())?;
-
-    Ok(warp::reply::json(&response))
-}
-
-async fn remote_handler(
-    ctx: Context,
-    project: Urn,
-    peer_id: PeerId,
-) -> Result<impl Reply, Rejection> {
-    let repo = git2::Repository::open_bare(ctx.paths.git_dir()).map_err(Error::from)?;
-    // This is necessary to get any references to show up in the later calls. Go figure.
-    let _ = repo.references().map_err(Error::from)?;
-
-    let namespace = project.encode_id();
-    let remote = peer_id.default_encoding();
-    let prefix = format!(
-        "refs/namespaces/{}/refs/remotes/{}/heads/",
-        namespace, remote
-    );
-    let glob = format!("{}*", prefix);
-    let refs = repo.references_glob(&glob).unwrap();
-
-    let branches = refs
-        .filter_map(|r| {
-            let reference = r.ok()?;
-            let name = reference.name()?.strip_prefix(&prefix)?;
-            let oid = reference.target()?;
-
-            Some((name.to_string(), oid.to_string()))
-        })
-        .collect::<HashMap<_, _>>();
-
-    let response = json!({ "heads": &branches });
-
-    Ok(warp::reply::json(&response))
-}
-
-async fn history_handler(
-    ctx: Context,
-    project: Urn,
-    qs: CommitsQueryString,
-) -> Result<impl Reply, Rejection> {
-    let CommitsQueryString {
-        since,
-        until,
-        parent,
-        page,
-        per_page,
-        verified,
-    } = qs;
-
-    let (sha, fallback_to_head) = match parent {
-        Some(commit) => (commit, false),
-        None => {
-            let info = ctx.project_info(project.to_owned()).await?;
-
-            if let Some(head) = info.head {
-                (head.to_string(), true)
-            } else {
-                return Err(Error::NoHead("project head is not set").into());
-            }
-        }
-    };
-
-    let reference = Reference::head(
-        Namespace::from(project.to_owned()),
-        None,
-        One::from_str(&sha).map_err(|_| Error::NotFound)?,
-    );
-
-    let mut commits = browse(reference, ctx.paths.to_owned(), |browser| {
-        radicle_source::commits::<PeerId>(browser, None)
-    })
-    .await?;
-
-    // If a pagination is defined, we do not want to paginate the commits, and we return all of them on the first page.
-    let page = page.unwrap_or(0);
-    let per_page = if per_page.is_none() && (since.is_some() || until.is_some()) {
-        commits.headers.len()
-    } else {
-        per_page.unwrap_or(30)
-    };
-
-    let projects = ctx.projects.read().await;
-    let fingerprints = projects.get(&project);
-    let headers = commits
-        .headers
-        .iter()
-        .filter(|q| {
-            if let (Some(since), Some(until)) = (since, until) {
-                q.committer_time.seconds() >= since && q.committer_time.seconds() < until
-            } else if let Some(since) = since {
-                q.committer_time.seconds() >= since
-            } else if let Some(until) = until {
-                q.committer_time.seconds() < until
-            } else {
-                // If neither `since` nor `until` are specified, we include the commit.
-                true
-            }
-        })
-        .skip(page * per_page)
-        .take(per_page)
-        .map(|header| {
-            let committer = if verified.unwrap_or_default() {
-                let fp = ctx.commit_ssh_fingerprint(&header.sha1.to_string())?;
-                if let (Some(fps), Some(fp)) = (fingerprints, fp) {
-                    fps.get(&fp).cloned().map(|peer| Committer { peer })
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            Ok(CommitTeaser {
-                header: header.clone(),
-                context: CommitContext { committer },
-            })
-        })
-        .collect::<Result<Vec<CommitTeaser>, Error>>()?;
-
-    // Since the headers filtering can alter the amount of commits we have to recalculate it here.
-    commits.stats.commits = headers.len();
-
-    let response = json!({
-        "headers": &headers,
-        "stats": &commits.stats,
-    });
-
-    if fallback_to_head {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&response),
-            StatusCode::FOUND,
-        ));
-    }
-
-    Ok(warp::reply::with_status(
-        warp::reply::json(&response),
-        StatusCode::OK,
-    ))
-}
-
-async fn commit_handler(ctx: Context, project: Urn, sha: One) -> Result<impl Reply, Rejection> {
-    let reference = Reference::head(Namespace::from(project.clone()), None, sha.to_owned());
-    let commit = browse(reference, ctx.paths.clone(), |browser| {
-        let oid = browser.oid(&sha)?;
-        radicle_source::commit(browser, oid)
-    })
-    .await?;
-
-    let projects = ctx.projects.read().await;
-    let fingerprints = projects.get(&project);
-    let fp = ctx.commit_ssh_fingerprint(&commit.header.sha1.to_string())?;
-    let committer = if let (Some(fps), Some(fp)) = (fingerprints, fp) {
-        fps.get(&fp).cloned().map(|peer| Committer { peer })
-    } else {
-        None
-    };
-
-    let response = Commit {
-        header: commit.header,
-        diff: commit.diff,
-        stats: commit.stats,
-        branches: commit.branches,
-        context: CommitContext { committer },
-    };
-
-    Ok(warp::reply::json(&response))
-}
-
-async fn readme_handler(ctx: Context, project: Urn, sha: One) -> Result<impl Reply, Rejection> {
-    let reference = Reference::head(Namespace::from(project), None, sha);
-    let paths = &[
-        "README",
-        "README.md",
-        "README.markdown",
-        "README.txt",
-        "README.rst",
-        "Readme.md",
-    ];
-    let blob = browse(reference, ctx.paths, |browser| {
-        for path in paths {
-            if let Ok(blob) =
-                radicle_source::blob::highlighting::blob::<PeerId>(browser, None, path, None)
-            {
-                return Ok(blob);
-            }
-        }
-        Err(radicle_source::Error::PathNotFound(
-            Path::try_from("README").unwrap(),
-        ))
-    })
-    .await?;
-
-    Ok(warp::reply::json(&blob))
-}
-
-/// List all projects
-async fn project_root_handler(ctx: Context) -> Result<Json, Rejection> {
-    let storage = ctx.storage().await?;
-    let repo = git2::Repository::open_bare(&ctx.paths.git_dir()).map_err(Error::from)?;
-    let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
-    let cobs = cobs::Store::new(whoami, &ctx.paths, &storage).map_err(Error::from)?;
-    let issues = cobs.issues();
-    let patches = cobs.patches();
-    let projects = identities::any::list(storage.read_only())
-        .map_err(Error::from)?
-        .filter_map(|res| {
-            res.map(|id| match id {
-                SomeIdentity::Project(project) => {
-                    let meta: project::Metadata = project.try_into().ok()?;
-                    let head =
-                        get_head_commit(&repo, &meta.urn, &meta.default_branch, &meta.delegates)
-                            .map(|h| h.id)
-                            .ok();
-
-                    let issues = issues.count(&meta.urn).map_err(Error::Issues).ok()?;
-                    let patches = patches.count(&meta.urn).map_err(Error::Patches).ok()?;
-
-                    Some(Info {
-                        meta,
-                        head,
-                        issues,
-                        patches,
-                    })
-                }
-                _ => None,
-            })
-            .transpose()
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(Error::from)?;
-
-    Ok(warp::reply::json(&projects))
-}
-
-async fn project_urn_handler(ctx: Context, urn: Urn) -> Result<Json, Rejection> {
-    let info = ctx.project_info(urn).await?;
-
-    Ok(warp::reply::json(&info))
-}
-
-async fn project_alias_handler(ctx: Context, name: String) -> Result<Json, Rejection> {
-    let mut aliases = ctx.aliases.write().await;
-    if !aliases.contains_key(&name) {
-        // If the alias does not exist, rebuild the cache.
-        ctx.populate_aliases(&mut aliases).await?;
-    }
-    let urn = aliases
-        .get(&name)
-        .cloned()
-        .ok_or_else(warp::reject::not_found)?;
-
-    project_urn_handler(ctx.clone(), urn).await
-}
-
-/// Fetch a [`radicle_source::Tree`].
-async fn tree_handler(
-    ctx: Context,
-    project: Urn,
-    sha: One,
-    path: warp::filters::path::Tail,
-) -> Result<impl Reply, Rejection> {
-    let reference = Reference::head(Namespace::from(project), None, sha);
-    let (tree, stats) = browse(reference, ctx.paths, |browser| {
-        Ok((
-            radicle_source::tree::<PeerId>(browser, None, Some(path.as_str().to_owned()))?,
-            browser.get_stats()?,
-        ))
-    })
-    .await?;
-    let response = json!({
-        "path": &tree.path,
-        "entries": &tree.entries,
-        "info": &tree.info,
-        "stats": &stats,
-    });
-
-    Ok(warp::reply::json(&response))
-}
-*/
-
+// TODO: move this fn to /v1/projects.rs
 async fn browse<T, F>(reference: Reference<Single>, paths: Paths, callback: F) -> Result<T, Error>
 where
     F: FnOnce(&mut git::Browser) -> Result<T, radicle_source::Error> + Send,
@@ -937,6 +436,7 @@ mod test {
     #[test]
     fn test_remote_head() {
         use std::convert::TryFrom;
+        use std::str::FromStr;
 
         let branch = String::from("master");
         let branch_ref = One::try_from(branch.as_str()).unwrap();
