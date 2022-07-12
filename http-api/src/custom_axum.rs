@@ -1,10 +1,11 @@
-use axum::{
-    async_trait,
-    extract::{path::ErrorKind, rejection::PathRejection, FromRequest, RequestParts},
-    http::StatusCode,
-    Json,
-};
-use serde::{de::DeserializeOwned, Serialize};
+use axum::extract::path::ErrorKind;
+use axum::extract::rejection::PathRejection;
+use axum::extract::{FromRequest, RequestParts};
+use axum::http::StatusCode;
+use axum::{async_trait, Json};
+
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 pub struct Path<T>(pub T);
 

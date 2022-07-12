@@ -10,53 +10,40 @@ mod v1;
 
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::convert::TryFrom;
-use std::convert::TryInto as _;
-use std::env;
+use std::convert::{TryFrom, TryInto as _};
 use std::iter::repeat_with;
-use std::net;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time;
-use std::time::Duration;
+use std::time::{self, Duration};
+use std::{env, net};
 
+use axum::body::BoxBody;
+use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
+use axum::http::Method;
+use axum::response::{IntoResponse, Json};
+use axum::routing::get;
+use axum::{Extension, Router};
+use axum_server::tls_rustls::RustlsConfig;
 use chrono::{DateTime, Utc};
 use ethers_core::utils::hex;
-use hyper::{
-    http::{Request, Response},
-    Body, StatusCode,
-};
+use hyper::http::{Request, Response};
+use hyper::{Body, StatusCode};
+use serde_json::{json, Value};
 use siwe::Message;
 use tokio::sync::RwLock;
-use tracing::Span;
-//use warp::reply::Json;
-//use warp::{self, filters::BoxedFilter, host::Authority, path, query, Filter, Rejection, Reply};
-
-use axum::{
-    body::BoxBody,
-    http::{
-        header::{AUTHORIZATION, CONTENT_TYPE},
-        Method,
-    },
-    response::{IntoResponse, Json},
-    routing::get,
-    Extension, Router,
-};
-use axum_server::tls_rustls::RustlsConfig;
-use serde_json::{json, Value};
 use tower_http::cors::{self, CorsLayer};
 use tower_http::trace::TraceLayer;
+use tracing::Span;
 
 use librad::crypto::BoxedSigner;
-use librad::git::identities;
-use librad::git::identities::SomeIdentity;
-use librad::git::storage;
+use librad::git::identities::{self, SomeIdentity};
 use librad::git::storage::pool::{InitError, Initialised};
-use librad::git::storage::Pool;
-use librad::git::storage::Storage;
-use librad::git::types::{One, Reference, Single};
-use librad::{git::types::Namespace, git::Urn, paths::Paths, PeerId};
+use librad::git::storage::{self, Pool, Storage};
+use librad::git::types::{Namespace, One, Reference, Single};
+use librad::git::Urn;
+use librad::paths::Paths;
+use librad::PeerId;
 
 use radicle_common::{cobs, keys, person};
 use radicle_source::surf::file_system::Path;

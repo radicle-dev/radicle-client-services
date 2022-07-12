@@ -1,10 +1,10 @@
-use crate::Context;
-
-use axum::Router;
-
 mod delegates;
 mod peer;
 mod sessions;
+
+use axum::Router;
+
+use crate::Context;
 
 pub fn router(ctx: Context) -> Router {
     let routes = Router::new()

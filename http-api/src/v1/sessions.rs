@@ -1,8 +1,3 @@
-use crate::auth::{AuthRequest, AuthState, Session};
-use crate::custom_axum::Path;
-use crate::Context;
-use crate::Error;
-
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::env;
@@ -10,16 +5,18 @@ use std::iter::repeat_with;
 use std::str::FromStr;
 use std::time::Duration;
 
-use axum::{
-    response::IntoResponse,
-    routing::{get, post, put},
-    Extension, Json, Router,
-};
+use axum::response::IntoResponse;
+use axum::routing::{get, post};
+use axum::{Extension, Json, Router};
 use chrono::{DateTime, Utc};
 use ethers_core::utils::hex;
 use hyper::http::uri::Authority;
 use serde_json::json;
 use siwe::Message;
+
+use crate::auth::{AuthRequest, AuthState, Session};
+use crate::custom_axum::Path;
+use crate::{Context, Error};
 
 pub const UNAUTHORIZED_SESSIONS_EXPIRATION: Duration = Duration::from_secs(60);
 

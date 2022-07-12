@@ -1,19 +1,17 @@
 use std::convert::TryInto;
 
-use crate::{
-    custom_axum::Path,
-    get_head_commit,
-    project::{self, Info},
-    Context, Error,
-};
+use axum::response::IntoResponse;
+use axum::routing::get;
+use axum::{Extension, Json, Router};
 
-use axum::{response::IntoResponse, routing::get, Extension, Json, Router};
+use librad::git::identities::{self, SomeIdentity};
+use librad::git::Urn;
 
-use librad::git::{
-    identities::{self, SomeIdentity},
-    Urn,
-};
 use radicle_common::{cobs, person};
+
+use crate::custom_axum::Path;
+use crate::project::{self, Info};
+use crate::{get_head_commit, Context, Error};
 
 pub fn router(ctx: Context) -> Router {
     Router::new()
