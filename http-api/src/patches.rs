@@ -24,7 +24,8 @@ impl<T: serde::Serialize> Cob<T> {
 }
 
 /*
-/// `GET /:project/patches`
+/// Get project patches list.
+/// `GET /projects/:project/patches`
 pub fn patches_filter(
     ctx: Context,
 ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {

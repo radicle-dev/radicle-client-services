@@ -217,7 +217,7 @@ async fn project_root_handler(Extension(ctx): Extension<Context>) -> impl IntoRe
     Ok::<_, Error>(Json(projects))
 }
 
-/// TODO: Add description.
+/// Get project commit.
 /// `GET /projects/:project/commits/:sha`
 async fn commit_handler(
     Extension(ctx): Extension<Context>,
@@ -250,7 +250,7 @@ async fn commit_handler(
     Ok::<_, Error>(Json(json!(response)))
 }
 
-/// TODO: Add description.
+/// Get project commit range.
 /// `GET /projects/:project/commits?from=<sha>`
 async fn history_handler(
     Extension(ctx): Extension<Context>,
@@ -351,7 +351,7 @@ async fn history_handler(
     Ok::<_, Error>((StatusCode::OK, Json(response)))
 }
 
-/// TODO: Add description.
+/// Get project metadata.
 /// `GET /projects/{:project-urn,:project-alias}`
 async fn project_alias_or_urn_handler(
     Extension(ctx): Extension<Context>,
@@ -390,7 +390,7 @@ async fn project_alias_handler(ctx: Context, alias: String) -> Result<Response, 
     project_urn_handler(ctx.clone(), urn).await
 }
 
-/// Fetch a [`radicle_source::Tree`].
+/// Get project source tree.
 /// `GET /projects/:project/tree/:prefix/*path`
 async fn tree_handler(
     Extension(ctx): Extension<Context>,
@@ -414,7 +414,7 @@ async fn tree_handler(
     Ok::<_, Error>(Json(response))
 }
 
-/// TODO: Add description.
+/// Get all project remotes.
 /// `GET /projects/:project/remotes`
 async fn remotes_handler(
     Extension(ctx): Extension<Context>,
@@ -430,7 +430,7 @@ async fn remotes_handler(
     Ok::<_, Error>(Json(response))
 }
 
-/// TODO: Add description.
+/// Get project remote.
 /// `GET /projects/:project/remotes/:peer`
 async fn remote_handler(
     Extension(ctx): Extension<Context>,
@@ -464,7 +464,7 @@ async fn remote_handler(
     Ok::<_, Error>(Json(response))
 }
 
-/// TODO: Add description.
+/// Get project source file.
 /// `GET /projects/:project/blob/:sha/*path?highlight=<bool>`
 async fn blob_handler(
     Extension(ctx): Extension<Context>,
@@ -485,7 +485,7 @@ async fn blob_handler(
     Ok::<_, Error>(Json(blob))
 }
 
-/// TODO: Add description.
+/// Get project readme.
 /// `GET /projects/:project/readme/:sha`
 async fn readme_handler(
     Extension(ctx): Extension<Context>,

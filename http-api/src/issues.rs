@@ -24,6 +24,7 @@ impl<T: serde::Serialize> Cob<T> {
 }
 
 /*
+/// Get project issues list.
 /// `GET /:project/issues`
 pub fn issues_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
@@ -34,6 +35,7 @@ pub fn issues_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = 
         .and_then(issues_handler)
 }
 
+/// Get project issue.
 /// `GET /:project/issues/:id`
 pub fn issue_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
