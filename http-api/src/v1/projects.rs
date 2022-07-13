@@ -3,7 +3,7 @@ use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
 
 use axum::extract::Query;
-use axum::response::{IntoResponse, Response};
+use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
 use hyper::StatusCode;
@@ -200,8 +200,6 @@ pub fn router(ctx: Context) -> Router {
     Router::new()
         .route("/projects", get(project_root_handler))
         .route("/projects/:project", get(project_alias_or_urn_handler))
-        //.route("/projects/:alias", get(project_alias_handler))
-        //.route("/projects/:project", get(project_urn_handler))
         .route("/projects/:project/commits", get(history_handler))
         .route("/projects/:project/commits/:sha", get(commit_handler))
         .route("/projects/:project/tree/:prefix/*path", get(tree_handler))
@@ -396,36 +394,25 @@ async fn project_alias_or_urn_handler(
     Path(urn_or_alias): Path<String>,
 ) -> impl IntoResponse {
     let urn = Urn::from_str(&urn_or_alias);
-    if let Ok(urn) = urn {
-        project_urn_handler(ctx, urn).await
+    let urn = if let Ok(urn) = urn {
+        urn
     } else {
         let alias = urn_or_alias;
-        project_alias_handler(ctx, alias).await
-    }
-}
+        let mut aliases = ctx.aliases.write().await;
+        if !aliases.contains_key(&alias) {
+            // If the alias does not exist, rebuild the cache.
+            ctx.populate_aliases(&mut aliases).await?;
+        }
+        let urn = aliases
+            .get(&alias)
+            .cloned()
+            .ok_or_else(|| Error::NotFound)?;
 
-/// TODO: Add description.
-/// `GET /projects/:project-urn`
-async fn project_urn_handler(ctx: Context, urn: Urn) -> Result<Response, Error> {
+        urn
+    };
+
     let info = ctx.project_info(urn).await?;
-
-    Ok::<_, Error>(Json(info).into_response())
-}
-
-/// TODO: Add description.
-/// `GET /projects/:project-alias`
-async fn project_alias_handler(ctx: Context, alias: String) -> Result<Response, Error> {
-    let mut aliases = ctx.aliases.write().await;
-    if !aliases.contains_key(&alias) {
-        // If the alias does not exist, rebuild the cache.
-        ctx.populate_aliases(&mut aliases).await?;
-    }
-    let urn = aliases
-        .get(&alias)
-        .cloned()
-        .ok_or_else(|| Error::NotFound)?;
-
-    project_urn_handler(ctx.clone(), urn).await
+    Ok::<_, Error>(Json(info))
 }
 
 /// Get project source tree.
