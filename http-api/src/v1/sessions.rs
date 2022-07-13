@@ -73,7 +73,7 @@ pub fn router(ctx: Context) -> Router {
         .layer(Extension(ctx.clone()))
 }
 
-/// TODO: Add description.
+/// Create session.
 /// `POST /sessions`
 async fn session_create_handler(Extension(ctx): Extension<Context>) -> impl IntoResponse {
     let expiration_time =
@@ -85,7 +85,7 @@ async fn session_create_handler(Extension(ctx): Extension<Context>) -> impl Into
     response
 }
 
-/// TODO: Add description.
+/// Get session.
 /// `GET /sessions/:session_id`
 async fn session_get_handler(
     Extension(ctx): Extension<Context>,
@@ -108,7 +108,7 @@ async fn session_get_handler(
     }
 }
 
-/// TODO: Add description.
+/// Update session.
 /// `PUT /sessions/:session_id`
 async fn session_signin_handler(
     Extension(ctx): Extension<Context>,
