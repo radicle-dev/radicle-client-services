@@ -106,8 +106,6 @@ pub enum Error {
     Common(#[from] anyhow::Error),
 }
 
-//impl warp::reject::Reject for Error {}
-
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let (status, msg) = match &self {

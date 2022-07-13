@@ -20,49 +20,6 @@ use crate::{Context, Error};
 
 pub const UNAUTHORIZED_SESSIONS_EXPIRATION: Duration = Duration::from_secs(60);
 
-/*
- *
-fn session_filters(ctx: Context) -> BoxedFilter<(impl Reply,)> {
-    session_create_filter(ctx.clone())
-        .or(session_signin_filter(ctx.clone()))
-        .or(session_get_filter(ctx))
-        .boxed()
-}
-
-/// `POST /sessions`
-fn session_create_filter(
-    ctx: Context,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::post()
-        .map(move || ctx.clone())
-        .and(path::end())
-        .and_then(session_create_handler)
-}
-
-/// `PUT /sessions/:session-id`
-fn session_signin_filter(
-    ctx: Context,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::put()
-        .map(move || ctx.clone())
-        .and(path::param::<String>())
-        .and(path::end())
-        .and(warp::body::json())
-        .and_then(session_signin_handler)
-}
-
-/// `GET /sessions/:session-id`
-fn session_get_filter(
-    ctx: Context,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::get()
-        .map(move || ctx.clone())
-        .and(path::param::<String>())
-        .and(path::end())
-        .and_then(session_get_handler)
-}
-*/
-
 pub fn router(ctx: Context) -> Router {
     Router::new()
         .route("/sessions", post(session_create_handler))
