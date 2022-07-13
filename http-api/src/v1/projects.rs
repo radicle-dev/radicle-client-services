@@ -485,7 +485,10 @@ where
     let repo = git::Repository::new(paths.git_dir())?;
     let mut browser = git::Browser::new_with_namespace(&repo, &namespace, revision)?;
 
-    Ok(callback(&mut browser)?)
+    callback(&mut browser).map_err(|err| match &err {
+        radicle_source::error::Error::PathNotFound(_) => Error::NotFound,
+        _ => Error::from(err),
+    })
 }
 
 fn remote_branch(branch_name: &str, peer_id: &PeerId) -> git::Branch {
