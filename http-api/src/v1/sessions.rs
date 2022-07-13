@@ -67,7 +67,7 @@ pub fn router(ctx: Context) -> Router {
     Router::new()
         .route("/sessions", post(session_create_handler))
         .route(
-            "/sessions/:session_id",
+            "/sessions/:id",
             get(session_get_handler).put(session_signin_handler),
         )
         .layer(Extension(ctx.clone()))
@@ -89,9 +89,8 @@ async fn session_create_handler(Extension(ctx): Extension<Context>) -> impl Into
 /// `GET /sessions/:session_id`
 async fn session_get_handler(
     Extension(ctx): Extension<Context>,
-    Path(session_id): Path<String>,
+    Path(id): Path<String>,
 ) -> impl IntoResponse {
-    let id = session_id;
     let sessions = ctx.sessions.read().await;
     let session = sessions.get(&id).ok_or(Error::NotFound)?;
 
@@ -112,10 +111,9 @@ async fn session_get_handler(
 /// `PUT /sessions/:session_id`
 async fn session_signin_handler(
     Extension(ctx): Extension<Context>,
-    Path(session_id): Path<String>,
+    Path(id): Path<String>,
     Json(request): Json<AuthRequest>,
 ) -> impl IntoResponse {
-    let id = session_id;
     // Get unauthenticated session data, return early if not found
     let mut sessions = ctx.sessions.write().await;
     let session = sessions.get(&id).ok_or(Error::NotFound)?;
