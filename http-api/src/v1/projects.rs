@@ -316,7 +316,7 @@ async fn remote_handler(
 }
 
 #[derive(Deserialize, Default)]
-struct HighlightQuery {
+struct BlobQuery {
     highlight: bool,
 }
 
@@ -325,7 +325,7 @@ struct HighlightQuery {
 async fn blob_handler(
     Extension(ctx): Extension<Context>,
     Path((project, sha, path)): Path<(Urn, One, String)>,
-    query: Option<Query<HighlightQuery>>,
+    query: Option<Query<BlobQuery>>,
 ) -> impl IntoResponse {
     let path = path.strip_prefix('/').ok_or(Error::NotFound)?.to_string();
     let Query(query) = query.unwrap_or_default();
