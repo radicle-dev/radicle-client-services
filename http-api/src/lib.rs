@@ -34,7 +34,7 @@ use librad::crypto::BoxedSigner;
 use librad::git::identities::{self, SomeIdentity};
 use librad::git::storage::pool::{InitError, Initialised};
 use librad::git::storage::{self, Pool, Storage};
-use librad::git::types::{Namespace, One, Reference, Single};
+use librad::git::types::{Namespace, One, Reference};
 use librad::git::Urn;
 use librad::paths::Paths;
 use librad::PeerId;
@@ -326,35 +326,6 @@ async fn root_handler(Extension(peer_id): Extension<PeerId>) -> impl IntoRespons
     Json(response)
 }
 
-// TODO: move this fn to /v1/projects.rs
-async fn browse<T, F>(reference: Reference<Single>, paths: Paths, callback: F) -> Result<T, Error>
-where
-    F: FnOnce(&mut git::Browser) -> Result<T, radicle_source::Error> + Send,
-{
-    let namespace = git::namespace::Namespace::try_from(
-        reference
-            .namespace
-            .ok_or(Error::MissingNamespace)?
-            .to_string()
-            .as_str(),
-    )
-    .map_err(Error::from)?;
-
-    let revision: git::Rev = match git::Oid::from_str(reference.name.as_str()) {
-        Ok(oid) => oid.try_into().map_err(|_| Error::NotFound)?,
-        Err(_) => remote_branch(
-            &reference.name.to_string(),
-            &reference.remote.ok_or(Error::NotFound)?,
-        )
-        .try_into()
-        .map_err(|_| Error::NotFound)?,
-    };
-    let repo = git::Repository::new(paths.git_dir())?;
-    let mut browser = git::Browser::new_with_namespace(&repo, &namespace, revision)?;
-
-    Ok(callback(&mut browser)?)
-}
-
 fn get_head_commit(
     repo: &git2::Repository,
     urn: &Urn,
@@ -400,15 +371,6 @@ fn get_head_commit(
     let commit = repo.find_commit(oid)?.try_into()?;
 
     Ok(commit)
-}
-
-fn remote_branch(branch_name: &str, peer_id: &PeerId) -> git::Branch {
-    // NOTE<sebastinez>: We should be able to pass simply a branch name without heads/ and be able to query that later.
-    // Needs work on radicle_surf I assume.
-    git::Branch::remote(
-        &format!("heads/{}", branch_name),
-        &peer_id.default_encoding(),
-    )
 }
 
 #[cfg(test)]
