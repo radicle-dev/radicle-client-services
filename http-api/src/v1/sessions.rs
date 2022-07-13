@@ -70,7 +70,7 @@ pub fn router(ctx: Context) -> Router {
             "/sessions/:id",
             get(session_get_handler).put(session_signin_handler),
         )
-        .layer(Extension(ctx.clone()))
+        .layer(Extension(ctx))
 }
 
 /// Create session.
@@ -80,9 +80,8 @@ async fn session_create_handler(Extension(ctx): Extension<Context>) -> impl Into
         Utc::now() + chrono::Duration::from_std(UNAUTHORIZED_SESSIONS_EXPIRATION).unwrap();
     let mut sessions = ctx.sessions.write().await;
     let (session_id, nonce) = create_session(&mut sessions, expiration_time);
-    let response = Json(json!({ "id": session_id, "nonce": nonce }));
 
-    response
+    Json(json!({ "id": session_id, "nonce": nonce }))
 }
 
 /// Get session.
@@ -125,13 +124,13 @@ async fn session_signin_handler(
 
         // Validate nonce
         if *nonce != message.nonce {
-            return Err(Error::Auth("Invalid nonce").into());
+            return Err(Error::Auth("Invalid nonce"));
         }
 
         // Verify that domain is the correct one
         let authority = Authority::from_str(&host).map_err(|_| Error::Auth("Invalid host"))?;
         if authority != message.domain {
-            return Err(Error::Auth("Invalid domain").into());
+            return Err(Error::Auth("Invalid domain"));
         }
 
         // Verifies the following:
@@ -148,7 +147,7 @@ async fn session_signin_handler(
         return Ok::<_, Error>(Json(json!({ "id": id, "session": session })));
     }
 
-    Err(Error::Auth("Session already authorized").into())
+    Err(Error::Auth("Session already authorized"))
 }
 
 fn create_session(

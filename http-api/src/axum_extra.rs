@@ -25,7 +25,7 @@ where
                 let body = match rejection {
                     PathRejection::FailedToDeserializePathParams(inner) => {
                         let kind = inner.into_kind();
-                        let body = match &kind {
+                        match &kind {
                             ErrorKind::Message(msg) => Json(Error {
                                 success: false,
                                 error: msg.to_string(),
@@ -34,9 +34,7 @@ where
                                 success: false,
                                 error: kind.to_string(),
                             }),
-                        };
-
-                        body
+                        }
                     }
                     _ => Json(Error {
                         success: false,

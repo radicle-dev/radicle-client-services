@@ -312,7 +312,7 @@ async fn history_handler(
             if let Some(head) = info.head {
                 (head.to_string(), true)
             } else {
-                return Err(Error::NoHead("project head is not set").into());
+                return Err(Error::NoHead("project head is not set"));
             }
         }
     };
@@ -405,10 +405,7 @@ async fn project_alias_or_urn_handler(
             // If the alias does not exist, rebuild the cache.
             ctx.populate_aliases(&mut aliases).await?;
         }
-        let urn = aliases
-            .get(&alias)
-            .cloned()
-            .ok_or_else(|| Error::NotFound)?;
+        let urn = aliases.get(&alias).cloned().ok_or(Error::NotFound)?;
 
         urn
     };
