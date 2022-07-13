@@ -42,7 +42,7 @@ async fn session_create_handler(Extension(ctx): Extension<Context>) -> impl Into
 }
 
 /// Get session.
-/// `GET /sessions/:session_id`
+/// `GET /sessions/:id`
 async fn session_get_handler(
     Extension(ctx): Extension<Context>,
     Path(id): Path<String>,
@@ -64,7 +64,7 @@ async fn session_get_handler(
 }
 
 /// Update session.
-/// `PUT /sessions/:session_id`
+/// `PUT /sessions/:id`
 async fn session_signin_handler(
     Extension(ctx): Extension<Context>,
     Path(id): Path<String>,
