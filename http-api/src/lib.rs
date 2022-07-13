@@ -3,8 +3,6 @@ mod auth;
 mod axum_extra;
 mod commit;
 mod error;
-mod issues;
-mod patches;
 mod project;
 mod v1;
 

@@ -9,17 +9,16 @@ use axum::{Extension, Json, Router};
 use hyper::StatusCode;
 use serde_json::json;
 
+use librad::collaborative_objects::ObjectId;
 use librad::git::identities::{self, SomeIdentity};
 use librad::git::types::{Namespace, One, Reference};
 use librad::git::Urn;
 use librad::PeerId;
 
-use radicle_common::{cobs, person};
+use radicle_common::cobs::{self, issue, patch, Store};
+use radicle_common::person;
 
 use crate::axum_extra::Path;
-// TODO: add these 3 filters
-//use crate::issues::{issue_filter, issues_filter};
-//use crate::patches::patches_filter;
 use crate::commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Committer};
 use crate::project::{self, Info};
 use crate::{browse, get_head_commit, Context, Error};
@@ -159,6 +158,42 @@ fn readme_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Reje
         .and(path::end())
         .and_then(readme_handler)
 }
+
+/// Get project patches list.
+/// `GET /projects/:project/patches`
+pub fn patches_filter(
+    ctx: Context,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::get()
+        .map(move || ctx.clone())
+        .and(path::param::<Urn>())
+        .and(path("patches"))
+        .and(path::end())
+        .and_then(patches_handler)
+}
+
+/// Get project issues list.
+/// `GET /projects/:project/issues`
+pub fn issues_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::get()
+        .map(move || ctx.clone())
+        .and(path::param::<Urn>())
+        .and(path("issues"))
+        .and(path::end())
+        .and_then(issues_handler)
+}
+
+/// Get project issue.
+/// `GET /projects/:project/issues/:id`
+pub fn issue_filter(ctx: Context) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::get()
+        .map(move || ctx.clone())
+        .and(path::param::<Urn>())
+        .and(path("issues"))
+        .and(path::param::<ObjectId>())
+        .and(path::end())
+        .and_then(issue_handler)
+}
 */
 
 pub fn router(ctx: Context) -> Router {
@@ -174,6 +209,9 @@ pub fn router(ctx: Context) -> Router {
         .route("/projects/:project/remotes/:peer", get(remote_handler))
         .route("/projects/:project/blob/:sha/*path", get(blob_handler))
         .route("/projects/:project/readme/:sha", get(readme_handler))
+        .route("/projects/:project/patches", get(patches_handler))
+        .route("/projects/:project/issues", get(issues_handler))
+        .route("/projects/:project/issues/:id", get(issue_handler))
         .layer(Extension(ctx))
 }
 
@@ -516,4 +554,102 @@ async fn readme_handler(
     .await?;
 
     Ok::<_, Error>(Json(blob))
+}
+
+/// Get project patches list.
+/// `GET /projects/:project/patches`
+async fn patches_handler(
+    Extension(ctx): Extension<Context>,
+    Path(urn): Path<Urn>,
+) -> impl IntoResponse {
+    let storage = ctx.storage().await?;
+    let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
+    let store = Store::new(whoami, &ctx.paths, &storage).map_err(Error::from)?;
+    let patches = patch::PatchStore::new(&store);
+    let all: Vec<_> = patches
+        .all(&urn)
+        .map_err(Error::Patches)?
+        .into_iter()
+        .map(|(id, mut patch)| {
+            if let Err(e) = patch
+                .resolve(storage.as_ref())
+                .map_err(Error::IdentityResolve)
+            {
+                tracing::warn!("Failed to resolve identities in patch {}: {}", id, e);
+            }
+
+            Cob::new(id, patch)
+        })
+        .collect();
+
+    Ok::<_, Error>(Json(all))
+}
+
+/// Get project issues list.
+/// `GET /projects/:project/issues`
+async fn issues_handler(
+    Extension(ctx): Extension<Context>,
+    Path(project): Path<Urn>,
+) -> impl IntoResponse {
+    // TODO: Handle non-existing project.
+    let storage = ctx.storage().await?;
+    let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
+    let store = Store::new(whoami, &ctx.paths, &storage).map_err(Error::from)?;
+    let issues = issue::IssueStore::new(&store);
+    let all: Vec<_> = issues
+        .all(&project)
+        .map_err(Error::Issues)?
+        .into_iter()
+        .map(|(id, mut issue)| {
+            if let Err(e) = issue
+                .resolve(storage.as_ref())
+                .map_err(Error::IdentityResolve)
+            {
+                tracing::warn!("Failed to resolve identities in issue {}: {}", id, e);
+            }
+
+            Cob::new(id, issue)
+        })
+        .collect();
+
+    Ok::<_, Error>(Json(all))
+}
+
+/// Get project issue.
+/// `GET /projects/:project/issues/:id`
+async fn issue_handler(
+    Extension(ctx): Extension<Context>,
+    Path((project, issue_id)): Path<(Urn, ObjectId)>,
+) -> impl IntoResponse {
+    // TODO: Handle non-existing project.
+    let storage = ctx.storage().await?;
+    let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
+    let store = Store::new(whoami, &ctx.paths, &storage).map_err(Error::from)?;
+    let issues = issue::IssueStore::new(&store);
+    let mut issue = issues
+        .get(&project, &issue_id)
+        .map_err(Error::from)?
+        .ok_or(Error::NotFound)?;
+    if let Err(e) = issue
+        .resolve(storage.as_ref())
+        .map_err(Error::IdentityResolve)
+    {
+        tracing::warn!("Failed to resolve identities in issue {}: {}", issue_id, e);
+    }
+
+    Ok::<_, Error>(Json(Cob::new(issue_id, issue)))
+}
+
+/// A collaborative object that includes its id.
+#[derive(serde::Serialize)]
+struct Cob<T: serde::Serialize> {
+    id: ObjectId,
+    #[serde(flatten)]
+    inner: T,
+}
+
+impl<T: serde::Serialize> Cob<T> {
+    pub fn new(id: ObjectId, inner: T) -> Self {
+        Self { id, inner }
+    }
 }
