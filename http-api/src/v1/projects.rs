@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
 
-use axum::extract::Query;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
 use hyper::StatusCode;
+use serde::Deserialize;
 use serde_json::json;
 
 use librad::collaborative_objects::ObjectId;
@@ -20,7 +20,7 @@ use radicle_source::surf::vcs::git;
 use radicle_common::cobs::{self, issue, patch, Store};
 use radicle_common::person;
 
-use crate::axum_extra::Path;
+use crate::axum_extra::{Path, Query};
 use crate::commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Committer};
 use crate::project::{self, Info};
 use crate::{get_head_commit, Context, Error};
@@ -488,14 +488,21 @@ async fn remote_handler(
     Ok::<_, Error>(Json(response))
 }
 
+#[derive(Deserialize, Default)]
+struct HighlightQuery {
+    highlight: bool,
+}
+
 /// Get project source file.
 /// `GET /projects/:project/blob/:sha/*path?highlight=<bool>`
 async fn blob_handler(
     Extension(ctx): Extension<Context>,
     Path((project, sha, path)): Path<(Urn, One, String)>,
-    Query(highlight): Query<bool>,
+    query: Option<Query<HighlightQuery>>,
 ) -> impl IntoResponse {
-    let theme = if highlight {
+    let path = path.strip_prefix('/').ok_or(Error::NotFound)?.to_string();
+    let Query(query) = query.unwrap_or_default();
+    let theme = if query.highlight {
         Some(ctx.theme.as_str())
     } else {
         None
