@@ -1,8 +1,7 @@
 #![allow(clippy::if_same_then_else)]
 mod auth;
+mod axum_extra;
 mod commit;
-#[path = "axum.rs"]
-mod custom_axum;
 mod error;
 mod issues;
 mod patches;

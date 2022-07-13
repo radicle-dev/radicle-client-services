@@ -16,7 +16,7 @@ use librad::PeerId;
 
 use radicle_common::{cobs, person};
 
-use crate::custom_axum::Path;
+use crate::axum_extra::Path;
 // TODO: add these 3 filters
 //use crate::issues::{issue_filter, issues_filter};
 //use crate::patches::patches_filter;

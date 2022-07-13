@@ -9,7 +9,7 @@ use librad::git::Urn;
 
 use radicle_common::{cobs, person};
 
-use crate::custom_axum::Path;
+use crate::axum_extra::Path;
 use crate::project::{self, Info};
 use crate::{get_head_commit, Context, Error};
 

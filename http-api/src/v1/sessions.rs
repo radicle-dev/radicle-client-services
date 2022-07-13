@@ -15,7 +15,7 @@ use serde_json::json;
 use siwe::Message;
 
 use crate::auth::{AuthRequest, AuthState, Session};
-use crate::custom_axum::Path;
+use crate::axum_extra::Path;
 use crate::{Context, Error};
 
 pub const UNAUTHORIZED_SESSIONS_EXPIRATION: Duration = Duration::from_secs(60);
