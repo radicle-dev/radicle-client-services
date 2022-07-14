@@ -252,6 +252,7 @@ async fn tree_handler(
     Extension(ctx): Extension<Context>,
     Path((project, sha, path)): Path<(Urn, One, String)>,
 ) -> impl IntoResponse {
+    let path = path.strip_prefix('/').ok_or(Error::NotFound)?.to_string();
     let reference = Reference::head(Namespace::from(project), None, sha);
     let (tree, stats) = browse(reference, ctx.paths, |browser| {
         Ok((
