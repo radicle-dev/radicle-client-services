@@ -17,7 +17,7 @@ use librad::git::Urn;
 use librad::paths::Paths;
 use librad::PeerId;
 
-use radicle_common::cobs::{self, issue, patch, Identifier, Store};
+use radicle_common::cobs::{self, issue, patch, Identifier, Label, Store};
 use radicle_common::person;
 use radicle_source as source;
 use radicle_source::commit::Stats;
@@ -43,7 +43,10 @@ pub fn router(ctx: Context) -> Router {
         .route("/projects/:project/readme/:sha", get(readme_handler))
         .route("/projects/:project/patches", get(patches_handler))
         .route("/projects/:project/patches/:id", get(patch_handler))
-        .route("/projects/:project/issues", get(issues_handler))
+        .route(
+            "/projects/:project/issues",
+            get(issues_handler).post(create_issues),
+        )
         .route("/projects/:project/issues/:id", get(issue_handler))
         .route("/projects/:project/comment/:id", post(comment_handler))
         .layer(Extension(ctx))
@@ -507,6 +510,33 @@ async fn issue_handler(
 }
 
 #[derive(Deserialize, Serialize)]
+struct CreateIssue {
+    session_id: String,
+    title: String,
+    description: String,
+    labels: Vec<Label>,
+}
+
+/// Create project issue.
+/// `POST /projects/:project/issues`
+async fn create_issues(
+    Extension(ctx): Extension<Context>,
+    Path(project): Path<Urn>,
+    Json(issue): Json<CreateIssue>,
+) -> impl IntoResponse {
+    // TODO: Handle non-existing project.
+    let storage = ctx.storage().await?;
+    let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
+    let store = Store::new(whoami, &ctx.paths, &storage).map_err(Error::from)?;
+    let issues = issue::IssueStore::new(&store);
+    let issue_id = issues
+        .create(&project, &issue.title, &issue.description, &issue.labels)
+        .map_err(Error::from)?;
+
+    Ok::<_, Error>(Json(json!({ "id": issue_id })))
+}
+
+#[derive(Deserialize, Serialize)]
 struct CreateComment {
     session_id: String,
     title: String,
@@ -553,7 +583,7 @@ async fn comment_handler(
             return Err(Error::Auth("No patch or issue found"));
         }
 
-    return Ok::<_, Error>(());
+        return Ok::<_, Error>(());
     }
 
     Err(Error::Auth("Not able to retrieve authorized session"))
