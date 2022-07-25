@@ -35,7 +35,7 @@ pub fn router(ctx: Context) -> Router {
         .route("/projects/:project", get(project_alias_or_urn_handler))
         .route("/projects/:project/commits", get(history_handler))
         .route("/projects/:project/commits/:sha", get(commit_handler))
-        .route("/projects/:project/tree/:prefix/*path", get(tree_handler))
+        .route("/projects/:project/tree/:sha/*path", get(tree_handler))
         .route("/projects/:project/remotes", get(remotes_handler))
         .route("/projects/:project/remotes/:peer", get(remote_handler))
         .route("/projects/:project/blob/:sha/*path", get(blob_handler))
@@ -247,7 +247,7 @@ async fn project_alias_or_urn_handler(
 }
 
 /// Get project source tree.
-/// `GET /projects/:project/tree/:prefix/*path`
+/// `GET /projects/:project/tree/:sha/*path`
 async fn tree_handler(
     Extension(ctx): Extension<Context>,
     Path((project, sha, path)): Path<(Urn, One, String)>,
