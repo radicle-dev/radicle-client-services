@@ -257,11 +257,13 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
     if let (Some(cert), Some(key)) = (options.tls_cert, options.tls_key) {
         let config = RustlsConfig::from_pem_file(cert, key).await.unwrap();
 
+        tracing::info!("listening on https://{}", options.listen);
         axum_server::bind_rustls(options.listen, config)
             .serve(app.into_make_service())
             .await
             .unwrap();
     } else {
+        tracing::info!("listening on http://{}", options.listen);
         axum::Server::bind(&options.listen)
             .serve(app.into_make_service())
             .await
