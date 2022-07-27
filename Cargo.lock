@@ -4824,6 +4824,7 @@ dependencies = [
  "siwe",
  "thiserror",
  "tokio",
+ "tower",
  "tower-http",
  "tracing",
  "tracing-subscriber",
