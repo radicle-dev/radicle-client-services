@@ -510,6 +510,40 @@ async fn issue_handler(
 }
 
 #[derive(Deserialize, Serialize)]
+struct CreateReview {
+    session_id: String,
+    description: String,
+    verdict: Option<String>,
+    revision_ix: usize,
+}
+
+/// Create patch review.
+/// `POST /projects/:project/patches/:id/review`
+async fn create_review(
+    Extension(ctx): Extension<Context>,
+    Path((project, cob_id)): Path<(Urn, ObjectId)>,
+    Json(review): Json<CreateReview>,
+) -> impl IntoResponse {
+    // TODO: Handle non-existing project.
+    let storage = ctx.storage().await?;
+    let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
+    let cobs = cobs::Store::new(whoami, &ctx.paths, &storage)?;
+    let patches = cobs.patches();
+    let verdict = patch::Verdict::from_str(review.verdict).ok();
+
+    patches.review(
+        &project,
+        &cob_id,
+        review.revision_ix,
+        verdict,
+        review.description,
+        vec![],
+    )?;
+
+    Ok::<_, Error>(())
+}
+
+#[derive(Deserialize, Serialize)]
 struct CreateIssue {
     session_id: String,
     title: String,
