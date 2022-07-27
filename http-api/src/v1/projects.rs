@@ -3,10 +3,10 @@ use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
 
 use axum::response::IntoResponse;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use hyper::StatusCode;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use librad::collaborative_objects::ObjectId;
@@ -17,13 +17,14 @@ use librad::git::Urn;
 use librad::paths::Paths;
 use librad::PeerId;
 
-use radicle_common::cobs::{self, issue, patch, Store};
+use radicle_common::cobs::{self, issue, patch, Identifier, Label, Store};
 use radicle_common::person;
 use radicle_source as source;
 use radicle_source::commit::Stats;
 use radicle_source::surf::vcs::git;
 use radicle_surf::diff;
 
+use crate::auth::AuthState;
 use crate::axum_extra::{Path, Query};
 use crate::commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Committer};
 use crate::project::{self, Info};
@@ -42,8 +43,12 @@ pub fn router(ctx: Context) -> Router {
         .route("/projects/:project/readme/:sha", get(readme_handler))
         .route("/projects/:project/patches", get(patches_handler))
         .route("/projects/:project/patches/:id", get(patch_handler))
-        .route("/projects/:project/issues", get(issues_handler))
+        .route(
+            "/projects/:project/issues",
+            get(issues_handler).post(create_issues),
+        )
         .route("/projects/:project/issues/:id", get(issue_handler))
+        .route("/projects/:project/comment/:id", post(comment_handler))
         .layer(Extension(ctx))
 }
 
@@ -502,6 +507,120 @@ async fn issue_handler(
     }
 
     Ok::<_, Error>(Json(Cob::new(issue_id, issue)))
+}
+
+#[derive(Deserialize, Serialize)]
+struct CreateReview {
+    session_id: String,
+    description: String,
+    verdict: Option<String>,
+    revision_ix: usize,
+}
+
+/// Create patch review.
+/// `POST /projects/:project/patches/:id/review`
+async fn create_review(
+    Extension(ctx): Extension<Context>,
+    Path((project, cob_id)): Path<(Urn, ObjectId)>,
+    Json(review): Json<CreateReview>,
+) -> impl IntoResponse {
+    // TODO: Handle non-existing project.
+    let storage = ctx.storage().await?;
+    let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
+    let cobs = cobs::Store::new(whoami, &ctx.paths, &storage)?;
+    let patches = cobs.patches();
+    let verdict = patch::Verdict::from_str(review.verdict).ok();
+
+    patches.review(
+        &project,
+        &cob_id,
+        review.revision_ix,
+        verdict,
+        review.description,
+        vec![],
+    )?;
+
+    Ok::<_, Error>(())
+}
+
+#[derive(Deserialize, Serialize)]
+struct CreateIssue {
+    session_id: String,
+    title: String,
+    description: String,
+    labels: Vec<Label>,
+}
+
+/// Create project issue.
+/// `POST /projects/:project/issues`
+async fn create_issues(
+    Extension(ctx): Extension<Context>,
+    Path(project): Path<Urn>,
+    Json(issue): Json<CreateIssue>,
+) -> impl IntoResponse {
+    // TODO: Handle non-existing project.
+    let storage = ctx.storage().await?;
+    let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
+    let store = Store::new(whoami, &ctx.paths, &storage).map_err(Error::from)?;
+    let issues = issue::IssueStore::new(&store);
+    let issue_id = issues
+        .create(&project, &issue.title, &issue.description, &issue.labels)
+        .map_err(Error::from)?;
+
+    Ok::<_, Error>(Json(json!({ "id": issue_id })))
+}
+
+#[derive(Deserialize, Serialize)]
+struct CreateComment {
+    session_id: String,
+    title: String,
+    description: String,
+    reply_index: Option<usize>,
+}
+
+/// Create comment on issue or patches.
+/// `POST /projects/:project/comment/:id`
+async fn comment_handler(
+    Extension(ctx): Extension<Context>,
+    Path((project, cob_id)): Path<(Urn, String)>,
+    Json(comment): Json<CreateComment>,
+) -> impl IntoResponse {
+    // TODO: Handle non-existing project.
+    // TODO: We could eventually add Deserialize to radicle_common::Identifier, to allow passing it as argument to this function.
+    let cob_id = Identifier::from_str(&cob_id).unwrap();
+    let storage = ctx.storage().await?;
+    let sessions = ctx.sessions.read().await;
+    if let AuthState::Authorized(_) = sessions.get(&comment.session_id).ok_or(Error::NotFound)? {
+        let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
+        let cobs = cobs::Store::new(whoami, &ctx.paths, &storage)?;
+        if let Some(id) = cobs.resolve_id::<issue::Issue>(&project, &cob_id)? {
+            if let Some(reply_index) = comment.reply_index {
+                cobs.issues()
+                    .reply(&project, &id, reply_index.into(), &comment.description)?;
+            } else {
+                cobs.issues().comment(&project, &id, &comment.description)?;
+            }
+        } else if let Some((id, patch)) = cobs.resolve::<patch::Patch>(&project, &cob_id)? {
+            if let Some(reply_index) = comment.reply_index {
+                cobs.patches().reply(
+                    &project,
+                    &id,
+                    patch.version(),
+                    reply_index.into(),
+                    &comment.description,
+                )?;
+            } else {
+                cobs.patches()
+                    .comment(&project, &id, patch.version(), &comment.description)?;
+            }
+        } else {
+            return Err(Error::Auth("No patch or issue found"));
+        }
+
+        return Ok::<_, Error>(());
+    }
+
+    Err(Error::Auth("Not able to retrieve authorized session"))
 }
 
 async fn browse<T, F>(reference: Reference<Single>, paths: Paths, callback: F) -> Result<T, Error>
