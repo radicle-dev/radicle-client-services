@@ -69,14 +69,6 @@ pub enum Error {
     #[error(transparent)]
     Project(#[from] radicle_common::project::Error),
 
-    /// An error occurred with the issues storage.
-    #[error(transparent)]
-    Issues(#[from] radicle_common::cobs::issue::Error),
-
-    /// An error occurred with the patches storage.
-    #[error(transparent)]
-    Patches(#[from] radicle_common::cobs::patch::Error),
-
     /// An error occurred with radicle storage.
     #[error("{0}: {1}")]
     Io(&'static str, std::io::Error),
@@ -97,9 +89,9 @@ pub enum Error {
     #[error(transparent)]
     IdentityResolve(#[from] radicle_common::cobs::ResolveError),
 
-    /// An error occurred with COBs stores
+    /// An error occurred with COB stores.
     #[error(transparent)]
-    Store(#[from] radicle_common::cobs::StoreError),
+    Cobs(#[from] radicle_common::cobs::Error),
 
     /// An anyhow error originated from radicle-common
     #[error("radicle-common: {0}")]

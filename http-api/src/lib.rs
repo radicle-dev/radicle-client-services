@@ -198,12 +198,12 @@ impl Context {
             .ok();
 
         let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
-        let cobs = cobs::Store::new(whoami, &self.paths, &storage)?;
+        let cobs = cobs::Store::new(whoami, &self.paths, &storage);
         let issues = cobs.issues();
-        let issues = issues.count(&urn).map_err(Error::Issues)?;
+        let issues = issues.count(&urn).map_err(Error::Cobs)?;
 
         let patches = cobs.patches();
-        let patches = patches.count(&urn).map_err(Error::Patches)?;
+        let patches = patches.count(&urn).map_err(Error::Cobs)?;
 
         Ok(Info {
             head,

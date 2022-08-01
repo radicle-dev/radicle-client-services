@@ -31,7 +31,7 @@ async fn delegates_projects_handler(
     let storage = ctx.storage().await?;
     let repo = git2::Repository::open_bare(&ctx.paths.git_dir()).map_err(Error::from)?;
     let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
-    let cobs = cobs::Store::new(whoami, &ctx.paths, &storage).map_err(Error::from)?;
+    let cobs = cobs::Store::new(whoami, &ctx.paths, &storage);
     let issues = cobs.issues();
     let patches = cobs.patches();
     let projects = identities::any::list(storage.read_only())
@@ -54,8 +54,8 @@ async fn delegates_projects_handler(
                             .map(|h| h.id)
                             .ok();
 
-                    let issues = issues.count(&meta.urn).map_err(Error::Issues).ok()?;
-                    let patches = patches.count(&meta.urn).map_err(Error::Patches).ok()?;
+                    let issues = issues.count(&meta.urn).map_err(Error::Cobs).ok()?;
+                    let patches = patches.count(&meta.urn).map_err(Error::Cobs).ok()?;
 
                     Some(Info {
                         meta,

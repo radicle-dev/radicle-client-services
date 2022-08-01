@@ -53,7 +53,7 @@ async fn project_root_handler(Extension(ctx): Extension<Context>) -> impl IntoRe
     let storage = ctx.storage().await?;
     let repo = git2::Repository::open_bare(&ctx.paths.git_dir()).map_err(Error::from)?;
     let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
-    let cobs = cobs::Store::new(whoami, &ctx.paths, &storage).map_err(Error::from)?;
+    let cobs = cobs::Store::new(whoami, &ctx.paths, &storage);
     let issues = cobs.issues();
     let patches = cobs.patches();
     let projects = identities::any::list(storage.read_only())
@@ -67,8 +67,8 @@ async fn project_root_handler(Extension(ctx): Extension<Context>) -> impl IntoRe
                             .map(|h| h.id)
                             .ok();
 
-                    let issues = issues.count(&meta.urn).map_err(Error::Issues).ok()?;
-                    let patches = patches.count(&meta.urn).map_err(Error::Patches).ok()?;
+                    let issues = issues.count(&meta.urn).map_err(Error::Cobs).ok()?;
+                    let patches = patches.count(&meta.urn).map_err(Error::Cobs).ok()?;
 
                     Some(Info {
                         meta,
@@ -394,7 +394,7 @@ async fn patch_handler(
     let meta: project::Metadata = project.try_into().map_err(Error::Project)?;
 
     let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
-    let store = Store::new(whoami, &ctx.paths, &storage).map_err(Error::from)?;
+    let store = Store::new(whoami, &ctx.paths, &storage);
     let patches = patch::PatchStore::new(&store);
     let mut patch = patches
         .get(&urn, &patch_id)
@@ -428,11 +428,11 @@ async fn patches_handler(
 ) -> impl IntoResponse {
     let storage = ctx.storage().await?;
     let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
-    let store = Store::new(whoami, &ctx.paths, &storage).map_err(Error::from)?;
+    let store = Store::new(whoami, &ctx.paths, &storage);
     let patches = patch::PatchStore::new(&store);
     let all: Vec<_> = patches
         .all(&urn)
-        .map_err(Error::Patches)?
+        .map_err(Error::Cobs)?
         .into_iter()
         .map(|(id, mut patch)| {
             if let Err(e) = patch
@@ -458,11 +458,11 @@ async fn issues_handler(
     // TODO: Handle non-existing project.
     let storage = ctx.storage().await?;
     let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
-    let store = Store::new(whoami, &ctx.paths, &storage).map_err(Error::from)?;
+    let store = Store::new(whoami, &ctx.paths, &storage);
     let issues = issue::IssueStore::new(&store);
     let all: Vec<_> = issues
         .all(&project)
-        .map_err(Error::Issues)?
+        .map_err(Error::Cobs)?
         .into_iter()
         .map(|(id, mut issue)| {
             if let Err(e) = issue
@@ -488,7 +488,7 @@ async fn issue_handler(
     // TODO: Handle non-existing project.
     let storage = ctx.storage().await?;
     let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
-    let store = Store::new(whoami, &ctx.paths, &storage).map_err(Error::from)?;
+    let store = Store::new(whoami, &ctx.paths, &storage);
     let issues = issue::IssueStore::new(&store);
     let mut issue = issues
         .get(&project, &issue_id)

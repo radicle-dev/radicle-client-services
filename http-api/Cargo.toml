@@ -17,7 +17,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 serde_urlencoded = { version = "0.7.0" }
 radicle-source = { version = "0.4.0", features = ["syntax"] }
 radicle-surf = { version = "0.8.0", features = ["serialize"] }
-radicle-common = { version = "0.1.0", features = ["ethereum"] }
+radicle-common = { version = "0.1.0", features = [] }
 siwe = "0.2"
 thiserror = { version = "1" }
 git2 = { version = "0.13", default-features = false, features = [] }
