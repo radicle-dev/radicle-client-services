@@ -517,32 +517,6 @@ struct CreateReview {
     revision_ix: usize,
 }
 
-/// Create patch review.
-/// `POST /projects/:project/patches/:id/review`
-async fn create_review(
-    Extension(ctx): Extension<Context>,
-    Path((project, cob_id)): Path<(Urn, ObjectId)>,
-    Json(review): Json<CreateReview>,
-) -> impl IntoResponse {
-    // TODO: Handle non-existing project.
-    let storage = ctx.storage().await?;
-    let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
-    let cobs = cobs::Store::new(whoami, &ctx.paths, &storage)?;
-    let patches = cobs.patches();
-    let verdict = patch::Verdict::from_str(review.verdict).ok();
-
-    patches.review(
-        &project,
-        &cob_id,
-        review.revision_ix,
-        verdict,
-        review.description,
-        vec![],
-    )?;
-
-    Ok::<_, Error>(())
-}
-
 #[derive(Deserialize, Serialize)]
 struct CreateIssue {
     session_id: String,
@@ -561,7 +535,7 @@ async fn create_issues(
     // TODO: Handle non-existing project.
     let storage = ctx.storage().await?;
     let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
-    let store = Store::new(whoami, &ctx.paths, &storage).map_err(Error::from)?;
+    let store = Store::new(whoami, &ctx.paths, &storage);
     let issues = issue::IssueStore::new(&store);
     let issue_id = issues
         .create(&project, &issue.title, &issue.description, &issue.labels)
@@ -592,7 +566,7 @@ async fn comment_handler(
     let sessions = ctx.sessions.read().await;
     if let AuthState::Authorized(_) = sessions.get(&comment.session_id).ok_or(Error::NotFound)? {
         let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
-        let cobs = cobs::Store::new(whoami, &ctx.paths, &storage)?;
+        let cobs = cobs::Store::new(whoami, &ctx.paths, &storage);
         if let Some(id) = cobs.resolve_id::<issue::Issue>(&project, &cob_id)? {
             if let Some(reply_index) = comment.reply_index {
                 cobs.issues()
