@@ -547,7 +547,6 @@ async fn create_issues(
 #[derive(Deserialize, Serialize)]
 struct CreateComment {
     session_id: String,
-    title: String,
     description: String,
     reply_index: Option<usize>,
 }
