@@ -761,3 +761,259 @@ fn resolve_revisions(
         revisions,
     }
 }
+
+mod setup {
+    use std::env;
+    use std::path::Path;
+
+    use git2::Oid;
+
+    use librad::crypto::keystore::crypto::{Pwhash, KDF_PARAMS_TEST};
+    use librad::crypto::keystore::pinentry::SecUtf8;
+    use librad::crypto::BoxedSigner;
+    use librad::git::identities::Project;
+    use librad::git::util;
+    use librad::git_ext::tree;
+    use librad::profile::{Profile, LNK_HOME};
+
+    use radicle_common::{keys, person, profile, project, test};
+
+    #[allow(dead_code)]
+    pub fn profile() -> (Profile, BoxedSigner, Project, Oid) {
+        let tempdir = env::temp_dir().join("rad").join("home").join("api");
+        let home = env::var(LNK_HOME)
+            .map(|s| Path::new(&s).to_path_buf())
+            .unwrap_or_else(|_| tempdir.to_path_buf());
+
+        env::set_var(LNK_HOME, home);
+
+        let name = "cloudhead";
+        let pass = Pwhash::new(SecUtf8::from(test::USER_PASS), *KDF_PARAMS_TEST);
+        let (profile, _peer_id) = profile::create(profile::home(), pass.clone()).unwrap();
+        let signer = test::signer(&profile, pass).unwrap();
+        let storage = keys::storage(&profile, signer.clone()).unwrap();
+        let person = person::create(&profile, name, signer.clone(), &storage).unwrap();
+
+        person::set_local(&storage, &person).unwrap();
+
+        let payload = project::payload(
+            "nakamoto".to_owned(),
+            "Bitcoin light-client".to_owned(),
+            "master".to_owned(),
+        );
+        let project = project::create(payload, &storage).unwrap();
+
+        let commit = util::quick_commit(
+            &storage,
+            &project.urn(),
+            vec![
+                ("HI", tree::blob(b"Hi Bob")),
+                ("README", tree::blob(b"This is a readme")),
+            ]
+            .into_iter()
+            .collect(),
+            "say hi to bob",
+        )
+        .unwrap();
+
+        (profile, signer, project, commit)
+    }
+}
+
+#[cfg(test)]
+mod routes {
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use serde_json::Value;
+    use tower::ServiceExt;
+
+    use super::*;
+
+    const THEME: &str = "base16-ocean.dark";
+    const PROJECT_NAME: &str = "nakamoto";
+    const COMMIT_MSG: &str = "say hi to bob";
+    const COMMIT_FILE_NAME: &str = "HI";
+    const COMMIT_FILE_CONTENT: &str = "Hi Bob";
+    const COMMIT_README_CONTENT: &str = "This is a readme";
+
+    #[tokio::test]
+    async fn test_projects_root_route() {
+        let (profile, signer, _, _) = setup::profile();
+        let ctx = Context::new(profile.paths().to_owned(), signer, THEME.to_string());
+        let app = router(ctx);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/projects")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(body[0]["name"], PROJECT_NAME);
+        assert_eq!(body[1], Value::Null);
+    }
+
+    #[tokio::test]
+    async fn test_project_route() {
+        let (profile, signer, project, _) = setup::profile();
+        let ctx = Context::new(profile.paths().to_owned(), signer, THEME.to_string());
+        let app = router(ctx);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/projects/{}", PROJECT_NAME))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let alias_body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body: Value = serde_json::from_slice(&alias_body).unwrap();
+
+        assert_eq!(body["name"], "nakamoto");
+
+        let urn = body["urn"].as_str().unwrap();
+        assert_eq!(project.urn().to_string(), urn);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/projects/{}", urn))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let urn_body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        assert_eq!(alias_body, urn_body);
+    }
+
+    #[tokio::test]
+    async fn test_commits_route() {
+        let (profile, signer, project, head) = setup::profile();
+        let ctx = Context::new(profile.paths().to_owned(), signer, THEME.to_string());
+        let app = router(ctx);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/projects/{}/commits", project.urn()))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+
+        let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(body["headers"][0]["header"]["summary"], COMMIT_MSG);
+        assert_eq!(body["headers"][0]["header"]["sha1"], head.to_string());
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/projects/{}/commits/{}", project.urn(), head))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(body["header"]["summary"], COMMIT_MSG);
+    }
+
+    #[tokio::test]
+    async fn test_tree_route() {
+        let (profile, signer, project, head) = setup::profile();
+        let ctx = Context::new(profile.paths().to_owned(), signer, THEME.to_string());
+        let app = router(ctx);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/projects/{}/tree/{}/", project.urn(), head))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(body["entries"][0]["path"], COMMIT_FILE_NAME);
+    }
+
+    #[tokio::test]
+    async fn test_blob_route() {
+        let (profile, signer, project, head) = setup::profile();
+        let ctx = Context::new(profile.paths().to_owned(), signer, THEME.to_string());
+        let app = router(ctx);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!(
+                        "/projects/{}/blob/{}/{}",
+                        project.urn(),
+                        head,
+                        COMMIT_FILE_NAME
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(body["path"], COMMIT_FILE_NAME);
+        assert_eq!(body["content"], COMMIT_FILE_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn test_readme_route() {
+        let (profile, signer, project, head) = setup::profile();
+        let ctx = Context::new(profile.paths().to_owned(), signer, THEME.to_string());
+        let app = router(ctx);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/projects/{}/readme/{}", project.urn(), head))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(body["path"], "README");
+        assert_eq!(body["content"], COMMIT_README_CONTENT);
+    }
+}
