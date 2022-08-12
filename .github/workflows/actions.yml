@@ -54,6 +54,7 @@ jobs:
         with:
           profile: minimal
           components: clippy, rustfmt
+          toolchain: 1.63
       - name: Cache cargo registry
         uses: actions/cache@v1
         with:
