@@ -35,6 +35,7 @@ pub fn router(ctx: Context) -> Router {
         .route("/projects/:project", get(project_alias_or_urn_handler))
         .route("/projects/:project/commits", get(history_handler))
         .route("/projects/:project/commits/:sha", get(commit_handler))
+        .route("/projects/:project/activity", get(activity_handler))
         .route("/projects/:project/tree/:sha/*path", get(tree_handler))
         .route("/projects/:project/remotes", get(remotes_handler))
         .route("/projects/:project/remotes/:peer", get(remote_handler))
@@ -221,6 +222,50 @@ async fn history_handler(
     Ok::<_, Error>((StatusCode::OK, Json(response)))
 }
 
+/// Get project activity for the past year.
+/// `GET /projects/:project/activity`
+async fn activity_handler(
+    Extension(ctx): Extension<Context>,
+    Path(project): Path<Urn>,
+) -> impl IntoResponse {
+    let info = ctx.project_info(project.to_owned()).await?;
+
+    let head = if let Some(head) = info.head {
+        head.to_string()
+    } else {
+        return Err(Error::NoHead("project head is not set"));
+    };
+
+    let reference = Reference::head(
+        Namespace::from(project.to_owned()),
+        None,
+        One::from_str(&head).map_err(|_| Error::NotFound)?,
+    );
+
+    let current_date = chrono::Utc::now().timestamp();
+    let one_year_ago = chrono::Duration::weeks(52);
+
+    let timestamps = browse(reference, ctx.paths.to_owned(), |browser| {
+        let activity = browser
+            .get()
+            .iter()
+            .filter_map(|a| {
+                let seconds = a.committer.time.seconds();
+                if seconds > current_date - one_year_ago.num_seconds() {
+                    return Some(seconds);
+                }
+
+                None
+            })
+            .collect::<Vec<i64>>();
+
+        Ok(activity)
+    })
+    .await?;
+
+    Ok::<_, Error>((StatusCode::OK, Json(json!({ "activity": timestamps }))))
+}
+
 /// Get project metadata.
 /// `GET /projects/{:project-urn,:project-alias}`
 async fn project_alias_or_urn_handler(
@@ -237,9 +282,8 @@ async fn project_alias_or_urn_handler(
             // If the alias does not exist, rebuild the cache.
             ctx.populate_aliases(&mut aliases).await?;
         }
-        let urn = aliases.get(&alias).cloned().ok_or(Error::NotFound)?;
 
-        urn
+        aliases.get(&alias).cloned().ok_or(Error::NotFound)?
     };
 
     let info = ctx.project_info(urn).await?;
@@ -519,12 +563,9 @@ where
 
     let revision: git::Rev = match git::Oid::from_str(reference.name.as_str()) {
         Ok(oid) => oid.try_into().map_err(|_| Error::NotFound)?,
-        Err(_) => remote_branch(
-            &reference.name.to_string(),
-            &reference.remote.ok_or(Error::NotFound)?,
-        )
-        .try_into()
-        .map_err(|_| Error::NotFound)?,
+        Err(_) => remote_branch(&reference.name, &reference.remote.ok_or(Error::NotFound)?)
+            .try_into()
+            .map_err(|_| Error::NotFound)?,
     };
     let repo = git::Repository::new(paths.git_dir())?;
     let mut browser = git::Browser::new_with_namespace(&repo, &namespace, revision)?;
