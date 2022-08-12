@@ -6,6 +6,9 @@ mod error;
 mod project;
 mod v1;
 
+#[cfg(test)]
+mod test_extra;
+
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto as _};

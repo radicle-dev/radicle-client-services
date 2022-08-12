@@ -73,3 +73,48 @@ async fn delegates_projects_handler(
 
     Ok::<_, Error>(Json(projects))
 }
+
+#[cfg(test)]
+mod routes {
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use serde_json::Value;
+    use tower::ServiceExt;
+
+    use super::*;
+    use crate::test_extra::setup;
+
+    const THEME: &str = "base16-ocean.dark";
+    const PROJECT_NAME: &str = "nakamoto";
+
+    #[tokio::test]
+    async fn test_delegates_projects_route() {
+        let (profile, signer, project, _) = setup::env();
+        let delegate = project
+            .delegations()
+            .iter()
+            .next()
+            .unwrap()
+            .unwrap_right()
+            .urn();
+        let ctx = Context::new(profile.paths().to_owned(), signer, THEME.to_string());
+        let app = router(ctx);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/delegates/{}/projects", delegate))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(body[0]["name"], PROJECT_NAME);
+        assert_eq!(body[1], Value::Null);
+    }
+}
