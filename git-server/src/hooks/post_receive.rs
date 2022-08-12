@@ -2,14 +2,8 @@
 //!
 //! <https://git-scm.com/docs/githooks#post-receive>
 //!
-//! # Use by Radicle Git-Server
-//!
-//! The `post-receive` git hook sends a request to the org-node for signing references once a `git push` has successfully passed
-//! `pre-receive` certification verification and authorization.
-//!
 use std::io::prelude::*;
 use std::io::{stdin, ErrorKind, Write};
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::str;
 use std::str::FromStr;
@@ -31,8 +25,6 @@ use super::storage::Storage;
 use super::{types::ReceivePackEnv, CertSignerDetails};
 use crate::error::Error;
 
-/// Filename for named pipe / FIFO file.
-pub const ORG_SOCKET_FILE: &str = "org-node.sock";
 pub const RAD_ID_REF: &str = "rad/id";
 
 /// `PostReceive` provides access to the standard input values passed into the `post-receive`
@@ -422,22 +414,6 @@ impl PostReceive {
                 }
             }
             Err(err) => return Err(err.into()),
-        }
-
-        Ok(())
-    }
-
-    pub fn notify_org_node(&self) -> Result<(), Error> {
-        let path = std::env::temp_dir().join(ORG_SOCKET_FILE);
-        match UnixStream::connect(path.clone()) {
-            Ok(mut stream) => {
-                stream.write_all(format!("{}\n", self.env.git_namespace).as_bytes())?;
-            }
-            Err(e) => {
-                eprintln!("Error connecting to org socket ({:?}): {}", path, e);
-                eprintln!("Please ensure org-node service is running.");
-                return Err(Error::UnixSocket);
-            }
         }
 
         Ok(())

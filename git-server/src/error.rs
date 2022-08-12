@@ -100,8 +100,8 @@ pub enum Error {
     #[error(transparent)]
     Profile(#[from] librad::profile::Error),
 
-    /// Failed to connect to org-node unix socket.
-    #[error("failed to connect to org-node unix socket")]
+    /// Failed to connect to unix socket.
+    #[error("failed to connect to unix socket")]
     UnixSocket,
 
     /// An error occured with initializing read-only storage.

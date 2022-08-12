@@ -1,9 +1,0 @@
-query AllProjects($timestamp: BigInt!) {
-    projects(where: {
-        timestamp_gt: $timestamp,
-    }, orderBy: timestamp) {
-        timestamp
-        org { id }
-        anchor { objectId, multihash }
-    }
-}
