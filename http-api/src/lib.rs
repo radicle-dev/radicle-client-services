@@ -161,11 +161,10 @@ impl Context {
     }
 
     /// Populate a map between SSH fingerprints and their peer identities
-    async fn populate_fingerprints(
-        &self,
-        map: &mut HashMap<Urn, Fingerprints>,
+    fn populate_fingerprints(
+        map: &mut tokio::sync::RwLockWriteGuard<HashMap<Urn, Fingerprints>>,
+        storage: deadpool::managed::Object<Storage, InitError>,
     ) -> Result<(), Error> {
-        let storage = self.storage().await?;
         let identities = identities::any::list(storage.read_only())?;
 
         for identity in identities.flatten() {
@@ -289,14 +288,17 @@ async fn cleanup_sessions_job(ctx: Context, interval: time::Duration) {
     }
 }
 
-async fn populate_fingerprints_job(ctx: Context, interval: time::Duration) {
+async fn populate_fingerprints_job(ctx: Context, interval: time::Duration) -> Result<(), Error> {
     let mut timer = tokio::time::interval(interval);
 
     loop {
         timer.tick().await; // Returns immediately the first time.
 
-        let mut projects = ctx.projects.write().await;
-        if let Err(err) = ctx.populate_fingerprints(&mut projects).await {
+        let storage = ctx.storage().await?;
+        let mut projects_guard: tokio::sync::RwLockWriteGuard<_> = ctx.projects.write().await;
+        if let Err(err) = tokio::task::block_in_place(|| {
+            Context::populate_fingerprints(&mut projects_guard, storage)
+        }) {
             tracing::error!("Failed to populate project fingerprints: {}", err);
         }
     }
