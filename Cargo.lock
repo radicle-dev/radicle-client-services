@@ -452,6 +452,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bs58"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "771fe0050b883fcc3ea2359b1a96bcfbc090b7116eae7c3c512c7a083fdf23d3"
+
+[[package]]
 name = "bstr"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -671,6 +677,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "colored"
+version = "1.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4ffc801dacf156c5854b9df4f425a626539c3a6ef7893cc0c5084a23f0b6c59"
+dependencies = [
+ "atty",
+ "lazy_static",
+ "winapi 0.3.9",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -742,9 +759,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-channel"
-version = "0.5.4"
+version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5aaa7bd5fb665c6864b5f963dd9097905c54125909c7aa94c9e18507cdbe6c53"
+checksum = "c2dd04ddaf88237dc3b8d8f9a3c1004b506b54b3313403944054d23c0870c521"
 dependencies = [
  "cfg-if 1.0.0",
  "crossbeam-utils",
@@ -855,6 +872,19 @@ dependencies = [
  "digest 0.9.0",
  "rand_core 0.5.1",
  "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "curve25519-dalek-ng"
+version = "4.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c359b7249347e46fb28804470d071c921156ad62b3eef5d34e2ba867533dec8"
+dependencies = [
+ "byteorder",
+ "digest 0.9.0",
+ "rand_core 0.6.3",
+ "subtle-ng",
  "zeroize",
 ]
 
@@ -989,6 +1019,21 @@ dependencies = [
  "elliptic-curve 0.10.6",
  "hmac",
  "signature",
+]
+
+[[package]]
+name = "ed25519-consensus"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1dd91246c940272326f665724138660a183577ffb77b384a5e10d67d2d5075a"
+dependencies = [
+ "curve25519-dalek-ng",
+ "hex",
+ "rand_core 0.6.3",
+ "serde",
+ "sha2 0.9.9",
+ "thiserror",
+ "zeroize",
 ]
 
 [[package]]
@@ -1140,9 +1185,9 @@ checksum = "77f3309417938f28bf8228fcff79a4a37103981e3e186d2ccd19c74b38f4eb71"
 
 [[package]]
 name = "fastrand"
-version = "1.7.0"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3fcf0cee53519c866c09b5de1f6c56ff9d647101f81c1964fa632e148896cdf"
+checksum = "a7a407cfaa3385c4ae6b23e84623d48c2798d06e3e6a1878f7f59f17b3f86499"
 dependencies = [
  "instant",
 ]
@@ -2891,6 +2936,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "nakamoto-net"
+version = "0.3.0"
+source = "git+https://github.com/cloudhead/nakamoto?branch=master#66d0507896a4864dda3c4b0d08e30ef94c8d7a19"
+dependencies = [
+ "crossbeam-channel",
+ "fastrand",
+ "log",
+ "thiserror",
+]
+
+[[package]]
+name = "nakamoto-net-poll"
+version = "0.3.0"
+source = "git+https://github.com/cloudhead/nakamoto?branch=master#66d0507896a4864dda3c4b0d08e30ef94c8d7a19"
+dependencies = [
+ "crossbeam-channel",
+ "libc",
+ "log",
+ "nakamoto-net",
+ "popol",
+ "socket2 0.4.4",
+]
+
+[[package]]
 name = "net2"
 version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2974,6 +3043,15 @@ name = "nonempty"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9e591e719385e6ebaeb5ce5d3887f7d5676fceca6411d1925ccc95745f3d6f7"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "nonempty"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09f1f8e5676e1a1f2ee8b21f38238e1243c827531c9435624c7bfb305102cee4"
 dependencies = [
  "serde",
 ]
@@ -3066,9 +3144,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.12.0"
+version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7709cef83f0c1f58f666e746a08b21e0085f7440fa6a29cc194d68aac97a4225"
+checksum = "18a6dbe30758c9f83eb00cbea4ac95966305f5a7772f3f42ebfc7fc7eddbd8e1"
 
 [[package]]
 name = "onig"
@@ -3366,6 +3444,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "popol"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2dac9010e6fc2d991bbf3c362433214c28f7f1a82151b6b1de8dd69d27211495"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3452,6 +3539,26 @@ name = "quick-error"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
+
+[[package]]
+name = "quickcheck"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "588f6378e4dd99458b60ec275b4477add41ce4fa9f64dcba6f15adccb19b50d6"
+dependencies = [
+ "rand",
+]
+
+[[package]]
+name = "quickcheck_macros"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b22a693222d716a9587786f37ac3f6b4faedb5b80c23914e7303ff5a1d8016e9"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "quinn"
@@ -3666,6 +3773,36 @@ dependencies = [
  "quote",
  "radicle-git-ext",
  "syn",
+]
+
+[[package]]
+name = "radicle-node"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "bs58",
+ "chrono",
+ "colored",
+ "ed25519-consensus",
+ "fastrand",
+ "git-ref-format",
+ "git2",
+ "log",
+ "multibase",
+ "nakamoto-net",
+ "nakamoto-net-poll",
+ "nonempty 0.8.0",
+ "once_cell",
+ "quickcheck",
+ "quickcheck_macros",
+ "radicle-git-ext",
+ "serde",
+ "serde_json",
+ "sha2 0.10.2",
+ "siphasher",
+ "tempfile",
+ "thiserror",
+ "toml",
 ]
 
 [[package]]
@@ -4259,6 +4396,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e24979f63a11545f5f2c60141afe249d4f19f84581ea2138065e400941d83d3"
 
 [[package]]
+name = "siphasher"
+version = "0.3.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7bd3e3206899af3f8b12af284fafc038cc1dc2b41d1b89dd17297221c5d225de"
+
+[[package]]
 name = "siwe"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4359,6 +4502,12 @@ name = "subtle"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6bdef32e8150c2a081110b42772ffe7d7c9032b606bc226c8260fd97e0976601"
+
+[[package]]
+name = "subtle-ng"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "734676eb262c623cec13c3155096e08d1f8f29adce39ba17948b18dad1e54142"
 
 [[package]]
 name = "syn"

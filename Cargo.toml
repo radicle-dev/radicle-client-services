@@ -2,6 +2,7 @@
 members = [
   "http-api",
   "git-server",
+  "node",
   "shared",
 ]
 
@@ -48,6 +49,16 @@ rev = "ea07d1c1327fd05e7792b771436744d415bf4fd9"
 [patch.crates-io.automerge]
 git = "https://github.com/automerge/automerge-rs"
 rev = "291557a019acac283e54ea31a9fad81ed65736ab"
+
+[patch.crates-io.nakamoto-net]
+git = "https://github.com/cloudhead/nakamoto"
+branch = "master"
+version = "0.3.0"
+
+[patch.crates-io.nakamoto-net-poll]
+git = "https://github.com/cloudhead/nakamoto"
+branch = "master"
+version = "0.3.0"
 
 [profile.release]
 debug = true
