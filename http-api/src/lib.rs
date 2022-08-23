@@ -246,12 +246,21 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
         )
         .layer(
             TraceLayer::new_for_http()
-                .on_request(|request: &Request<Body>, _span: &Span| {
-                    tracing::info!("{} {}", request.method(), request.uri().path())
+                .make_span_with(|request: &Request<Body>| {
+                    tracing::info_span!(
+                        "request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                        status = tracing::field::Empty,
+                        latency = tracing::field::Empty,
+                    )
                 })
                 .on_response(
-                    |_response: &Response<BoxBody>, latency: Duration, _span: &Span| {
-                        tracing::info!("latency={:?}", latency)
+                    |response: &Response<BoxBody>, latency: Duration, span: &Span| {
+                        span.record("status", &tracing::field::debug(response.status()));
+                        span.record("latency", &tracing::field::debug(latency));
+
+                        tracing::info!("Processed");
                     },
                 ),
         );
