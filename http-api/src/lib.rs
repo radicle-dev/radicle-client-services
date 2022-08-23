@@ -271,14 +271,12 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
         tracing::info!("listening on https://{}", options.listen);
         axum_server::bind_rustls(options.listen, config)
             .serve(app.into_make_service())
-            .await
-            .unwrap();
+            .await?;
     } else {
         tracing::info!("listening on http://{}", options.listen);
         axum::Server::bind(&options.listen)
             .serve(app.into_make_service())
-            .await
-            .unwrap();
+            .await?;
     }
 
     Ok(())
