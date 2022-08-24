@@ -6,19 +6,36 @@ pub mod error;
 pub mod hooks;
 
 use std::collections::{HashMap, HashSet};
-use std::convert::Infallible;
+use std::convert::TryInto;
 use std::fs::File;
 use std::io::prelude::*;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::time::Duration;
 use std::{io, net};
 
 use anyhow::bail;
 use anyhow::Context as _;
+use axum::body::{BoxBody, Bytes};
+use axum::extract::{ConnectInfo, Path as AxumPath, RawQuery};
+use axum::http::{Method, StatusCode};
+use axum::response::IntoResponse;
+use axum::routing::any;
+use axum::{Extension, Router};
+use axum_server::tls_rustls::RustlsConfig;
 use either::Either;
 use flate2::write::GzDecoder;
-use http::{HeaderMap, Method};
+use http::header::HeaderName;
+use http::HeaderMap;
+use hyper::body::Buf;
+use hyper::http::{Request, Response};
+use hyper::Body;
+use tokio::sync::RwLock;
+use tower_http::trace::TraceLayer;
+use tracing::Span;
+
 use librad::git::identities;
 use librad::git::storage::Pool;
 use librad::git::{self, Urn};
@@ -26,10 +43,6 @@ use librad::identities::SomeIdentity;
 use librad::paths::Paths;
 use librad::profile::LnkHome;
 use librad::PeerId;
-use tokio::sync::RwLock;
-use warp::hyper::StatusCode;
-use warp::reply;
-use warp::{self, path, Buf, Filter, Rejection, Reply};
 
 use error::Error;
 
@@ -305,54 +318,58 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
         bail!("Failed to disable gc: {:?}", e);
     }
 
-    let peer_id = path::param::<PeerId>()
-        .map(Some)
-        .or_else(|_| async { Ok::<(Option<PeerId>,), Infallible>((None,)) });
+    let app = Router::new()
+        .route("/:project_id/*request", any(git_handler))
+        .layer(Extension(ctx.clone()))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &Request<Body>| {
+                    tracing::info_span!(
+                        "request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                        status = tracing::field::Empty,
+                        latency = tracing::field::Empty,
+                    )
+                })
+                .on_response(
+                    |response: &Response<BoxBody>, latency: Duration, span: &Span| {
+                        span.record("status", &tracing::field::debug(response.status()));
+                        span.record("latency", &tracing::field::debug(latency));
 
-    let server = warp::filters::any::any()
-        .map(move || ctx.clone())
-        .and(warp::method())
-        .and(warp::filters::header::headers_cloned())
-        .and(warp::filters::body::aggregate())
-        .and(warp::filters::addr::remote())
-        .and(path::param())
-        .and(peer_id)
-        .and(path::peek())
-        .and(
-            warp::filters::query::raw()
-                .or(warp::any().map(String::default))
-                .unify(),
+                        tracing::info!("Processed");
+                    },
+                ),
         )
-        .and_then(git_handler)
-        .recover(recover)
-        .with(warp::log("radicle_git_server"));
-    let server = warp::serve(server);
+        .into_make_service_with_connect_info::<SocketAddr>();
 
     if let (Some(cert), Some(key)) = (options.tls_cert, options.tls_key) {
-        server
-            .tls()
-            .cert_path(cert)
-            .key_path(key)
-            .run(options.listen)
-            .await;
+        let config = RustlsConfig::from_pem_file(cert, key).await.unwrap();
+
+        tracing::info!("listening on https://{}", options.listen);
+        axum_server::bind_rustls(options.listen, config)
+            .serve(app)
+            .await?;
     } else {
-        server.run(options.listen).await;
+        tracing::info!("listening on http://{}", options.listen);
+        axum::Server::bind(&options.listen).serve(app).await?;
     }
+
     Ok(())
 }
 
 async fn git_handler(
-    ctx: Context,
+    Extension(ctx): Extension<Context>,
+    AxumPath((project_id, request)): AxumPath<(String, String)>,
     method: Method,
     headers: HeaderMap,
-    body: impl Buf,
-    remote: Option<net::SocketAddr>,
-    project_id: String,
-    peer_id: Option<PeerId>,
-    request: warp::filters::path::Peek,
-    query: String,
-) -> Result<Box<dyn Reply>, Rejection> {
-    let remote = remote.expect("There is always a remote for HTTP connections");
+    body: Bytes,
+    ConnectInfo(remote): ConnectInfo<SocketAddr>,
+    query: RawQuery,
+) -> impl IntoResponse {
+    let peer_id = None;
+    let query = query.0.unwrap_or_default();
+
     let urn = if let Some(name) = project_id.strip_suffix(".git") {
         if let Ok(urn) = Urn::try_from_id(name) {
             urn
@@ -374,28 +391,19 @@ async fn git_handler(
     };
 
     let (status, headers, body) = git(
-        ctx,
-        method,
-        headers,
-        body,
-        remote,
-        urn,
-        peer_id,
-        request.as_str(),
-        query,
+        ctx, method, headers, body, remote, urn, peer_id, &request, query,
     )
     .await?;
 
-    let mut builder = http::Response::builder().status(status);
-
+    let mut response_headers = HeaderMap::new();
     for (name, vec) in headers.iter() {
         for value in vec {
-            builder = builder.header(name, value);
+            let header: HeaderName = name.try_into()?;
+            response_headers.insert(header, value.parse()?);
         }
     }
-    let response = builder.body(body).map_err(Error::from)?;
 
-    Ok(Box::new(response))
+    Ok::<_, Error>((status, response_headers, body))
 }
 
 async fn git(
@@ -582,20 +590,6 @@ async fn git(
             panic!("failed to wait for git-http-backend: {}", err);
         }
     }
-}
-
-async fn recover(err: Rejection) -> Result<Box<dyn Reply>, Infallible> {
-    let status = if err.is_not_found() {
-        StatusCode::NOT_FOUND
-    } else if let Some(error) = err.find::<Error>() {
-        tracing::error!("{}", error);
-
-        error.status()
-    } else {
-        StatusCode::BAD_REQUEST
-    };
-
-    Ok(Box::new(reply::with_status(String::default(), status)))
 }
 
 /// Helper method to generate random string for cert nonce;

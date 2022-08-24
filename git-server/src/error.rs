@@ -1,4 +1,5 @@
 #![allow(clippy::large_enum_variant)]
+use axum::response::{IntoResponse, Response};
 
 /// Errors that may occur when interacting with the radicle git server or git hooks.
 #[derive(Debug, thiserror::Error)]
@@ -131,6 +132,14 @@ pub enum Error {
     /// Tracking error (inner).
     #[error(transparent)]
     PreviousError(#[from] librad::git::tracking::git::refdb::PreviousError<librad::git_ext::Oid>),
+
+    /// HeaderName error.
+    #[error(transparent)]
+    InvalidHeaderName(#[from] axum::http::header::InvalidHeaderName),
+
+    /// HeaderValue error.
+    #[error(transparent)]
+    InvalidHeaderValue(#[from] axum::http::header::InvalidHeaderValue),
 }
 
 impl Error {
@@ -146,4 +155,10 @@ impl Error {
     }
 }
 
-impl warp::reject::Reject for Error {}
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        tracing::error!("{}", self);
+
+        self.status().into_response()
+    }
+}
