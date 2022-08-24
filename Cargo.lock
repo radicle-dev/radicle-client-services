@@ -466,6 +466,7 @@ dependencies = [
  "lazy_static",
  "memchr",
  "regex-automata",
+ "serde",
 ]
 
 [[package]]
@@ -1742,6 +1743,7 @@ dependencies = [
  "bstr",
  "home",
  "quick-error",
+ "serde",
  "url",
 ]
 
@@ -3786,6 +3788,7 @@ dependencies = [
  "ed25519-consensus",
  "fastrand",
  "git-ref-format",
+ "git-url",
  "git2",
  "log",
  "multibase",
