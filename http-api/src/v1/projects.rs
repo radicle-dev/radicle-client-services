@@ -156,7 +156,7 @@ async fn history_handler(
         One::from_str(&sha).map_err(|_| Error::NotFound)?,
     );
 
-    let mut commits = browse(reference, ctx.paths.to_owned(), |browser| {
+    let commits = browse(reference, ctx.paths.to_owned(), |browser| {
         radicle_source::commits::<PeerId>(browser, None)
     })
     .await?;
@@ -206,9 +206,6 @@ async fn history_handler(
             })
         })
         .collect::<Result<Vec<CommitTeaser>, Error>>()?;
-
-    // Since the headers filtering can alter the amount of commits we have to recalculate it here.
-    commits.stats.commits = headers.len();
 
     let response = json!({
         "headers": &headers,
