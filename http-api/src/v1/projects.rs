@@ -414,6 +414,7 @@ async fn remote_handler(
 #[derive(Deserialize, Default)]
 struct BlobQuery {
     highlight: bool,
+    theme: Option<String>,
 }
 
 /// Get project source file.
@@ -426,7 +427,7 @@ async fn blob_handler(
     let path = path.strip_prefix('/').ok_or(Error::NotFound)?.to_string();
     let Query(query) = query.unwrap_or_default();
     let theme = if query.highlight {
-        Some(ctx.theme.as_str())
+        Some(query.theme.as_deref().unwrap_or(ctx.theme.as_str()))
     } else {
         None
     };
