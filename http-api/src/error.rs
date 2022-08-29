@@ -93,6 +93,10 @@ pub enum Error {
     #[error(transparent)]
     Cobs(#[from] radicle_common::cobs::Error),
 
+    /// An async task was either cancelled or panic'ed.
+    #[error(transparent)]
+    TokioJoinError(#[from] tokio::task::JoinError),
+
     /// An anyhow error originated from radicle-common
     #[error("radicle-common: {0}")]
     Common(#[from] anyhow::Error),

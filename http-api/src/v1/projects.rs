@@ -6,6 +6,7 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
 use hyper::StatusCode;
+use librad::identities::Project;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -48,43 +49,79 @@ pub fn router(ctx: Context) -> Router {
         .layer(Extension(ctx))
 }
 
-/// List all projects.
-/// `GET /projects`
-async fn project_root_handler(Extension(ctx): Extension<Context>) -> impl IntoResponse {
-    let storage = ctx.storage().await?;
+fn get_project_info_sync(
+    ctx: Context,
+    project: Project,
+    storage: deadpool::managed::Object<Storage, librad::git::storage::pool::InitError>,
+) -> Result<Info, Error> {
     let repo = git2::Repository::open_bare(&ctx.paths.git_dir()).map_err(Error::from)?;
-    let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
+    let whoami = person::local(&storage).map_err(Error::LocalIdentity)?;
     let cobs = cobs::Store::new(whoami, &ctx.paths, &storage);
     let issues = cobs.issues();
     let patches = cobs.patches();
-    let projects = identities::any::list(storage.read_only())
-        .map_err(Error::from)?
-        .filter_map(|res| {
-            res.map(|id| match id {
-                SomeIdentity::Project(project) => {
-                    let meta: project::Metadata = project.try_into().ok()?;
-                    let head =
-                        get_head_commit(&repo, &meta.urn, &meta.default_branch, &meta.delegates)
-                            .map(|h| h.id)
-                            .ok();
 
-                    let issues = issues.count(&meta.urn).map_err(Error::Cobs).ok()?;
-                    let patches = patches.count(&meta.urn).map_err(Error::Cobs).ok()?;
+    let meta: project::Metadata = project.try_into()?;
+    let head = get_head_commit(&repo, &meta.urn, &meta.default_branch, &meta.delegates)
+        .map(|h| h.id)
+        .ok();
 
-                    Some(Info {
-                        meta,
-                        head,
-                        issues,
-                        patches,
-                    })
-                }
-                _ => None,
-            })
-            .transpose()
+    let issues = issues.count(&meta.urn).map_err(Error::Cobs)?;
+    let patches = patches.count(&meta.urn).map_err(Error::Cobs)?;
+
+    let info = Info {
+        meta,
+        head,
+        issues,
+        patches,
+    };
+
+    Ok(info)
+}
+
+async fn get_project_info(ctx: Context, project: Project) -> Result<Info, Error> {
+    let storage: deadpool::managed::Object<Storage, librad::git::storage::pool::InitError> =
+        ctx.storage().await?;
+    tokio::task::spawn_blocking(move || get_project_info_sync(ctx, project, storage)).await?
+}
+
+async fn get_projects_info(ctx: Context) -> Result<Vec<Info>, Error> {
+    let storage = ctx.storage().await?;
+    let projects: Vec<Project> = identities::any::list(storage.read_only())?
+        .map(|res| match res {
+            Ok(id) => Ok(id),
+            Err(err) => Err(Error::from(err)),
         })
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(Error::from)?;
+        .filter_map(|id_result| match id_result {
+            Ok(SomeIdentity::Project(project)) => Some(Ok(project)),
+            Err(err) => Some(Err(err)),
+            _ => None,
+        })
+        .collect::<Result<Vec<Project>, Error>>()?;
 
+    let pending_futures = {
+        let mut futures: Vec<tokio::task::JoinHandle<_>> = Vec::with_capacity(projects.len());
+        for id in &projects {
+            let id = id.clone();
+            let ctx = ctx.clone();
+            let future = tokio::task::spawn(get_project_info(ctx, id));
+            futures.push(future);
+        }
+        futures
+    };
+
+    let mut infos: Vec<Info> = Vec::with_capacity(projects.len());
+    for result in futures::future::join_all(pending_futures).await {
+        let info = result??;
+        infos.push(info);
+    }
+
+    Ok(infos)
+}
+
+/// List all projects.
+/// `GET /projects`
+async fn project_root_handler(Extension(ctx): Extension<Context>) -> impl IntoResponse {
+    let projects = get_projects_info(ctx).await?;
     Ok::<_, Error>(Json(projects))
 }
 
