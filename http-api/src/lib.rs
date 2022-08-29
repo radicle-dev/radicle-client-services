@@ -53,7 +53,7 @@ use error::Error;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const POPULATE_FINGERPRINTS_INTERVAL: time::Duration = time::Duration::from_secs(20);
 pub const CLEANUP_SESSIONS_INTERVAL: time::Duration = time::Duration::from_secs(60);
-pub const STORAGE_POOL_SIZE: usize = 3;
+pub const STORAGE_POOL_SIZE: usize = 10;
 
 #[derive(Debug, Clone)]
 pub struct Options {
