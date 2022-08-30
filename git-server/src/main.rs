@@ -5,8 +5,6 @@ use radicle_git_server as server;
 
 use argh::FromArgs;
 
-use shared::LogFmt;
-
 /// Radicle Git Server.
 #[derive(FromArgs)]
 pub struct Options {
@@ -29,10 +27,6 @@ pub struct Options {
     /// TLS key path
     #[argh(option)]
     pub tls_key: Option<PathBuf>,
-
-    /// either "plain" or "gcp" (gcp available only when compiled-in)
-    #[argh(option, default = "LogFmt::Plain")]
-    pub log_format: LogFmt,
 
     /// service 'git-receive-pack' operations, eg. resulting from a `git push` (default: false)
     #[argh(switch)]
@@ -72,7 +66,7 @@ impl From<Options> for server::Options {
 async fn main() {
     let options = Options::from_env();
 
-    shared::init_logger(options.log_format);
+    shared::init_logger();
     tracing::info!("version {}-{}", env!("CARGO_PKG_VERSION"), env!("GIT_HEAD"));
 
     match server::run(options.into()).await {

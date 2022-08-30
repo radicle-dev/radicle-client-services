@@ -6,8 +6,6 @@ use radicle_http_api as api;
 
 use argh::FromArgs;
 
-use shared::LogFmt;
-
 /// Radicle HTTP API.
 #[derive(FromArgs)]
 pub struct Options {
@@ -34,10 +32,6 @@ pub struct Options {
     /// syntax highlight theme
     #[argh(option, default = r#"String::from("base16-ocean.dark")"#)]
     pub theme: String,
-
-    /// either "plain" or "gcp" (gcp available only when compiled-in)
-    #[argh(option, default = "LogFmt::Plain")]
-    pub log_format: LogFmt,
 }
 
 impl Options {
@@ -63,7 +57,7 @@ impl From<Options> for api::Options {
 async fn main() {
     let options = Options::from_env();
 
-    shared::init_logger(options.log_format);
+    shared::init_logger();
     tracing::info!("version {}-{}", env!("CARGO_PKG_VERSION"), env!("GIT_HEAD"));
 
     match api::run(options.into()).await {

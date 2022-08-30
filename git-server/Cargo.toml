@@ -47,6 +47,5 @@ hex = { version = "0.4.3", optional = true }
 
 [features]
 default = ["hooks"]
-gcp = ["shared/gcp"]
 hooks = ["envconfig", "hex"]
 
