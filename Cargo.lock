@@ -3785,6 +3785,7 @@ dependencies = [
  "bs58",
  "chrono",
  "colored",
+ "crossbeam-channel",
  "ed25519-consensus",
  "fastrand",
  "git-ref-format",
