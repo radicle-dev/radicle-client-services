@@ -84,7 +84,14 @@ async fn get_project_info(ctx: Context, project: Project) -> Result<Info, Error>
     tokio::task::spawn_blocking(move || get_project_info_sync(ctx, project, storage)).await?
 }
 
-async fn get_projects_info(ctx: Context) -> Result<Vec<Info>, Error> {
+async fn get_projects_info(
+    ctx: Context,
+    Query(qs): Query<project::ProjectsQueryString>,
+) -> Result<Vec<Info>, Error> {
+    let project::ProjectsQueryString { page, per_page } = qs;
+    let page = page.unwrap_or(0);
+    let per_page = per_page.unwrap_or(10);
+
     let storage = ctx.storage().await?;
     let projects: Vec<Project> = identities::any::list(storage.read_only())?
         .map(|res| match res {
@@ -96,6 +103,8 @@ async fn get_projects_info(ctx: Context) -> Result<Vec<Info>, Error> {
             Err(err) => Some(Err(err)),
             _ => None,
         })
+        .skip(page * per_page)
+        .take(per_page)
         .collect::<Result<Vec<Project>, Error>>()?;
 
     let pending_futures = {
@@ -120,8 +129,11 @@ async fn get_projects_info(ctx: Context) -> Result<Vec<Info>, Error> {
 
 /// List all projects.
 /// `GET /projects`
-async fn project_root_handler(Extension(ctx): Extension<Context>) -> impl IntoResponse {
-    let projects = get_projects_info(ctx).await?;
+async fn project_root_handler(
+    Extension(ctx): Extension<Context>,
+    Query(qs): Query<project::ProjectsQueryString>,
+) -> impl IntoResponse {
+    let projects = get_projects_info(ctx, Query(qs)).await?;
     Ok::<_, Error>(Json(projects))
 }
 

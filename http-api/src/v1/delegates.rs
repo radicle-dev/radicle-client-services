@@ -9,7 +9,7 @@ use librad::git::Urn;
 
 use radicle_common::{cobs, person};
 
-use crate::axum_extra::Path;
+use crate::axum_extra::{Path, Query};
 use crate::project::{self, Info};
 use crate::{get_head_commit, Context, Error};
 
@@ -27,7 +27,12 @@ pub fn router(ctx: Context) -> Router {
 async fn delegates_projects_handler(
     Extension(ctx): Extension<Context>,
     Path(delegate): Path<Urn>,
+    Query(qs): Query<project::ProjectsQueryString>,
 ) -> impl IntoResponse {
+    let project::ProjectsQueryString { page, per_page } = qs;
+    let page = page.unwrap_or(0);
+    let per_page = per_page.unwrap_or(10);
+
     let storage = ctx.storage().await?;
     let repo = git2::Repository::open_bare(&ctx.paths.git_dir()).map_err(Error::from)?;
     let whoami = person::local(&*storage).map_err(Error::LocalIdentity)?;
@@ -68,6 +73,8 @@ async fn delegates_projects_handler(
             })
             .transpose()
         })
+        .skip(page * per_page)
+        .take(per_page)
         .collect::<Result<Vec<_>, _>>()
         .map_err(Error::from)?;
 

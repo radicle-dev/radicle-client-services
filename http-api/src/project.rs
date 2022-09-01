@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use librad::git::storage::ReadOnly;
 use librad::git::tracking;
@@ -6,6 +6,13 @@ use librad::git::tracking;
 pub use radicle_common::project::{Delegate, Metadata, PeerInfo};
 
 use crate::Error;
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "kebab-case")]
+pub struct ProjectsQueryString {
+    pub page: Option<usize>,
+    pub per_page: Option<usize>,
+}
 
 /// Project info.
 #[derive(Serialize)]
