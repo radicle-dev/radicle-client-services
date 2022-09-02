@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto as _};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{self, Duration};
+use std::time::{self, Duration, Instant};
 use std::{env, net};
 
 use axum::body::BoxBody;
@@ -83,6 +83,14 @@ pub struct Context {
     sessions: Arc<RwLock<HashMap<SessionId, AuthState>>>,
 }
 
+fn saturating_u64_from_u128(n: u128) -> u64 {
+    if n > std::u64::MAX.into() {
+        std::u64::MAX
+    } else {
+        n as u64 // truncate the upper bits because they're all zeros
+    }
+}
+
 impl Context {
     fn new(paths: Paths, signer: BoxedSigner, theme: String) -> Self {
         let peer_id = signer.peer_id();
@@ -103,10 +111,15 @@ impl Context {
     }
 
     async fn storage(&self) -> Result<deadpool::managed::Object<Storage, InitError>, Error> {
-        self.pool
+        let start = Instant::now();
+        let result = self
+            .pool
             .get()
             .await
-            .map_err(|e| Error::Pool(e.to_string()))
+            .map_err(|e| Error::Pool(e.to_string()));
+        let milliseconds = saturating_u64_from_u128(start.elapsed().as_millis());
+        tracing::info!(milliseconds, "Got storage pool handle");
+        result
     }
 
     /// Populates alias map with unique projects' names and their urns
