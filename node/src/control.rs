@@ -66,7 +66,7 @@ fn drain<S: ClientAPI>(stream: &UnixStream, srv: &S) -> Result<(), DrainError> {
         match line.split_once(' ') {
             Some(("update", arg)) => {
                 if let Ok(id) = arg.parse() {
-                    if let Err(e) = srv.updated(id) {
+                    if let Err(e) = srv.notify_update(id) {
                         return Err(DrainError::Client(e));
                     }
                 } else {
