@@ -8,6 +8,8 @@ use crate::identity::ProjId;
 use crate::protocol;
 use crate::protocol::CommandError;
 
+use serde::Deserialize;
+
 /// An error resulting from a handle method.
 #[derive(Error, Debug)]
 pub enum Error {
@@ -74,6 +76,17 @@ impl<R: Reactor> traits::ClientAPI for ClientAPI<R> {
 
         Ok(())
     }
+
+    /// Ask the client to shutdown.
+    fn other_command(&self, _args: &OtherCommandArgs) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct OtherCommandArgs {
+    id: ProjId,
+    amount: u32,
 }
 
 pub mod traits {
@@ -86,5 +99,7 @@ pub mod traits {
         fn command(&self, cmd: protocol::Command) -> Result<(), Error>;
         /// Ask the client to shutdown.
         fn shutdown(self) -> Result<(), Error>;
+        /// Ask the client to shutdown.
+        fn other_command(&self, args: &OtherCommandArgs) -> Result<(), Error>;
     }
 }

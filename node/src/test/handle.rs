@@ -23,4 +23,11 @@ impl traits::ClientAPI for Handle {
     fn shutdown(self) -> Result<(), client::handle::Error> {
         Ok(())
     }
+
+    fn other_command(
+        &self,
+        _: &client::handle::OtherCommandArgs,
+    ) -> Result<(), client::handle::Error> {
+        Ok(())
+    }
 }

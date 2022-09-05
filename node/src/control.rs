@@ -85,6 +85,19 @@ fn drain<S: ClientAPI>(stream: &UnixStream, srv: &S) -> Result<(), DrainError> {
 
         let (cmd, args) = pop_record(&record);
         match cmd {
+            Some("other_command") => {
+                let a = if let Ok(v) = args.deserialize(no_csv_header) {
+                    v
+                } else {
+                    return Err(DrainError::InvalidCommandArg(
+                        args.get(0).unwrap().to_owned(),
+                    ));
+                };
+
+                if let Err(e) = srv.other_command(&a) {
+                    return Err(DrainError::Client(e));
+                }
+            }
             Some("update") => {
                 let args = if let Ok(v) = args.deserialize(no_csv_header) {
                     v
