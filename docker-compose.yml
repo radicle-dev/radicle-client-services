@@ -40,13 +40,25 @@ services:
           memory: 6gb
   caddy:
     image: caddy:2.4.5
+    entrypoint:
+      - sh
+      - -euc
+      - |
+        cat <<EOF >/etc/caddy/Caddyfile
+        {$RADICLE_DOMAIN} {
+            reverse_proxy git-server:8778
+        }
+
+        {$RADICLE_DOMAIN}:8777 {
+            reverse_proxy http-api:8777
+        }
+        EOF
+        caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
     ports:
       - 80:80
       - 443:443
       - 8777:8777
       - 8086:8086
-    volumes:
-      - $PWD/Caddyfile:/etc/caddy/Caddyfile:ro
     environment:
       RADICLE_DOMAIN: $RADICLE_DOMAIN
     container_name: caddy

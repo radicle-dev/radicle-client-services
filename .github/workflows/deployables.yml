@@ -78,8 +78,6 @@ jobs:
         run: gcloud beta compute ssh --zone ${{ matrix.zone }} "github-actions@alt-clients-${{ matrix.host }}" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/.env.${{ matrix.host }} >.env"
       - name: Fetch docker-compose.yml
         run: gcloud beta compute ssh --zone ${{ matrix.zone }} "github-actions@alt-clients-${{ matrix.host }}" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/docker-compose.yml >docker-compose.yml"
-      - name: Fetch Caddyfile
-        run: gcloud beta compute ssh --zone ${{ matrix.zone }} "github-actions@alt-clients-${{ matrix.host }}" --project "radicle-services" --command="curl https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/Caddyfile >Caddyfile"
       - name: Make room for new images
         run: gcloud beta compute ssh --zone ${{ matrix.zone }} "github-actions@alt-clients-${{ matrix.host }}" --project "radicle-services" --command="docker system prune --all --force"
       - name: Pull container images
