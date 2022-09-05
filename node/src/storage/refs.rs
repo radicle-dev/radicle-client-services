@@ -17,7 +17,7 @@ use crate::crypto::{PublicKey, Signature, Signer, Unverified, Verified};
 use crate::git;
 use crate::git::Oid;
 use crate::storage;
-use crate::storage::{ReadRepository, RemoteId, WriteRepository};
+use crate::storage::{ReadRepository, RemoteId, UpdateRepository};
 
 pub static SIGNATURE_REF: Lazy<git::RefString> = Lazy::new(|| git::refname!("radicle/signature"));
 pub const REFS_BLOB_PATH: &str = "refs";
@@ -228,7 +228,7 @@ impl SignedRefs<Verified> {
 
     /// Save the signed refs to disk.
     /// This creates a new commit on the signed refs branch, and updates the branch pointer.
-    pub fn save<'r, S: WriteRepository<'r>>(
+    pub fn save<'r, S: UpdateRepository<'r>>(
         &self,
         // TODO: This should be part of the signed refs.
         remote: &RemoteId,

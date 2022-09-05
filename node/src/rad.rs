@@ -9,7 +9,7 @@ use crate::git;
 use crate::identity::ProjId;
 use crate::storage::git::RADICLE_ID_REF;
 use crate::storage::refs::SignedRefs;
-use crate::storage::{BranchName, ReadRepository as _, WriteRepository as _};
+use crate::storage::{BranchName, ReadRepository as _, UpdateRepository as _};
 use crate::{identity, storage};
 
 pub const REMOTE_NAME: &str = "rad";

@@ -166,7 +166,7 @@ pub trait ReadStorage {
 }
 
 pub trait WriteStorage<'r>: ReadStorage {
-    type Repository: WriteRepository<'r>;
+    type Repository: UpdateRepository<'r>;
 
     fn repository(&self, proj: &ProjId) -> Result<Self::Repository, Error>;
     fn sign_refs(&self, repository: &Self::Repository) -> Result<SignedRefs<Verified>, Error>;
@@ -189,7 +189,7 @@ pub trait ReadRepository<'r> {
     fn remotes(&'r self) -> Result<Self::Remotes, git2::Error>;
 }
 
-pub trait WriteRepository<'r>: ReadRepository<'r> {
+pub trait UpdateRepository<'r>: ReadRepository<'r> {
     fn fetch(&mut self, url: &Url) -> Result<(), git2::Error>;
     fn raw(&self) -> &git2::Repository;
 }
