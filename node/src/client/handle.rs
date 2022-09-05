@@ -55,7 +55,7 @@ pub struct ClientAPI<R: Reactor> {
 
 impl<R: Reactor> traits::ClientAPI for ClientAPI<R> {
     /// Notify the client that a project has been updated.
-    fn updated(&self, id: ProjId) -> Result<(), Error> {
+    fn notify_update(&self, id: ProjId) -> Result<(), Error> {
         self.command(protocol::Command::AnnounceRefsUpdate(id))
     }
 
@@ -81,7 +81,7 @@ pub mod traits {
 
     pub trait ClientAPI {
         /// Notify the client that a project has been updated.
-        fn updated(&self, id: ProjId) -> Result<(), Error>;
+        fn notify_update(&self, id: ProjId) -> Result<(), Error>;
         /// Send a command to the command channel, and wake up the event loop.
         fn command(&self, cmd: protocol::Command) -> Result<(), Error>;
         /// Ask the client to shutdown.

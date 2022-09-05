@@ -10,7 +10,7 @@ pub struct Handle {
 }
 
 impl traits::ClientAPI for Handle {
-    fn updated(&self, id: identity::ProjId) -> Result<(), handle::Error> {
+    fn notify_update(&self, id: identity::ProjId) -> Result<(), handle::Error> {
         self.updates.lock().unwrap().push(id);
 
         Ok(())
