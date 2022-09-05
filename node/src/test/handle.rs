@@ -9,7 +9,7 @@ pub struct Handle {
     pub updates: Arc<Mutex<Vec<identity::ProjId>>>,
 }
 
-impl traits::Handle for Handle {
+impl traits::ClientAPI for Handle {
     fn updated(&self, id: identity::ProjId) -> Result<(), handle::Error> {
         self.updates.lock().unwrap().push(id);
 
