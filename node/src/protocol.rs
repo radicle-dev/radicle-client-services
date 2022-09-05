@@ -25,7 +25,7 @@ use crate::identity::{ProjId, Project, UserId};
 use crate::protocol::config::ProjectTracking;
 use crate::protocol::message::Message;
 use crate::protocol::peer::{Peer, PeerError, PeerState};
-use crate::storage::{self, ReadRepository, WriteRepository};
+use crate::storage::{self, ReadRepository, UpdateRepository};
 use crate::storage::{Inventory, WriteStorage};
 
 pub use crate::protocol::config::{Config, Network};

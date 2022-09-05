@@ -15,7 +15,7 @@ use crate::identity::{ProjId, Project, UserId};
 use crate::storage::refs;
 use crate::storage::refs::{Refs, SignedRefs};
 use crate::storage::{
-    Error, Inventory, ReadRepository, ReadStorage, Remote, WriteRepository, WriteStorage,
+    Error, Inventory, ReadRepository, ReadStorage, Remote, UpdateRepository, WriteStorage,
 };
 
 use super::RemoteId;
@@ -303,7 +303,7 @@ impl<'r> ReadRepository<'r> for Repository {
     }
 }
 
-impl<'r> WriteRepository<'r> for Repository {
+impl<'r> UpdateRepository<'r> for Repository {
     /// Fetch all remotes of a project from the given URL.
     fn fetch(&mut self, url: &git::Url) -> Result<(), git2::Error> {
         // TODO: Have function to fetch specific remotes.
@@ -346,7 +346,7 @@ mod tests {
     use super::*;
     use crate::git;
     use crate::storage::refs::SIGNATURE_REF;
-    use crate::storage::{ReadStorage, WriteRepository};
+    use crate::storage::{ReadStorage, UpdateRepository};
     use crate::test::arbitrary;
     use crate::test::crypto::MockSigner;
     use crate::test::fixtures;
