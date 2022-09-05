@@ -4,12 +4,10 @@ use std::io::BufReader;
 use std::os::unix::net::UnixListener;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
-use std::str::FromStr;
 use std::{fs, io, net};
 
 use crate::client;
 use crate::client::handle::traits::ClientAPI;
-use crate::identity::ProjId;
 
 /// Default name for control socket file.
 pub const DEFAULT_SOCKET_NAME: &str = "radicle.sock";
@@ -59,21 +57,48 @@ enum DrainError {
     Client(#[from] client::handle::Error),
 }
 
-fn drain<S: ClientAPI>(stream: &UnixStream, srv: &S) -> Result<(), DrainError> {
-    let mut reader = BufReader::new(stream);
+fn pop_record(rec: &csv::StringRecord) -> (Option<&str>, csv::StringRecord) {
+    let mut ret = csv::StringRecord::new();
+    for i in 1..rec.len() {
+        let f = rec.get(i).unwrap();
+        ret.push_field(f);
+    }
+    (rec.get(0), ret)
+}
 
-    for line in reader.by_ref().lines().flatten() {
-        match line.split_once(' ') {
-            Some(("update", arg)) => {
-                if let Ok(id) = ProjId::from_str(arg) {
-                    if let Err(e) = srv.notify_update(id) {
-                        return Err(DrainError::Client(e));
-                    }
+fn drain<S: ClientAPI>(stream: &UnixStream, srv: &S) -> Result<(), DrainError> {
+    let no_csv_header = None;
+
+    let reader = BufReader::new(stream);
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .delimiter(b' ')
+        .from_reader(reader);
+
+    for record in reader.records() {
+        let record = if let Ok(v) = record {
+            v
+        } else {
+            // parse error
+            continue;
+        };
+
+        let (cmd, args) = pop_record(&record);
+        match cmd {
+            Some("update") => {
+                let args = if let Ok(v) = args.deserialize(no_csv_header) {
+                    v
                 } else {
-                    return Err(DrainError::InvalidCommandArg(arg.to_owned()));
+                    return Err(DrainError::InvalidCommandArg(
+                        args.get(0).unwrap().to_owned(),
+                    ));
+                };
+
+                if let Err(e) = srv.notify_update(args) {
+                    return Err(DrainError::Client(e));
                 }
             }
-            Some((cmd, _)) => return Err(DrainError::UnknownCommand(cmd.to_owned())),
+            Some(cmd) => return Err(DrainError::UnknownCommand(cmd.to_owned())),
             None => return Err(DrainError::InvalidCommand),
         }
     }
