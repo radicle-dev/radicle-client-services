@@ -65,7 +65,7 @@ fn drain<H: Handle>(stream: &UnixStream, handle: &H) -> Result<(), DrainError> {
     for line in reader.by_ref().lines().flatten() {
         match line.split_once(' ') {
             Some(("update", arg)) => {
-                if let Ok(id) = ProjId::from_str(arg) {
+                if let Ok(id) = arg.parse() {
                     if let Err(e) = handle.updated(id) {
                         return Err(DrainError::Client(e));
                     }
