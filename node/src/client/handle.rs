@@ -46,14 +46,14 @@ impl<T> From<chan::SendError<T>> for Error {
     }
 }
 
-pub struct Handle<R: Reactor> {
+pub struct ClientAPI<R: Reactor> {
     pub(crate) commands: chan::Sender<protocol::Command>,
     pub(crate) waker: R::Waker,
     pub(crate) shutdown: chan::Sender<()>,
     pub(crate) listening: chan::Receiver<net::SocketAddr>,
 }
 
-impl<R: Reactor> traits::Handle for Handle<R> {
+impl<R: Reactor> traits::ClientAPI for ClientAPI<R> {
     /// Notify the client that a project has been updated.
     fn updated(&self, id: ProjId) -> Result<(), Error> {
         self.command(protocol::Command::AnnounceRefsUpdate(id))
@@ -79,7 +79,7 @@ impl<R: Reactor> traits::Handle for Handle<R> {
 pub mod traits {
     use super::*;
 
-    pub trait Handle {
+    pub trait ClientAPI {
         /// Notify the client that a project has been updated.
         fn updated(&self, id: ProjId) -> Result<(), Error>;
         /// Send a command to the command channel, and wake up the event loop.

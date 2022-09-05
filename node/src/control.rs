@@ -8,7 +8,7 @@ use std::str::FromStr;
 use std::{fs, io, net};
 
 use crate::client;
-use crate::client::handle::traits::Handle;
+use crate::client::handle::traits::ClientAPI;
 use crate::identity::ProjId;
 
 /// Default name for control socket file.
@@ -21,7 +21,7 @@ pub enum Error {
 }
 
 /// Listen for commands on the control socket, and process them.
-pub fn listen<P: AsRef<Path>, H: Handle>(path: P, handle: H) -> Result<(), Error> {
+pub fn listen<P: AsRef<Path>, H: ClientAPI>(path: P, handle: H) -> Result<(), Error> {
     // Remove the socket file on startup before rebinding.
     fs::remove_file(&path).ok();
 
@@ -59,14 +59,14 @@ enum DrainError {
     Client(#[from] client::handle::Error),
 }
 
-fn drain<H: Handle>(stream: &UnixStream, handle: &H) -> Result<(), DrainError> {
+fn drain<S: ClientAPI>(stream: &UnixStream, srv: &S) -> Result<(), DrainError> {
     let mut reader = BufReader::new(stream);
 
     for line in reader.by_ref().lines().flatten() {
         match line.split_once(' ') {
             Some(("update", arg)) => {
                 if let Ok(id) = ProjId::from_str(arg) {
-                    if let Err(e) = handle.updated(id) {
+                    if let Err(e) = srv.updated(id) {
                         return Err(DrainError::Client(e));
                     }
                 } else {

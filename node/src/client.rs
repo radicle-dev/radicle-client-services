@@ -105,8 +105,8 @@ impl<R: Reactor> Client<R> {
     }
 
     /// Create a new handle to communicate with the client.
-    pub fn handle(&self) -> handle::Handle<R> {
-        handle::Handle {
+    pub fn handle(&self) -> handle::ClientAPI<R> {
+        handle::ClientAPI {
             waker: self.reactor.waker(),
             commands: self.handle.clone(),
             shutdown: self.shutdown.clone(),
