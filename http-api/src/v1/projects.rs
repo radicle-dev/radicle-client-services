@@ -120,7 +120,13 @@ async fn get_projects_info(
 
     let mut infos: Vec<Info> = Vec::with_capacity(projects.len());
     for result in futures::future::join_all(pending_futures).await {
-        let info = result??;
+        let info = match result? {
+            Ok(info) => info,
+            Err(err) => {
+                tracing::error!("Could not fetch project info: {:?}", err);
+                continue;
+            }
+        };
         infos.push(info);
     }
 
