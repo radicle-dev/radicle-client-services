@@ -20,7 +20,7 @@ services:
       - git-server
   git-server:
     image: gcr.io/radicle-services/git-server:${RADICLE_IMAGE_TAG:-latest}
-    entrypoint: /usr/local/bin/radicle-git-server.sh --git-receive-pack $RADICLE_GIT_SERVER_OPTS --root /app/radicle --passphrase seed
+    entrypoint: /usr/local/bin/radicle-git-server.sh $RADICLE_GIT_SERVER_OPTS --root /app/radicle --passphrase seed
     build:
       dockerfile: ./git-server/Dockerfile
       context: .

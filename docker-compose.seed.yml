@@ -1,0 +1,51 @@
+version: "3.7"
+services:
+  linkd:
+    image: gcr.io/radicle-services/linkd:${RADICLE_IMAGE_TAG:-latest}
+    ports:
+      - 8776:8776
+    entrypoint: /usr/local/bin/radicle-linkd --protocol-listen 0.0.0.0:8776 --lnk-home /app/radicle --track everything --signer key --key-format binary --key-source file --key-file-path /app/radicle/linkd.key
+    build:
+      dockerfile: ./linkd/Dockerfile
+      context: .
+    volumes:
+      - /var/opt/radicle:/app/radicle
+    environment:
+      RUST_LOG: info
+      RAD_HOME: /app/radicle
+    init: true
+    container_name: linkd
+    restart: unless-stopped
+    networks:
+      - radicle-services
+  caddy:
+    image: caddy:2.4.5
+    entrypoint:
+      - sh
+      - -euc
+      - |
+        cat <<EOF >/etc/caddy/Caddyfile
+        {$RADICLE_DOMAIN} {
+            reverse_proxy git-server:8778
+        }
+
+        {$RADICLE_DOMAIN}:8777 {
+            reverse_proxy http-api:8777
+        }
+        EOF
+        caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    ports:
+      - 80:80
+      - 443:443
+      - 8777:8777
+      - 8086:8086
+    environment:
+      RADICLE_DOMAIN: $RADICLE_DOMAIN
+    container_name: caddy
+    restart: unless-stopped
+    networks:
+      - radicle-services
+
+networks:
+  radicle-services:
+    name: radicle-services
