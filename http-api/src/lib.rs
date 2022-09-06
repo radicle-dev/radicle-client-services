@@ -315,7 +315,7 @@ async fn root_handler(Extension(peer_id): Extension<PeerId>) -> impl IntoRespons
     let response = json!({
         "message": "Welcome!",
         "service": "radicle-http-api",
-        "version": VERSION,
+        "version": format!("{}-{}", VERSION, env!("GIT_HEAD")),
         "peer": { "id": peer_id },
         "path": "/",
         "links": [

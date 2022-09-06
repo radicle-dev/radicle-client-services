@@ -17,4 +17,5 @@ fn main() {
         .unwrap_or_else(|| String::from("unknown"));
 
     println!("cargo:rustc-env=GIT_HEAD={}", hash);
+    println!("cargo:rustc-rerun-if-changed=.git/HEAD");
 }
