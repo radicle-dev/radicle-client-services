@@ -605,6 +605,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "olpc-cjson"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72ca49fe685014bbf124ee547da94ed7bb65a6eb9dc9c4711773c081af96a39c"
+dependencies = [
+ "serde",
+ "serde_json",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -757,6 +768,7 @@ dependencies = [
  "nakamoto-net",
  "nakamoto-net-poll",
  "nonempty",
+ "olpc-cjson",
  "once_cell",
  "quickcheck",
  "quickcheck_macros",
@@ -767,7 +779,6 @@ dependencies = [
  "siphasher",
  "tempfile",
  "thiserror",
- "toml",
 ]
 
 [[package]]
@@ -990,15 +1001,6 @@ name = "tinyvec_macros"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
-
-[[package]]
-name = "toml"
-version = "0.5.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d82e1a7758622a465f8cee077614c73484dac5b836c02ff6a40d5d1010324d7"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "typenum"
