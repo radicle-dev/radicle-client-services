@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
 
+use axum::handler::Handler;
+use axum::http::{header, HeaderValue};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
@@ -9,6 +11,7 @@ use hyper::StatusCode;
 use librad::identities::Project;
 use serde::Deserialize;
 use serde_json::json;
+use tower_http::set_header::SetResponseHeaderLayer;
 
 use librad::collaborative_objects::ObjectId;
 use librad::git::identities::{self, SomeIdentity};
@@ -30,13 +33,23 @@ use crate::commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Com
 use crate::project::{self, Info};
 use crate::{get_head_commit, Context, Error};
 
+const CACHE_1_HOUR: &str = "public, max-age=3600, must-revalidate";
+
 pub fn router(ctx: Context) -> Router {
     Router::new()
         .route("/projects", get(project_root_handler))
         .route("/projects/:project", get(project_alias_or_urn_handler))
         .route("/projects/:project/commits", get(history_handler))
         .route("/projects/:project/commits/:sha", get(commit_handler))
-        .route("/projects/:project/activity", get(activity_handler))
+        .route(
+            "/projects/:project/activity",
+            get(
+                activity_handler.layer(SetResponseHeaderLayer::if_not_present(
+                    header::CACHE_CONTROL,
+                    HeaderValue::from_static(CACHE_1_HOUR),
+                )),
+            ),
+        )
         .route("/projects/:project/tree/:sha/*path", get(tree_handler))
         .route("/projects/:project/remotes", get(remotes_handler))
         .route("/projects/:project/remotes/:peer", get(remote_handler))
