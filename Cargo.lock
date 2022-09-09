@@ -555,7 +555,7 @@ dependencies = [
 [[package]]
 name = "nakamoto-net"
 version = "0.3.0"
-source = "git+https://github.com/cloudhead/nakamoto?rev=b39ec7a0da041613227d0ece4ccc48e980c8cf27#b39ec7a0da041613227d0ece4ccc48e980c8cf27"
+source = "git+https://github.com/cloudhead/nakamoto?rev=90cc3eac67aa5cfd5f42cf7cb1e2b155af3214fb#90cc3eac67aa5cfd5f42cf7cb1e2b155af3214fb"
 dependencies = [
  "crossbeam-channel",
  "fastrand",
@@ -566,7 +566,7 @@ dependencies = [
 [[package]]
 name = "nakamoto-net-poll"
 version = "0.3.0"
-source = "git+https://github.com/cloudhead/nakamoto?rev=b39ec7a0da041613227d0ece4ccc48e980c8cf27#b39ec7a0da041613227d0ece4ccc48e980c8cf27"
+source = "git+https://github.com/cloudhead/nakamoto?rev=90cc3eac67aa5cfd5f42cf7cb1e2b155af3214fb#90cc3eac67aa5cfd5f42cf7cb1e2b155af3214fb"
 dependencies = [
  "crossbeam-channel",
  "libc",

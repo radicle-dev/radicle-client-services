@@ -13,12 +13,12 @@ tag = "cycle/2022-07-12"
 
 [patch.crates-io.nakamoto-net]
 git = "https://github.com/cloudhead/nakamoto"
-rev = "b39ec7a0da041613227d0ece4ccc48e980c8cf27"
+rev = "90cc3eac67aa5cfd5f42cf7cb1e2b155af3214fb"
 version = "0.3.0"
 
 [patch.crates-io.nakamoto-net-poll]
 git = "https://github.com/cloudhead/nakamoto"
-rev = "b39ec7a0da041613227d0ece4ccc48e980c8cf27"
+rev = "90cc3eac67aa5cfd5f42cf7cb1e2b155af3214fb"
 version = "0.3.0"
 
 [profile.release]
