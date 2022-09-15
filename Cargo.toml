@@ -41,6 +41,10 @@ tag = "cycle/2022-07-12"
 git = "https://github.com/radicle-dev/radicle-link"
 tag = "cycle/2022-07-12"
 
+[patch.crates-io.radicle-surf]
+git = "https://github.com/radicle-dev/radicle-git"
+rev = "a11bedacaa075c07423254623ee7b91b5cb571a0"
+
 [patch.crates-io.radicle-common]
 git = "https://github.com/radicle-dev/radicle-cli"
 rev = "ea07d1c1327fd05e7792b771436744d415bf4fd9"

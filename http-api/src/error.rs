@@ -4,8 +4,6 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde_json::json;
 
-use radicle_source::surf;
-
 /// Errors that may occur when interacting with [`librad::net::peer::Peer`].
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -55,7 +53,7 @@ pub enum Error {
 
     /// An error occurred with radicle surf.
     #[error(transparent)]
-    Surf(#[from] surf::git::error::Error),
+    Surf(#[from] radicle_surf::git::error::Error),
 
     /// An error occurred with radicle storage.
     #[error(transparent)]

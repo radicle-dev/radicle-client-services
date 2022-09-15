@@ -3727,8 +3727,7 @@ dependencies = [
 [[package]]
 name = "radicle-surf"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d993c454d89baf57b567786151b8a1cbeac017ae0c2145dd2ceb85450150e7cd"
+source = "git+https://github.com/radicle-dev/radicle-git?rev=a11bedacaa075c07423254623ee7b91b5cb571a0#a11bedacaa075c07423254623ee7b91b5cb571a0"
 dependencies = [
  "anyhow",
  "either",

@@ -18,18 +18,17 @@ use librad::git::identities::{self, SomeIdentity};
 use librad::git::types::{Namespace, One, Reference, Single};
 use librad::git::Storage;
 use librad::git::Urn;
+use librad::git_ext::Oid;
 use librad::paths::Paths;
 use librad::PeerId;
 
 use radicle_common::cobs::{self, issue, patch, Store};
 use radicle_common::person;
-use radicle_source as source;
-use radicle_source::commit::Stats;
-use radicle_source::surf::vcs::git;
 use radicle_surf::diff;
+use radicle_surf::vcs::git;
 
 use crate::axum_extra::{Path, Query};
-use crate::commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Committer};
+use crate::commit::{CommitContext, CommitTeaser, CommitsQueryString, Committer, Header};
 use crate::project::{self, Info};
 use crate::{get_head_commit, Context, Error};
 
@@ -160,29 +159,47 @@ async fn project_root_handler(
 /// `GET /projects/:project/commits/:sha`
 async fn commit_handler(
     Extension(ctx): Extension<Context>,
-    Path((project, sha)): Path<(Urn, One)>,
+    Path((project, sha)): Path<(Urn, Oid)>,
 ) -> impl IntoResponse {
-    let reference = Reference::head(Namespace::from(project.clone()), None, sha.to_owned());
-    let commit = browse(reference, ctx.paths.clone(), |browser| {
-        let oid = browser.oid(&sha)?;
-        radicle_source::commit(browser, oid)
-    })
-    .await?;
-
     let projects = ctx.projects.read().await;
+
+    let repo = git::Repository::new(ctx.paths.git_dir()).map_err(Error::from)?;
+    let browser = git::Browser::new_with_namespace(
+        &repo,
+        &git::Namespace::try_from(project.encode_id().as_str())
+            .map_err(|_| Error::MissingNamespace)?,
+        *sha,
+    )
+    .map_err(Error::from)?;
+
+    let history = browser.get();
+    let commit = history.first();
+
+    let diff = if let Some(parent) = commit.parents.first() {
+        browser.diff(*parent, *sha)?
+    } else {
+        browser.initial_diff(*sha)?
+    };
+
     let fingerprints = projects.get(&project);
-    let fp = ctx.commit_ssh_fingerprint(&commit.header.sha1.to_string())?;
+    let fp = ctx.commit_ssh_fingerprint(&commit.id.to_string())?;
     let committer = if let (Some(fps), Some(fp)) = (fingerprints, fp) {
         fps.get(&fp).cloned().map(|peer| Committer { peer })
     } else {
         None
     };
 
-    let response = Commit {
-        header: commit.header,
-        diff: commit.diff,
-        stats: commit.stats,
-        branches: commit.branches,
+    let branches = browser
+        .revision_branches(*sha)?
+        .into_iter()
+        .map(|b| b.name)
+        .collect::<Vec<git::BranchName>>();
+
+    let response = Header {
+        header: commit.clone(),
+        stats: diff.stats(),
+        diff,
+        branches,
         context: CommitContext { committer },
     };
 
@@ -190,7 +207,7 @@ async fn commit_handler(
 }
 
 /// Get project commit range.
-/// `GET /projects/:project/commits?from=<sha>`
+/// `GET /projects/:project/commits?parent=<sha>`
 async fn history_handler(
     Extension(ctx): Extension<Context>,
     Path(project): Path<Urn>,
@@ -205,50 +222,53 @@ async fn history_handler(
         verified,
     } = qs;
 
+    let projects = ctx.projects.read().await;
+
     let (sha, fallback_to_head) = match parent {
-        Some(commit) => (commit, false),
+        Some(commit) => {
+            let oid = git::Oid::from_str(&commit)?;
+            (oid, false)
+        }
         None => {
             let info = ctx.project_info(project.to_owned()).await?;
 
             if let Some(head) = info.head {
-                (head.to_string(), true)
+                (head, true)
             } else {
                 return Err(Error::NoHead("project head is not set"));
             }
         }
     };
 
-    let reference = Reference::head(
-        Namespace::from(project.to_owned()),
-        None,
-        One::from_str(&sha).map_err(|_| Error::NotFound)?,
-    );
-
-    let commits = browse(reference, ctx.paths.to_owned(), |browser| {
-        radicle_source::commits::<PeerId>(browser, None)
-    })
-    .await?;
+    let repo = git::Repository::new(ctx.paths.git_dir()).map_err(Error::from)?;
+    let browser = git::Browser::new_with_namespace(
+        &repo,
+        &git::Namespace::try_from(project.encode_id().as_str())
+            .map_err(|_| Error::MissingNamespace)?,
+        sha,
+    )
+    .map_err(Error::from)?;
+    let commits = browser.get();
+    let stats = browser.get_stats()?;
 
     // If a pagination is defined, we do not want to paginate the commits, and we return all of them on the first page.
     let page = page.unwrap_or(0);
     let per_page = if per_page.is_none() && (since.is_some() || until.is_some()) {
-        commits.headers.len()
+        commits.len()
     } else {
         per_page.unwrap_or(30)
     };
 
-    let projects = ctx.projects.read().await;
     let fingerprints = projects.get(&project);
     let headers = commits
-        .headers
         .iter()
         .filter(|q| {
             if let (Some(since), Some(until)) = (since, until) {
-                q.committer_time.seconds() >= since && q.committer_time.seconds() < until
+                q.committer.time.seconds() >= since && q.committer.time.seconds() < until
             } else if let Some(since) = since {
-                q.committer_time.seconds() >= since
+                q.committer.time.seconds() >= since
             } else if let Some(until) = until {
-                q.committer_time.seconds() < until
+                q.committer.time.seconds() < until
             } else {
                 // If neither `since` nor `until` are specified, we include the commit.
                 true
@@ -258,7 +278,7 @@ async fn history_handler(
         .take(per_page)
         .map(|header| {
             let committer = if verified.unwrap_or_default() {
-                let fp = ctx.commit_ssh_fingerprint(&header.sha1.to_string())?;
+                let fp = ctx.commit_ssh_fingerprint(&header.id.to_string())?;
                 if let (Some(fps), Some(fp)) = (fingerprints, fp) {
                     fps.get(&fp).cloned().map(|peer| Committer { peer })
                 } else {
@@ -277,7 +297,7 @@ async fn history_handler(
 
     let response = json!({
         "headers": &headers,
-        "stats": &commits.stats,
+        "stats": &stats,
     });
 
     if fallback_to_head {
@@ -482,7 +502,7 @@ async fn readme_handler(
                 return Ok(blob);
             }
         }
-        use radicle_source::surf::file_system::Path;
+        use radicle_surf::file_system::Path;
         Err(radicle_source::Error::PathNotFound(
             Path::try_from("README").unwrap(),
         ))
@@ -667,66 +687,17 @@ impl<T: serde::Serialize> Cob<T> {
 
 #[derive(serde::Serialize, Clone)]
 struct Changeset {
-    commits: Vec<source::Commit>,
+    commits: Vec<git::Commit>,
     diff: git::Diff,
-    stats: Stats,
+    stats: diff::Stats,
 }
 
 impl Changeset {
-    pub fn new(commits: Vec<source::Commit>, diff: git::Diff) -> Self {
+    pub fn new(commits: Vec<git::Commit>, diff: git::Diff) -> Self {
         Self {
             commits,
-            stats: Changeset::stats(&diff),
+            stats: diff.stats(),
             diff,
-        }
-    }
-
-    // TODO: This function should probably be moved to radicle_surf, where it should be able to be called on radicle_surf::diff::Diff as associated function`
-    pub fn stats(diff: &git::Diff) -> Stats {
-        let mut deletions = 0;
-        let mut additions = 0;
-
-        for file in &diff.modified {
-            if let diff::FileDiff::Plain { ref hunks } = file.diff {
-                for hunk in hunks.iter() {
-                    for line in &hunk.lines {
-                        match line {
-                            diff::LineDiff::Addition { .. } => additions += 1,
-                            diff::LineDiff::Deletion { .. } => deletions += 1,
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-
-        for file in &diff.created {
-            if let diff::FileDiff::Plain { ref hunks } = file.diff {
-                for hunk in hunks.iter() {
-                    for line in &hunk.lines {
-                        if let diff::LineDiff::Addition { .. } = line {
-                            additions += 1
-                        }
-                    }
-                }
-            }
-        }
-
-        for file in &diff.deleted {
-            if let diff::FileDiff::Plain { ref hunks } = file.diff {
-                for hunk in hunks.iter() {
-                    for line in &hunk.lines {
-                        if let diff::LineDiff::Deletion { .. } = line {
-                            deletions += 1
-                        }
-                    }
-                }
-            }
-        }
-
-        Stats {
-            additions,
-            deletions,
         }
     }
 }
@@ -781,8 +752,8 @@ fn resolve_revisions(
 
             let mut changeset: Option<Changeset> = None;
 
-            if let (Ok(commits), Ok(diff), true) = (
-                radicle_source::commits::<PeerId>(browser, None),
+            if let (commits, Ok(diff), true) = (
+                browser.get(),
                 // Gets the entire diff between the default branch head and the revision Oid.
                 browser.diff(*revision.base, *revision.oid),
                 // This feature flag, allows us to only generate diffs for e.g. single patch retrieval and skip all this for patch listing.
@@ -791,11 +762,10 @@ fn resolve_revisions(
                 // Iterates over commits headers and retrieves each commit details until it gets to the head of the default branch
                 // If radicle_source::commit returns a None the commit won't be collected.
                 let commits = commits
-                    .headers
                     .iter()
-                    .take_while(|header| header.sha1 != *revision.base)
-                    .filter_map(|header| radicle_source::commit(browser, header.sha1).ok())
-                    .collect::<Vec<source::Commit>>();
+                    .cloned()
+                    .take_while(|header| header.id != *revision.base)
+                    .collect::<Vec<git::Commit>>();
 
                 changeset = Some(Changeset::new(commits, diff));
             };
@@ -930,7 +900,7 @@ mod routes {
         let body: Value = serde_json::from_slice(&body).unwrap();
 
         assert_eq!(body["headers"][0]["header"]["summary"], COMMIT_MSG);
-        assert_eq!(body["headers"][0]["header"]["sha1"], head.to_string());
+        assert_eq!(body["headers"][0]["header"]["id"], head.to_string());
 
         let response = app
             .clone()

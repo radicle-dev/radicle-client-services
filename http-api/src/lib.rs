@@ -43,7 +43,7 @@ use librad::paths::Paths;
 use librad::PeerId;
 
 use radicle_common::{cobs, keys, person};
-use radicle_source::surf::vcs::git;
+use radicle_surf::vcs::git;
 
 use crate::auth::AuthState;
 use crate::project::{Info, PeerInfo};

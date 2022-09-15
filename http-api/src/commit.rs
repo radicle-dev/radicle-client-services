@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use radicle_common::project::PeerInfo;
-use radicle_source::commit::Header;
-
+use radicle_surf::diff;
+use radicle_surf::vcs::git;
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "kebab-case")]
 pub struct CommitsQueryString {
@@ -16,16 +16,16 @@ pub struct CommitsQueryString {
 
 #[derive(Serialize)]
 pub struct CommitTeaser {
-    pub header: Header,
+    pub header: git::Commit,
     pub context: CommitContext,
 }
 
 #[derive(Serialize)]
-pub struct Commit {
-    pub header: Header,
-    pub stats: radicle_source::commit::Stats,
-    pub diff: radicle_surf::diff::Diff,
-    pub branches: Vec<radicle_source::Branch>,
+pub struct Header {
+    pub header: git::Commit,
+    pub stats: diff::Stats,
+    pub diff: diff::Diff,
+    pub branches: Vec<git::BranchName>,
     pub context: CommitContext,
 }
 
