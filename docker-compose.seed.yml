@@ -25,11 +25,11 @@ services:
       - -euc
       - |
         cat <<EOF >/etc/caddy/Caddyfile
-        {$RADICLE_DOMAIN} {
+        $RADICLE_DOMAIN {
             reverse_proxy git-server:8778
         }
 
-        {$RADICLE_DOMAIN}:8777 {
+        $RADICLE_DOMAIN:8777 {
             reverse_proxy http-api:8777
         }
         EOF
