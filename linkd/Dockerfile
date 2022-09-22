@@ -3,7 +3,7 @@ FROM rust:1.61.0-slim@sha256:91ab0966aa0d8eff103f42c04e0f4dd0bc628d1330942616a94
 
 RUN apt-get update && apt-get install -y pkg-config libssl-dev git cmake
 
-RUN git clone --depth 1 https://github.com/radicle-dev/radicle-link.git /usr/src/radicle-link
+RUN git clone https://github.com/radicle-dev/radicle-link.git /usr/src/radicle-link
 WORKDIR /usr/src/radicle-link
 RUN git reset --hard 622c1bcd59a6ce584f957ffe6b874b2af0b207fd
 
