@@ -3,7 +3,7 @@ services:
   linkd:
     image: gcr.io/radicle-services/linkd:${RADICLE_IMAGE_TAG:-latest}
     ports:
-      - 8776:8776
+      - 8776:8776/udp
     entrypoint: /usr/local/bin/radicle-linkd --protocol-listen 0.0.0.0:8776 --lnk-home /app/radicle --track everything --signer key --key-format binary --key-source file --key-file-path /app/radicle/linkd.key
     build:
       dockerfile: ./linkd/Dockerfile
