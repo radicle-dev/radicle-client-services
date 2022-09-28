@@ -25,11 +25,19 @@ services:
       - -euc
       - |
         cat <<EOF >/etc/caddy/Caddyfile
-        $RADICLE_DOMAIN {
+        seed.alt-clients.radicle.xyz {
             reverse_proxy git-server:8778
         }
 
-        $RADICLE_DOMAIN:8777 {
+        seed.alt-clients.radicle.xyz:8777 {
+            reverse_proxy http-api:8777
+        }
+
+        clients.radicle.xyz {
+            reverse_proxy git-server:8778
+        }
+
+        clients.radicle.xyz:8777 {
             reverse_proxy http-api:8777
         }
         EOF
@@ -39,8 +47,6 @@ services:
       - 443:443
       - 8777:8777
       - 8086:8086
-    environment:
-      RADICLE_DOMAIN: $RADICLE_DOMAIN
     container_name: caddy
     restart: unless-stopped
     networks:
