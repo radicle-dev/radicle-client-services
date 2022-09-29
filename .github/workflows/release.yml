@@ -4,7 +4,6 @@ on:
   push:
     branches: [master]
 
-
 jobs:
   upload-binaries-to-gcs:
     runs-on: ubuntu-latest

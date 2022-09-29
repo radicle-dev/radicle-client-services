@@ -222,7 +222,7 @@ impl Context {
         for identity in identities.flatten() {
             if let Project(project) = identity {
                 let urn = project.urn();
-                let name = (&project.payload().subject.name).to_string();
+                let name = project.payload().subject.name.to_string();
 
                 tracing::info!("alias {:?} for {:?}", name, urn.to_string());
 
