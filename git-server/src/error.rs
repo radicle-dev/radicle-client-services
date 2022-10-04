@@ -150,6 +150,7 @@ impl Error {
             Error::Unauthorized(_) => http::StatusCode::UNAUTHORIZED,
             Error::KeyMismatch { .. } => http::StatusCode::UNAUTHORIZED,
             Error::AliasNotFound => http::StatusCode::NOT_FOUND,
+            Error::InvalidId => http::StatusCode::NOT_FOUND,
             _ => http::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
