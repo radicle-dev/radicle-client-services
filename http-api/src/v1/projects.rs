@@ -341,7 +341,7 @@ async fn project_alias_or_urn_handler(
     let urn = if let Ok(urn) = urn {
         urn
     } else {
-        let alias = urn_or_alias;
+        let alias = urn_or_alias.to_lowercase();
         let mut aliases = ctx.aliases.write().await;
         if !aliases.contains_key(&alias) {
             // If the alias does not exist, rebuild the cache.

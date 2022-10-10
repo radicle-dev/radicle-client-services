@@ -119,7 +119,7 @@ impl Context {
         for identity in identities.flatten() {
             if let Project(project) = identity {
                 let urn = project.urn();
-                let name = project.payload().subject.name.to_string();
+                let name = project.payload().subject.name.to_lowercase();
 
                 if let Entry::Vacant(e) = map.entry(name.clone()) {
                     e.insert(urn);
