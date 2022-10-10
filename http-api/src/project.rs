@@ -15,7 +15,7 @@ pub struct ProjectsQueryString {
 }
 
 /// Project info.
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Info {
     /// Project metadata.

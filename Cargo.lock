@@ -3614,6 +3614,7 @@ dependencies = [
  "futures",
  "git2",
  "hyper",
+ "itertools",
  "librad",
  "lnk-identities",
  "radicle-common",

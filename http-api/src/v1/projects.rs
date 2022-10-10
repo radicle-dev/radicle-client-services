@@ -106,43 +106,80 @@ async fn get_projects_info(
     let per_page = per_page.unwrap_or(10);
 
     let storage = ctx.storage().await?;
-    let projects: Vec<Project> = identities::any::list(storage.read_only())?
-        .map(|res| match res {
-            Ok(id) => Ok(id),
-            Err(err) => Err(Error::from(err)),
-        })
-        .filter_map(|id_result| match id_result {
-            Ok(SomeIdentity::Project(project)) => Some(Ok(project)),
-            Err(err) => Some(Err(err)),
-            _ => None,
-        })
-        .skip(page * per_page)
-        .take(per_page)
-        .collect::<Result<Vec<Project>, Error>>()?;
 
-    let pending_futures = {
-        let mut futures: Vec<tokio::task::JoinHandle<_>> = Vec::with_capacity(projects.len());
-        for id in &projects {
-            let id = id.clone();
-            let ctx = ctx.clone();
-            let future = tokio::task::spawn(get_project_info(ctx, id));
-            futures.push(future);
+    let mut infos: Vec<Info> = Vec::with_capacity(page);
+    let mut num_broken_projects = 0;
+    let mut num_uninteresting_identities = 0;
+    loop {
+        if infos.len() >= per_page {
+            break;
         }
-        futures
-    };
 
-    let mut infos: Vec<Info> = Vec::with_capacity(projects.len());
-    for result in futures::future::join_all(pending_futures).await {
-        let info = match result? {
-            Ok(info) => info,
-            Err(err) => {
-                tracing::error!("Could not fetch project info: {:?}", err);
-                continue;
+        let projects: Vec<Project> = {
+            let mut iter = itertools::put_back(identities::any::list(storage.read_only())?.skip(
+                page * per_page + infos.len() + num_broken_projects + num_uninteresting_identities,
+            ));
+
+            if let Some(id_result) = iter.next() {
+                iter.put_back(id_result);
+            } else {
+                // We've run out of projects (i.e. we're at the very last page)
+                break;
             }
-        };
-        infos.push(info);
-    }
 
+            let num_remaining_infos = per_page - infos.len();
+            let mut projects: Vec<Project> = Vec::with_capacity(num_remaining_infos);
+            loop {
+                if projects.len() >= num_remaining_infos {
+                    break;
+                }
+
+                let id_result = match iter.next() {
+                    Some(id_result) => id_result,
+                    None => break,
+                };
+
+                let project = match id_result {
+                    Ok(SomeIdentity::Project(project)) => project,
+                    Err(err) => {
+                        num_broken_projects += 1;
+                        tracing::error!("Could not get project: {:?}", err);
+                        continue;
+                    }
+                    _ => {
+                        num_uninteresting_identities += 1;
+                        continue;
+                    }
+                };
+
+                projects.push(project);
+            }
+            projects
+        };
+
+        let pending_futures = {
+            let mut futures: Vec<tokio::task::JoinHandle<_>> = Vec::with_capacity(projects.len());
+            for id in &projects {
+                let id = id.clone();
+                let ctx = ctx.clone();
+                let future = tokio::task::spawn(get_project_info(ctx, id));
+                futures.push(future);
+            }
+            futures
+        };
+
+        for result in futures::future::join_all(pending_futures).await {
+            let info = match result? {
+                Ok(info) => info,
+                Err(err) => {
+                    num_broken_projects += 1;
+                    tracing::error!("Could not get project info: {:?}", err);
+                    continue;
+                }
+            };
+            infos.push(info);
+        }
+    }
     Ok(infos)
 }
 
@@ -152,8 +189,8 @@ async fn project_root_handler(
     Extension(ctx): Extension<Context>,
     Query(qs): Query<project::ProjectsQueryString>,
 ) -> impl IntoResponse {
-    let projects = get_projects_info(ctx, Query(qs)).await?;
-    Ok::<_, Error>(Json(projects))
+    let project_infos = get_projects_info(ctx, Query(qs)).await?;
+    Ok::<_, Error>(Json(project_infos))
 }
 
 /// Get project commit.
