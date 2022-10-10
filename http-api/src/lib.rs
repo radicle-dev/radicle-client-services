@@ -240,6 +240,7 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
         .merge(v1::router(ctx.clone()))
         .layer(
             CorsLayer::new()
+                .max_age(Duration::from_secs(86400))
                 .allow_origin(cors::Any)
                 .allow_methods([Method::GET, Method::POST, Method::PUT])
                 .allow_headers([CONTENT_TYPE, AUTHORIZATION]),
