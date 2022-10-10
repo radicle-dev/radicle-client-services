@@ -64,6 +64,14 @@ can then be specified via the `--listen` parameter, eg.
 
 For `radicle-git-server`, it is recommended that port `443` be open.
 
+#### Using authorized-keys for Authorization
+
+By default, the pre-receive hook will check the mono-repository for a authorized-keys
+public key file on push. If it exists, it will check the public key's fingerprint
+matches the $GIT_PUSH_CERT_KEY set by the http-backend.
+The $GIT_PUSH_CERT_KEY is used to find the file in the namespace tree, 
+comparing the fingerprint in the authorized keyring against the signed certificate.
+
 #### TLS
 
 For `radicle-http-api` and `radicle-git-server`, it's important to setup TLS
