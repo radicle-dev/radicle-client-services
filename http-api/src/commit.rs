@@ -21,7 +21,7 @@ pub struct CommitTeaser {
 }
 
 #[derive(Serialize)]
-pub struct Header {
+pub struct Commit {
     pub header: git::Commit,
     pub stats: diff::Stats,
     pub diff: diff::Diff,

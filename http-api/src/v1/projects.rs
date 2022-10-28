@@ -28,7 +28,7 @@ use radicle_surf::diff;
 use radicle_surf::vcs::git;
 
 use crate::axum_extra::{Path, Query};
-use crate::commit::{CommitContext, CommitTeaser, CommitsQueryString, Committer, Header};
+use crate::commit::{Commit, CommitContext, CommitTeaser, CommitsQueryString, Committer};
 use crate::project::{self, Info};
 use crate::{get_head_commit, Context, Error};
 
@@ -195,7 +195,7 @@ async fn commit_handler(
         .map(|b| b.name)
         .collect::<Vec<git::BranchName>>();
 
-    let response = Header {
+    let response = Commit {
         header: commit.clone(),
         stats: diff.stats(),
         diff,
