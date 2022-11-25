@@ -101,7 +101,7 @@ To point Radicle clients to the right seed endpoint, use the
 seed host, eg `seed.acme.org`.
 
 These records can be set on the web client. For example, the records for the
-Alt.-clients org can be found at <https://app.radicle.network/registrations/alt-clients.radicle.eth>.
+Alt.-clients org can be found at <https://app.radicle.xyz/registrations/alt-clients.radicle.eth>.
 
 ### Docker
 
